@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function role(uid) {
+      return userDoc(uid).data.role;
+    }
+
+    function businessId(uid) {
+      return userDoc(uid).data.businessId;
+    }
+
+    function ownerOrAdmin(uid) {
+      return role(uid) == 'owner';
+    }
+
+    function sameBusiness(bid) {
+      return signedIn() && businessId(request.auth.uid) == bid;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /businesses/{bid} {
+      allow read: if sameBusiness(bid);
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+
+      match /members/{uid} {
+        allow read: if sameBusiness(bid);
+        allow create, update, delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /customers/{docId} {
+        allow read, create, update: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /orders/{docId} {
+        allow read, create, update: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /inventory_materials/{docId} {
+        allow read, create, update: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /fabric_rolls/{docId} {
+        allow read, create, update: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /stock_movements/{docId} {
+        allow read: if sameBusiness(bid);
+        allow create: if sameBusiness(bid);
+        allow update, delete: if false;
+      }
+
+      match /purchase_orders/{docId} {
+        allow read, create, update: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /suppliers/{docId} {
+        allow read, create, update: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      }
+
+      match /payments/{docId} {
+        allow read, create: if sameBusiness(bid);
+        allow update, delete: if false;
+      }
+
+      match /images/{docId} {
+        allow read, create: if sameBusiness(bid);
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow update: if false;
+      }
+    }
+  }
+}
