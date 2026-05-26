@@ -163,8 +163,9 @@ function QueueRow({ order, showDelay = false }: { order: Order; showDelay?: bool
     <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
       <div>
         <p className="font-medium">{order.customerName}</p>
-        <p className="text-xs text-slate-500">{order.orderNumber} • due {order.dueDate}</p>
-        {showDelay && order.dueDate < todayYmd() && order.stage !== "delivered" && (
+      <p className="text-xs text-slate-500">
+  {order.orderNumber} - due {order.dueDate}
+</p> {showDelay && order.dueDate < todayYmd() && order.stage !== "delivered" && (
           <p className="text-xs text-rose-600">{delayLabel(order.dueDate)}</p>
         )}
       </div>

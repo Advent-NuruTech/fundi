@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import type { Customer, InventoryMaterial, UserProfile } from "@/types/domain";
-import { orderSchema, type OrderValues } from "@/schemas/order.schema";
+import { orderSchema, type OrderInput, type OrderValues } from "@/schemas/order.schema";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { appendOrderImageId, createOrder, fetchMembers, listenCustomers, listenMaterials } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
@@ -25,7 +25,7 @@ export function NewOrderModulePage() {
   const [materials, setMaterials] = useState<InventoryMaterial[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  const { register, handleSubmit, formState } = useForm<OrderValues>({
+  const { register, handleSubmit, formState } = useForm<OrderInput, undefined, OrderValues>({
     resolver: zodResolver(orderSchema),
     defaultValues: { dueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), quantity: 1 },
   });
@@ -43,7 +43,7 @@ export function NewOrderModulePage() {
     };
   }, [businessId, ready]);
 
-  const onSubmit = async (values: OrderValues) => {
+  const onSubmit: SubmitHandler<OrderValues> = async (values) => {
     if (!user) {
       return;
     }

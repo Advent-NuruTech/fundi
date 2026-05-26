@@ -55,7 +55,7 @@ export function KanbanBoard() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
   const getOrdersForColumn = (column: KanbanColumn) => {
-    return orders.filter((o) => column.statuses.includes(o.status));
+    return orders.filter((o) => column.statuses.includes(o.status as OrderStatus));
   };
 
   return (

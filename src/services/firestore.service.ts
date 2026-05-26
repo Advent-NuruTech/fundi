@@ -17,10 +17,12 @@ import {
   and,
   runTransaction,
   startAfter,
+  Timestamp,
   type DocumentData,
   type QueryConstraint,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import type {
   Customer,
   EmployeeInvitation,
@@ -65,7 +67,7 @@ function normalizedRoles(roles: UserRole[]) {
   return Array.from(new Set(roles));
 }
 
-function roleFromRoles(roles: UserRole[]) {
+function roleFromRoles(roles: UserRole[]): UserRole {
   if (roles.includes("owner")) return "owner";
   if (roles.includes("admin_manager")) return "admin_manager";
   if (roles.includes("tailor")) return "tailor";
@@ -101,7 +103,7 @@ export async function bootstrapBusiness(input: {
     email: input.email,
     displayName: input.displayName,
     role: "owner" as const,
-    roles: ["owner"] as const,
+    roles: ["owner"] as UserRole[],
     businessId: businessRef.id,
     active: true,
     mustChangePassword: false,
@@ -261,7 +263,7 @@ export async function completeFirstPasswordChange(uid: string) {
 }
 
 export async function acceptInvitationByToken(token: string, uid: string) {
-  const rows = await getDocs(query(collectionGroup(usersCollection().firestore, "invitations"), where("token", "==", token)));
+  const rows = await getDocs(query(collectionGroup(db, "invitations"), where("token", "==", token)));
   if (rows.empty) {
     return null;
   }
@@ -425,7 +427,7 @@ export async function addFittingRecord(
     adjustmentSummary: payload.adjustmentSummary,
     byUid: payload.byUid,
     byName: payload.byName,
-    date: new Date(),
+    date: Timestamp.fromDate(new Date()),
   });
 
   await updateDoc(orderRef, {
@@ -679,7 +681,7 @@ export async function paginatedQuery<T extends DocumentData>(
   after?: QueryDocumentSnapshot<DocumentData>
 ) {
   const pagedConstraints = after ? [...constraints, startAfter(after)] : constraints;
-  const snapshot = await getDocs(query(usersCollection() as unknown as any, ...pagedConstraints));
+  const snapshot = await getDocs(query(usersCollection(), ...pagedConstraints));
   return {
     rows: snapshot.docs.map(mapper),
     lastDoc: snapshot.docs[snapshot.docs.length - 1],

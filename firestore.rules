@@ -17,8 +17,43 @@ service cloud.firestore {
       return userDoc(uid).data.businessId;
     }
 
+    function roles(uid) {
+      return userDoc(uid).data.roles;
+    }
+
+    function hasRole(uid, roleName) {
+      return role(uid) == roleName || (roles(uid) is list && roles(uid).hasAny([roleName]));
+    }
+
     function ownerOrAdmin(uid) {
-      return role(uid) == 'owner';
+      return hasRole(uid, 'owner') || hasRole(uid, 'admin_manager');
+    }
+
+    function canManageCustomers(uid) {
+      return ownerOrAdmin(uid) || hasRole(uid, 'receptionist') || hasRole(uid, 'cashier');
+    }
+
+    function canManageOrders(uid) {
+      return ownerOrAdmin(uid) || hasRole(uid, 'receptionist');
+    }
+
+    function canManageInventory(uid) {
+      return ownerOrAdmin(uid) || hasRole(uid, 'inventory_manager');
+    }
+
+    function canManagePayments(uid) {
+      return ownerOrAdmin(uid) || hasRole(uid, 'cashier') || hasRole(uid, 'receptionist');
+    }
+
+    function isOwnerProfile(data) {
+      return data.role == 'owner' || (data.roles is list && data.roles.hasAny(['owner']));
+    }
+
+    function canUpdateAssignedOrder() {
+      return hasRole(request.auth.uid, 'tailor') &&
+        resource.data.assignedTailorId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stage', 'deliveryStatus', 'productionNotes', 'fittingRecords', 'imageIds', 'updatedAt']);
     }
 
     function sameBusiness(bid) {
@@ -35,51 +70,73 @@ service cloud.firestore {
     match /businesses/{bid} {
       allow read: if sameBusiness(bid);
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+      allow update: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid) &&
+        request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if sameBusiness(bid) && hasRole(request.auth.uid, 'owner');
 
       match /members/{uid} {
         allow read: if sameBusiness(bid);
-        allow create, update, delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow create: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid) && !isOwnerProfile(request.resource.data);
+        allow update: if sameBusiness(bid) && (
+          hasRole(request.auth.uid, 'owner') ||
+          (hasRole(request.auth.uid, 'admin_manager') && !isOwnerProfile(resource.data) && !isOwnerProfile(request.resource.data))
+        );
+        allow delete: if sameBusiness(bid) && hasRole(request.auth.uid, 'owner') && !isOwnerProfile(resource.data);
+      }
+
+      match /invitations/{docId} {
+        allow read, create, update: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow delete: if false;
       }
 
       match /customers/{docId} {
-        allow read, create, update: if sameBusiness(bid);
+        allow read: if sameBusiness(bid);
+        allow create, update: if sameBusiness(bid) && canManageCustomers(request.auth.uid);
         allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /orders/{docId} {
-        allow read, create, update: if sameBusiness(bid);
+        allow read: if sameBusiness(bid) && (
+          !hasRole(request.auth.uid, 'tailor') || resource.data.assignedTailorId == request.auth.uid || ownerOrAdmin(request.auth.uid)
+        );
+        allow create: if sameBusiness(bid) && canManageOrders(request.auth.uid);
+        allow update: if sameBusiness(bid) && (canManageOrders(request.auth.uid) || canUpdateAssignedOrder());
         allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /inventory_materials/{docId} {
-        allow read, create, update: if sameBusiness(bid);
+        allow read: if sameBusiness(bid);
+        allow create, update: if sameBusiness(bid) && canManageInventory(request.auth.uid);
         allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /fabric_rolls/{docId} {
-        allow read, create, update: if sameBusiness(bid);
+        allow read: if sameBusiness(bid);
+        allow create, update: if sameBusiness(bid) && canManageInventory(request.auth.uid);
         allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /stock_movements/{docId} {
         allow read: if sameBusiness(bid);
-        allow create: if sameBusiness(bid);
+        allow create: if sameBusiness(bid) && (canManageInventory(request.auth.uid) || canManageOrders(request.auth.uid));
         allow update, delete: if false;
       }
 
       match /purchase_orders/{docId} {
-        allow read, create, update: if sameBusiness(bid);
+        allow read: if sameBusiness(bid);
+        allow create, update: if sameBusiness(bid) && canManageInventory(request.auth.uid);
         allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /suppliers/{docId} {
-        allow read, create, update: if sameBusiness(bid);
+        allow read: if sameBusiness(bid);
+        allow create, update: if sameBusiness(bid) && canManageInventory(request.auth.uid);
         allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /payments/{docId} {
-        allow read, create: if sameBusiness(bid);
+        allow read: if sameBusiness(bid);
+        allow create: if sameBusiness(bid) && canManagePayments(request.auth.uid);
         allow update, delete: if false;
       }
 

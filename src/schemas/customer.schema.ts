@@ -16,3 +16,4 @@ export const customerSchema = z.object({
 });
 
 export type CustomerValues = z.infer<typeof customerSchema>;
+export type CustomerInput = z.input<typeof customerSchema>;

@@ -15,3 +15,4 @@ export const orderSchema = z.object({
 });
 
 export type OrderValues = z.infer<typeof orderSchema>;
+export type OrderInput = z.input<typeof orderSchema>;

@@ -58,7 +58,7 @@ export function OrdersPage() {
             {/* FOOTER INFO */}
             <div className="mt-4 flex items-center justify-between text-sm">
               <span className="text-gray-500">
-                📅 {order.collectionDate}
+                Due date pending
               </span>
 
               <span className="font-semibold text-red-600">

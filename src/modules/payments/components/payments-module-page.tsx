@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 
 import type { Order, Payment } from "@/types/domain";
-import { paymentSchema, type PaymentValues } from "@/schemas/payment.schema";
+import { paymentSchema, type PaymentInput, type PaymentValues } from "@/schemas/payment.schema";
 
 import {
   listenOrders,
@@ -41,7 +41,7 @@ export function PaymentsModulePage() {
     reset,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm<PaymentValues>({
+  } = useForm<PaymentInput, undefined, PaymentValues>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
       orderId: "",
@@ -71,7 +71,7 @@ export function PaymentsModulePage() {
 
   const paymentMethod = watch("method");
 
-  const onSubmit = async (values: PaymentValues) => {
+  const onSubmit: SubmitHandler<PaymentValues> = async (values) => {
     if (!user) {
       toast.error("You must be signed in");
       return;

@@ -8,3 +8,4 @@ export const paymentSchema = z.object({
 });
 
 export type PaymentValues = z.infer<typeof paymentSchema>;
+export type PaymentInput = z.input<typeof paymentSchema>;

@@ -30,7 +30,7 @@ const app = isFirstInit ? initializeApp(firebaseConfig) : getApp();
 
 const db = isFirstInit
   ? initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
     })
   : getFirestore(app);
 

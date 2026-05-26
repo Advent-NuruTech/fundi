@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Settings,
   Building2,
@@ -11,15 +11,22 @@ import {
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
-import { employees } from "@/features/employees/data/employees.mock";
 import { canAccessSettings } from "@/lib/db";
+import { listenMembers } from "@/services/firestore.service";
+import type { UserProfile } from "@/types/domain";
 
 export function BusinessSettingsPage() {
-  const { user } = useAuth();
+  const { user, business } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [members, setMembers] = useState<UserProfile[]>([]);
   const canAccess = canAccessSettings(user?.role || "");
 
   const inviteLink = `https://fundiflow.app/join/${user?.businessId || "BIZ-001"}`;
+
+  useEffect(() => {
+    if (!user?.businessId) return;
+    return listenMembers(user.businessId, setMembers);
+  }, [user?.businessId]);
 
   const copyLink = () => {
     navigator.clipboard.writeText(inviteLink);
@@ -58,7 +65,7 @@ export function BusinessSettingsPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Business Name</label>
             <input
-              defaultValue={user?.business?.name || "My Tailoring Business"}
+              defaultValue={business?.name || "FundiFlow"}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
@@ -73,21 +80,21 @@ export function BusinessSettingsPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Phone</label>
             <input
-              defaultValue={user?.business?.phone || "0712345678"}
+              defaultValue={business?.phone || ""}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Email</label>
             <input
-              defaultValue={user?.business?.email || ""}
+              defaultValue={user?.email || ""}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-medium">Address</label>
             <input
-              defaultValue={user?.business?.address || ""}
+              defaultValue={business?.location || ""}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
@@ -133,34 +140,34 @@ export function BusinessSettingsPage() {
           <h2 className="font-bold">Team Overview</h2>
         </div>
         <p className="mt-1 text-sm text-gray-500">
-          {employees.length} employees registered
+          {members.length} employees registered
         </p>
 
         <div className="mt-4 space-y-2">
-          {employees.map((emp) => (
+          {members.map((emp) => (
             <div
-              key={emp.id}
+              key={emp.uid}
               className="flex items-center justify-between rounded-2xl bg-neutral-50 px-4 py-3"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold">
-                  {emp.name.charAt(0)}
+                  {emp.displayName.charAt(0)}
                 </div>
                 <div>
-                  <p className="font-medium text-sm">{emp.name}</p>
+                  <p className="font-medium text-sm">{emp.displayName}</p>
                   <p className="text-xs text-gray-500">
-                    {emp.employeeNumber} · {emp.role}
+                    {emp.email} - {(emp.roles?.length ? emp.roles : [emp.role]).join(", ")}
                   </p>
                 </div>
               </div>
               <span
                 className={`rounded-full px-3 py-1 text-xs ${
-                  emp.isActive
+                  emp.active
                     ? "bg-green-100 text-green-700"
                     : "bg-red-100 text-red-700"
                 }`}
               >
-                {emp.isActive ? "Active" : "Inactive"}
+                {emp.active ? "Active" : "Inactive"}
               </span>
             </div>
           ))}
