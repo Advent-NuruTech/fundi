@@ -599,6 +599,61 @@ export async function createPurchaseOrder(
   });
 }
 
+export async function fetchSupplierById(
+  businessId: string,
+  supplierId: string
+): Promise<Supplier | null> {
+  const snapshot = await getDoc(doc(suppliersCollection(businessId), supplierId));
+  if (!snapshot.exists()) {
+    return null;
+  }
+  return { ...snapshot.data(), id: snapshot.id } as Supplier;
+}
+
+export async function updateMaterial(
+  businessId: string,
+  materialId: string,
+  payload: Partial<Omit<InventoryMaterial, "id" | "businessId" | "createdAt" | "updatedAt">>
+) {
+  await updateDoc(doc(materialsCollection(businessId), materialId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function adjustMaterialStock(
+  businessId: string,
+  payload: {
+    materialId: string;
+    materialName: string;
+    adjustment: number;
+    unit: string;
+    reason: string;
+    actorUid: string;
+    actorName: string;
+  }
+) {
+  const materialRef = doc(materialsCollection(businessId), payload.materialId);
+  const batch = writeBatch(materialRef.firestore);
+  batch.update(materialRef, {
+    quantity: increment(payload.adjustment),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(stockMovementsCollection(businessId)), {
+    businessId,
+    movementType: "adjustment",
+    materialId: payload.materialId,
+    materialName: payload.materialName,
+    quantityChange: payload.adjustment,
+    unit: payload.unit,
+    reason: payload.reason,
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+    createdAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
 export async function receiveStockFromPurchaseOrder(
   businessId: string,
   payload: {
