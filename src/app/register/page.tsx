@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { Loader2, ArrowRight, Building2 } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { registerSchema, type RegisterValues } from "@/schemas/auth.schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,63 +17,113 @@ import { Button } from "@/components/ui/button";
 export default function RegisterPage() {
   const router = useRouter();
   const { registerOwner } = useAuth();
+  const [step, setStep] = useState<"idle" | "creating" | "redirecting">("idle");
+  const [error, setError] = useState("");
+
   const { register, handleSubmit, formState } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
   });
 
   const onSubmit = async (values: RegisterValues) => {
+    if (step !== "idle") return;
+
     try {
+      setStep("creating");
+      setError("");
       await registerOwner(values);
-      toast.success("Workshop created. Welcome to FundiFlow.");
-      router.push("/dashboard");
-    } catch {
-      toast.error("Registration failed. Try again.");
+      setStep("redirecting");
+      toast.success("Workshop created. Welcome to FundiFlow!");
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 700);
+    } catch (err) {
+      setStep("idle");
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("email-already-in-use")) {
+        setError("This email is already registered. Try signing in instead.");
+      } else {
+        setError("Registration failed. Please try again.");
+      }
     }
   };
 
+  const isBusy = step !== "idle";
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-amber-50 to-white p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <CardTitle>Create your tailoring workspace</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-            <div>
-              <Label htmlFor="displayName">Owner name</Label>
-              <Input id="displayName" {...register("displayName")} />
-            </div>
-            <div>
-              <Label htmlFor="businessName">Business name</Label>
-              <Input id="businessName" {...register("businessName")} />
-            </div>
-            <div>
-              <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" {...register("phone")} />
-            </div>
-            <div>
-              <Label htmlFor="location">Location</Label>
-              <Input id="location" {...register("location")} />
-            </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...register("email")} />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" {...register("password")} />
-            </div>
-            <div className="md:col-span-2">
-              <Button className="w-full" type="submit" disabled={formState.isSubmitting}>
-                {formState.isSubmitting ? "Creating workspace..." : "Create workspace"}
-              </Button>
-            </div>
-          </form>
-          <p className="mt-4 text-center text-sm text-slate-600">
-            Already have an account? <Link href="/login" className="font-medium text-emerald-700">Sign in</Link>
+      <div className="w-full max-w-2xl">
+        <div className="mb-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100">
+            <Building2 className="h-6 w-6 text-emerald-600" />
+          </div>
+          <h1 className="mt-3 text-xl font-bold text-slate-900">Create your tailoring workspace</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Set up your business in minutes. Invite your team and start managing orders.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+
+        <Card className="relative overflow-hidden">
+          <CardContent className="p-6">
+            <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
+              <div>
+                <Label htmlFor="displayName">Your name</Label>
+                <Input id="displayName" placeholder="Jane Tailor" {...register("displayName")} disabled={isBusy} />
+              </div>
+              <div>
+                <Label htmlFor="businessName">Business name</Label>
+                <Input id="businessName" placeholder="ABC Tailoring" {...register("businessName")} disabled={isBusy} />
+              </div>
+              <div>
+                <Label htmlFor="phone">Phone number</Label>
+                <Input id="phone" type="tel" placeholder="+254 7XX XXX XXX" {...register("phone")} disabled={isBusy} />
+              </div>
+              <div>
+                <Label htmlFor="location">Location</Label>
+                <Input id="location" placeholder="Nairobi, Kenya" {...register("location")} disabled={isBusy} />
+              </div>
+              <div>
+                <Label htmlFor="email">Email address</Label>
+                <Input id="email" type="email" placeholder="you@workshop.com" {...register("email")} disabled={isBusy} />
+              </div>
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input id="password" type="password" placeholder="Min. 6 characters" {...register("password")} disabled={isBusy} />
+              </div>
+
+              {error && (
+                <div className="md:col-span-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                  {error}
+                </div>
+              )}
+
+              <div className="md:col-span-2">
+                <Button className="w-full gap-2" type="submit" disabled={isBusy}>
+                  {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {step === "creating" && "Creating your workspace..."}
+                  {step === "redirecting" && "Setting up dashboard..."}
+                  {step === "idle" && (
+                    <>
+                      Create workspace
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-slate-600">
+              Already have an account?{" "}
+              <Link href="/login" className="font-medium text-emerald-700 hover:text-emerald-600">
+                Sign in
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
+
+        <div className="mt-6 text-center text-xs text-slate-400">
+          By creating an account, you agree to our Terms of Service and Privacy Policy.
+        </div>
+      </div>
     </div>
   );
 }

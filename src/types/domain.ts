@@ -21,6 +21,18 @@ export type PaymentStatus = "unpaid" | "partial" | "paid";
 export type PaymentMethod = "cash" | "mpesa";
 export type MaterialCategory = "buttons" | "zips" | "thread" | "elastic" | "lining" | "accessories";
 export type MovementType = "stock_in" | "consumption" | "wastage" | "adjustment";
+export type NotificationType =
+  | "order_assigned"
+  | "order_updated"
+  | "payment_received"
+  | "invitation_accepted"
+  | "message_received"
+  | "announcement"
+  | "low_stock"
+  | "member_joined"
+  | "system";
+export type ConversationType = "direct" | "announcement";
+export type AnnouncementPriority = "low" | "normal" | "high" | "urgent";
 
 export interface UserProfile {
   uid: string;
@@ -31,10 +43,68 @@ export interface UserProfile {
   businessId: string;
   active: boolean;
   mustChangePassword?: boolean;
+  photoURL?: string;
+  bio?: string;
+  phone?: string;
   invitedByUid?: string;
   invitedByName?: string;
   createdAt: Timestamp;
   lastActiveAt?: Timestamp;
+}
+
+export interface Notification {
+  id: string;
+  businessId: string;
+  recipientUid: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  link?: string;
+  read: boolean;
+  archived: boolean;
+  createdAt: Timestamp;
+  metadata?: Record<string, string>;
+}
+
+export interface Conversation {
+  id: string;
+  businessId: string;
+  participants: string[];
+  participantProfiles: Array<{
+    uid: string;
+    displayName: string;
+    photoURL?: string;
+  }>;
+  lastMessage?: {
+    text: string;
+    senderUid: string;
+    senderName: string;
+    createdAt: Timestamp;
+  };
+  type: ConversationType;
+  title?: string;
+  priority?: AnnouncementPriority;
+  pinned?: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface MessageAttachment {
+  type: "image" | "file";
+  url: string;
+  name?: string;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  businessId: string;
+  senderUid: string;
+  senderName: string;
+  text: string;
+  attachments?: MessageAttachment[];
+  readBy: string[];
+  createdAt: Timestamp;
 }
 
 export interface Business {

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { Loader2, ArrowRight, Mail, Lock } from "lucide-react";
 
 import { useAuth } from "@/features/auth/components/auth-context";
 import { loginSchema, type LoginValues } from "@/schemas/auth.schema";
@@ -29,45 +30,50 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const { login } = useAuth();
 
-  const [step, setStep] = useState<
-    "idle" | "authenticating" | "setting_up" | "redirecting"
-  >("idle");
+  const inviteToken = searchParams.get("invite");
+  const workspace = searchParams.get("workspace");
 
-  const { register, handleSubmit } = useForm<LoginValues>({
+  const [step, setStep] = useState<"idle" | "authenticating" | "setting_up" | "redirecting">("idle");
+  const [error, setError] = useState("");
+
+  const { register, handleSubmit, formState } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
   });
 
   const onSubmit = async (values: LoginValues) => {
-    if (step !== "idle") return; // prevents multiple clicks
+    if (step !== "idle") return;
 
     try {
       setStep("authenticating");
+      setError("");
 
-      const inviteToken = searchParams.get("invite");
-
-      // 1. login
       await login(values.email, values.password);
 
       setStep("setting_up");
 
-      // 2. handle invitation if exists
-      const { auth } = await import("@/lib/firebase");
-
-      if (inviteToken && auth.currentUser) {
-        await acceptInvitationByToken(inviteToken, auth.currentUser.uid);
+      if (inviteToken) {
+        const { auth } = await import("@/lib/firebase");
+        if (auth.currentUser) {
+          await acceptInvitationByToken(inviteToken, auth.currentUser.uid);
+        }
       }
 
       setStep("redirecting");
+      toast.success(inviteToken ? "Invitation accepted! Welcome aboard." : "Welcome back");
 
-      toast.success("Welcome back");
-
-      // small UX delay so user sees transition
       setTimeout(() => {
         router.push("/dashboard");
       }, 700);
     } catch (err) {
       setStep("idle");
-      toast.error("Login failed. Check your email and password.");
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("user-not-found") || message.includes("wrong-password") || message.includes("invalid-credential")) {
+        setError("Invalid email or password. Please try again.");
+      } else if (message.includes("too-many-requests")) {
+        setError("Too many attempts. Please try again later.");
+      } else {
+        setError("Login failed. Check your email and password.");
+      }
     }
   };
 
@@ -75,50 +81,108 @@ function LoginForm() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-emerald-50 to-white p-4">
-      <Card className="w-full max-w-md relative">
-        <CardHeader>
-          <CardTitle>Sign in to FundiFlow</CardTitle>
-        </CardHeader>
-
-        <CardContent>
-          <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...register("email")} disabled={isBusy} />
-            </div>
-
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" {...register("password")} disabled={isBusy} />
-            </div>
-
-            <Button className="w-full" type="submit" disabled={isBusy}>
-              {step === "authenticating" && "Signing in..."}
-              {step === "setting_up" && "Setting up your workspace..."}
-              {step === "redirecting" && "Redirecting..."}
-              {step === "idle" && "Sign in"}
-            </Button>
-          </form>
-
-          <p className="mt-4 text-center text-sm text-slate-600">
-            New tailoring business?{" "}
-            <Link href="/register" className="font-medium text-emerald-700">
-              Create account
-            </Link>
-          </p>
-        </CardContent>
-
-        {/* 🔥 Full UX lock overlay */}
-        {isBusy && (
-          <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center rounded-xl">
-            <div className="text-sm text-slate-700 animate-pulse text-center px-6">
-              {step === "authenticating" && "Signing you in..."}
-              {step === "setting_up" && "Setting up your workspace..."}
-              {step === "redirecting" && "Taking you to your dashboard..."}
-            </div>
+      <div className="w-full max-w-md">
+        {inviteToken && (
+          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm">
+            <p className="font-semibold text-emerald-800">You have been invited!</p>
+            <p className="mt-1 text-emerald-700">
+              Sign in with your temporary credentials to accept the invitation and join your workshop.
+            </p>
           </div>
         )}
-      </Card>
+
+        <Card className="relative overflow-hidden">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
+                <Mail className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <CardTitle>Sign in to FundiFlow</CardTitle>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {inviteToken ? "Accept your invitation" : "Welcome back to your workshop"}
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
+              <div>
+                <Label htmlFor="email">Email address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@workshop.com"
+                  autoComplete="email"
+                  {...register("email")}
+                  disabled={isBusy}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  {...register("password")}
+                  disabled={isBusy}
+                />
+              </div>
+
+              {error && (
+                <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                  {error}
+                </div>
+              )}
+
+              <Button className="w-full gap-2" type="submit" disabled={isBusy}>
+                {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                {step === "authenticating" && "Signing in..."}
+                {step === "setting_up" && "Setting up..."}
+                {step === "redirecting" && "Redirecting..."}
+                {step === "idle" && (
+                  <>
+                    {inviteToken ? "Accept invitation & sign in" : "Sign in"}
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+
+            <div className="mt-6 space-y-3 text-center text-sm">
+              <p className="text-slate-600">
+                New tailoring business?{" "}
+                <Link href="/register" className="font-medium text-emerald-700 hover:text-emerald-600">
+                  Create account
+                </Link>
+              </p>
+              {!inviteToken && (
+                <p>
+                  <Link href="/forgot-password" className="text-slate-500 hover:text-slate-700">
+                    Forgot password?
+                  </Link>
+                </p>
+              )}
+            </div>
+          </CardContent>
+
+          {isBusy && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/70 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+                <p className="text-sm text-slate-600">
+                  {step === "authenticating" && "Signing you in..."}
+                  {step === "setting_up" && inviteToken ? "Accepting invitation..." : "Preparing your workspace..."}
+                  {step === "redirecting" && "Taking you to your dashboard..."}
+                </p>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -127,8 +191,9 @@ function LoginFallback() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-emerald-50 to-white p-4">
       <Card className="w-full max-w-md">
-        <CardContent className="py-8 text-sm text-slate-500">
-          Loading sign in...
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+          <span className="ml-2 text-sm text-slate-500">Loading sign in...</span>
         </CardContent>
       </Card>
     </div>

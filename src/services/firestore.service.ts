@@ -131,6 +131,12 @@ export async function fetchBusinessProfile(businessId: string): Promise<Business
   return { ...(snapshot.data() as Omit<Business, "id">), id: snapshot.id };
 }
 
+export async function updateBusinessProfile(businessId: string, data: Partial<Pick<Business, "name" | "phone" | "location">>) {
+  await updateDoc(doc(businessesCollection(), businessId), {
+    ...data,
+  });
+}
+
 export async function createCustomer(businessId: string, payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">) {
   const phoneQuery = await getDocs(query(customersCollection(businessId), where("phone", "==", payload.phone)));
   if (!phoneQuery.empty) {

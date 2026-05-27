@@ -8,10 +8,14 @@ import { authStateListener, loginWithEmail, logoutUser, registerOwner, resolvePr
 import { fetchBusinessProfile } from "@/services/firestore.service";
 import { useSessionStore } from "@/store/session-store";
 
+export type OnboardingStep = "idle" | "authenticating" | "setting_up" | "redirecting" | "complete" | "error";
+
 interface AuthContextValue {
   user: (UserProfile & { name: string }) | null;
   business: Business | null;
   loading: boolean;
+  onboardingStep: OnboardingStep;
+  setOnboardingStep: (step: OnboardingStep) => void;
   login: (email: string, password: string) => Promise<void>;
   registerOwner: (input: {
     email: string;
@@ -24,6 +28,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   isOwner: boolean;
   isTailor: boolean;
+  isAdmin: boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -31,11 +37,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { profile, loading, setLoading, setProfile } = useSessionStore();
   const [business, setBusiness] = useState<Business | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("idle");
 
   useEffect(() => {
     const unsub = authStateListener(async (firebaseUser) => {
       if (!firebaseUser) {
         setProfile(null);
+        setBusiness(null);
         setLoading(false);
         return;
       }
@@ -53,6 +61,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [setLoading, setProfile]);
 
+  const refreshProfile = async () => {
+    const { auth } = await import("@/lib/firebase");
+    if (!auth.currentUser) return;
+    const resolved = await resolveProfile(auth.currentUser);
+    if (resolved) {
+      setProfile(resolved);
+    }
+  };
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user: profile
@@ -63,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : null,
       business,
       loading,
+      onboardingStep,
+      setOnboardingStep,
       login: async (email, password) => {
         await loginWithEmail(email, password);
       },
@@ -74,8 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       isOwner: profile?.role === "owner",
       isTailor: profile?.role === "tailor",
+      isAdmin: profile?.role === "admin_manager",
+      refreshProfile,
     }),
-    [profile, loading, business]
+    [profile, loading, business, onboardingStep]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -90,32 +111,41 @@ export function useAuth() {
 }
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, business } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (loading) return;
+
+    if (!user) {
       router.replace("/login");
       return;
     }
-    if (!loading && user?.mustChangePassword && pathname !== "/change-password") {
+
+    if (user.mustChangePassword && pathname !== "/change-password") {
       router.replace("/change-password");
       return;
     }
-    if (!loading && user && !canAccessRoute(user, pathname)) {
+
+    if (!canAccessRoute(user, pathname)) {
       router.replace("/dashboard");
     }
-  }, [loading, pathname, router, user]);
+  }, [loading, user, pathname, router]);
 
-  if (loading || !user) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">
-          Loading your workshop...
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <p className="text-sm text-slate-500">Loading your workshop...</p>
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return <>{children}</>;

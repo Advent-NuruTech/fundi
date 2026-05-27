@@ -1,11 +1,14 @@
 import { collection, type CollectionReference, type DocumentData } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type {
+  Conversation,
   Customer,
   EmployeeInvitation,
   FabricRoll,
   ImageMeta,
   InventoryMaterial,
+  Message,
+  Notification,
   Order,
   Payment,
   PurchaseOrder,
@@ -51,3 +54,12 @@ export const paymentsCollection = (businessId: string) =>
 
 export const imagesCollection = (businessId: string) =>
   collection(db, "businesses", businessId, "images") as CollectionReference<DbRecord<ImageMeta>>;
+
+export const notificationsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "notifications") as CollectionReference<DbRecord<Notification>>;
+
+export const conversationsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "conversations") as CollectionReference<DbRecord<Conversation>>;
+
+export const messagesCollection = (businessId: string, conversationId: string) =>
+  collection(db, "businesses", businessId, "conversations", conversationId, "messages") as CollectionReference<DbRecord<Message>>;
