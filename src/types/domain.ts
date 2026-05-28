@@ -311,3 +311,95 @@ export interface EmployeeInvitation {
 export interface TenantScoped {
   businessId: string;
 }
+
+// ─── FINANCE MODULE TYPES ───
+
+export type ExpenseCategory = "rent" | "salaries" | "transport" | "utilities" | "inventory_purchases" | "marketing" | "maintenance" | "miscellaneous";
+
+export interface Expense {
+  id: string;
+  businessId: string;
+  category: ExpenseCategory;
+  amount: number;
+  description: string;
+  notes?: string;
+  receiptUrl?: string;
+  supplierId?: string;
+  supplierName?: string;
+  expenseDate: Timestamp;
+  createdByUid: string;
+  createdByName: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type WithdrawalCategory = "owner_drawings" | "salary_advance" | "business_expenses" | "tax" | "other";
+
+export interface Withdrawal {
+  id: string;
+  businessId: string;
+  amount: number;
+  reason: string;
+  category: WithdrawalCategory;
+  withdrawnByUid: string;
+  withdrawnByName: string;
+  withdrawalDate: Timestamp;
+  notes?: string;
+  createdAt: Timestamp;
+}
+
+export type TransactionType = "payment_received" | "expense" | "withdrawal" | "inventory_purchase" | "refund" | "adjustment";
+export type TransactionStatus = "completed" | "pending" | "cancelled";
+
+export interface Transaction {
+  id: string;
+  businessId: string;
+  type: TransactionType;
+  amount: number;
+  description: string;
+  referenceId?: string;
+  referenceType?: string;
+  referenceLabel?: string;
+  linkedEntityId?: string;
+  linkedEntityType?: string;
+  linkedEntityName?: string;
+  performedByUid: string;
+  performedByName: string;
+  status: TransactionStatus;
+  notes?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type FinancePeriod = "daily" | "weekly" | "monthly" | "yearly" | "custom";
+
+export interface PeriodSummary {
+  revenue: number;
+  expenses: number;
+  withdrawals: number;
+  netProfit: number;
+  grossProfit: number;
+  expenseRatio: number;
+  profitMargin: number;
+  orderCount: number;
+  transactionCount: number;
+}
+
+export interface FinancialReport {
+  period: FinancePeriod;
+  startDate: string;
+  endDate: string;
+  summary: PeriodSummary;
+  breakdown: {
+    byCategory: Record<string, number>;
+    byDay: Array<{ date: string; revenue: number; expenses: number; profit: number }>;
+  };
+}
+
+export interface FinanceAlert {
+  type: "warning" | "danger" | "info" | "success";
+  title: string;
+  message: string;
+  metric?: string;
+  value?: number;
+}

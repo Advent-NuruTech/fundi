@@ -15,7 +15,9 @@ export type AppCapability =
   | "inventory.write"
   | "payments.read"
   | "payments.write"
-  | "analytics.read";
+  | "analytics.read"
+  | "finance.read"
+  | "finance.write";
 
 const roleCapabilities: Record<UserRole, AppCapability[]> = {
   owner: [
@@ -33,6 +35,8 @@ const roleCapabilities: Record<UserRole, AppCapability[]> = {
     "payments.read",
     "payments.write",
     "analytics.read",
+    "finance.read",
+    "finance.write",
   ],
   admin_manager: [
     "team.manage",
@@ -47,11 +51,13 @@ const roleCapabilities: Record<UserRole, AppCapability[]> = {
     "payments.read",
     "payments.write",
     "analytics.read",
+    "finance.read",
+    "finance.write",
   ],
   tailor: ["orders.read", "orders.assigned_only", "production.read", "production.write"],
   receptionist: ["customers.read", "customers.write", "orders.read", "orders.write", "payments.read", "payments.write"],
   inventory_manager: ["inventory.read", "inventory.write", "orders.read", "production.read"],
-  cashier: ["payments.read", "payments.write", "orders.read", "customers.read"],
+  cashier: ["payments.read", "payments.write", "orders.read", "customers.read", "finance.read"],
 };
 
 export function getUserRoles(profile: UserProfile | null | undefined): UserRole[] {
@@ -82,6 +88,9 @@ export function canAccessRoute(profile: UserProfile | null | undefined, pathname
   }
   if (pathname.startsWith("/analytics")) {
     return hasCapability(profile, "analytics.read");
+  }
+  if (pathname.startsWith("/finance")) {
+    return hasCapability(profile, "finance.read");
   }
   if (pathname.startsWith("/customers")) {
     return hasCapability(profile, "customers.read");

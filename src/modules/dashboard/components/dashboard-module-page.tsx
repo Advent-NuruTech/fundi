@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import type { InventoryMaterial, Order, Payment, PurchaseOrder, UserProfile } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/services/firestore.service";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatKes } from "@/lib/utils";
 import { usePermissions } from "@/modules/shared/use-permissions";
 
@@ -121,6 +123,35 @@ export function DashboardModulePage() {
         <Metric label="Revenue" value={formatKes(revenue)} tone="success" />
         <Metric label="Pending balances" value={formatKes(pendingBalances)} tone="danger" />
       </div>
+
+      {permissions.canReadFinance && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-emerald-800">Financial Summary</h3>
+            <Link href="/finance">
+              <Button variant="ghost" size="sm" className="text-emerald-700">View Finance →</Button>
+            </Link>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm">
+              <p className="text-xs text-slate-500">Today</p>
+              <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsToday))}</p>
+            </div>
+            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm">
+              <p className="text-xs text-slate-500">This Week</p>
+              <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsWeek))}</p>
+            </div>
+            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm">
+              <p className="text-xs text-slate-500">This Month</p>
+              <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsMonth))}</p>
+            </div>
+            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm">
+              <p className="text-xs text-slate-500">Outstanding</p>
+              <p className="font-semibold text-rose-600">{formatKes(pendingBalances)}</p>
+            </div>
+          </div>
+        </div>
+      )}
       <Card>
         <CardHeader><CardTitle>Overdue responsibility alerts</CardTitle></CardHeader>
         <CardContent className="space-y-2">

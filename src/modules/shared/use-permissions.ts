@@ -22,6 +22,8 @@ export function usePermissions() {
       canReadPayments: hasCapability(user, "payments.read"),
       canWritePayments: hasCapability(user, "payments.write"),
       canReadAnalytics: hasCapability(user, "analytics.read"),
+      canReadFinance: hasCapability(user, "finance.read"),
+      canWriteFinance: hasCapability(user, "finance.write"),
     }),
     [user]
   );

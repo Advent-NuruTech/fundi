@@ -14,6 +14,7 @@ import {
   BarChart3,
   MessageSquare,
   UserCircle,
+  Landmark,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ import { UserAvatar } from "@/components/profile/user-avatar";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Finance", href: "/finance", icon: Landmark },
   { label: "Customers", href: "/customers", icon: Users },
   { label: "Orders", href: "/orders", icon: ShoppingBag },
   { label: "Production", href: "/production", icon: Scissors },
@@ -45,6 +47,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     if (item.href.startsWith("/inventory")) return hasCapability(user, "inventory.read");
     if (item.href.startsWith("/payments")) return hasCapability(user, "payments.read");
     if (item.href.startsWith("/analytics")) return hasCapability(user, "analytics.read");
+    if (item.href.startsWith("/finance")) return hasCapability(user, "finance.read");
     if (item.href.startsWith("/employees")) return hasCapability(user, "team.manage");
     if (item.href.startsWith("/orders")) return hasCapability(user, "orders.read");
     if (item.href.startsWith("/customers")) return hasCapability(user, "customers.read");

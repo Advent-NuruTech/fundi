@@ -4,6 +4,7 @@ import type {
   Conversation,
   Customer,
   EmployeeInvitation,
+  Expense,
   FabricRoll,
   ImageMeta,
   InventoryMaterial,
@@ -14,7 +15,9 @@ import type {
   PurchaseOrder,
   StockMovement,
   Supplier,
+  Transaction,
   UserProfile,
+  Withdrawal,
 } from "@/types/domain";
 
 type DbRecord<T extends { id: string }> = Omit<T, "id"> & DocumentData;
@@ -63,3 +66,14 @@ export const conversationsCollection = (businessId: string) =>
 
 export const messagesCollection = (businessId: string, conversationId: string) =>
   collection(db, "businesses", businessId, "conversations", conversationId, "messages") as CollectionReference<DbRecord<Message>>;
+
+// ─── FINANCE COLLECTIONS ───
+
+export const expensesCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "expenses") as CollectionReference<DbRecord<Expense>>;
+
+export const withdrawalsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "withdrawals") as CollectionReference<DbRecord<Withdrawal>>;
+
+export const transactionsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "transactions") as CollectionReference<DbRecord<Transaction>>;
