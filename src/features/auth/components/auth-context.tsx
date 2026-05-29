@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { Business, UserProfile } from "@/types/domain";
 import { canAccessRoute } from "@/lib/permissions";
@@ -61,14 +61,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [setLoading, setProfile]);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     const { auth } = await import("@/lib/firebase");
     if (!auth.currentUser) return;
     const resolved = await resolveProfile(auth.currentUser);
     if (resolved) {
       setProfile(resolved);
     }
-  };
+  }, [setProfile]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -83,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onboardingStep,
       setOnboardingStep,
       login: async (email, password) => {
+        setLoading(true);
         await loginWithEmail(email, password);
       },
       registerOwner: async (input) => {
@@ -96,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: profile?.role === "admin_manager",
       refreshProfile,
     }),
-    [profile, loading, business, onboardingStep]
+    [profile, loading, business, onboardingStep, refreshProfile, setLoading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -111,7 +112,7 @@ export function useAuth() {
 }
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const { user, loading, business } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -120,6 +121,11 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
     if (!user) {
       router.replace("/login");
+      return;
+    }
+
+    if (!user.active) {
+      logoutUser().finally(() => router.replace("/login"));
       return;
     }
 

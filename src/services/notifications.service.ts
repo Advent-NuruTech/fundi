@@ -89,8 +89,16 @@ export function listenNotifications(
     limit(50)
   );
   return onSnapshot(q, (snapshot) => {
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    const expired = snapshot.docs.filter((docItem) => {
+      const createdAt = docItem.data().createdAt?.toDate?.();
+      return createdAt && createdAt.getTime() < cutoff;
+    });
+    void Promise.all(expired.map((docItem) => deleteDoc(docItem.ref)));
     callback(
-      snapshot.docs.map((docItem) => ({ ...docItem.data(), id: docItem.id } as unknown as Notification))
+      snapshot.docs
+        .filter((docItem) => !expired.includes(docItem))
+        .map((docItem) => ({ ...docItem.data(), id: docItem.id } as unknown as Notification))
     );
   });
 }
@@ -157,10 +165,10 @@ export async function bulkArchiveNotifications(businessId: string, recipientUid:
 }
 
 export async function cleanupOldNotifications() {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const q = query(
     collectionGroup(db, "notifications"),
-    where("createdAt", "<", thirtyDaysAgo)
+    where("createdAt", "<", fortyEightHoursAgo)
   );
   const snapshot = await getDocs(q);
   const batch = writeBatch(db);

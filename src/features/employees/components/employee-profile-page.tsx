@@ -7,9 +7,10 @@ import { toast } from "sonner";
 import type { Order, UserProfile, UserRole } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { usePermissions } from "@/modules/shared/use-permissions";
-import { listenMembers, listenOrders, updateMemberRoles } from "@/services/firestore.service";
+import { listenMembers, listenOrders, updateMemberCompensation, updateMemberRoles } from "@/services/firestore.service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const ROLE_OPTIONS: UserRole[] = ["admin_manager", "tailor", "receptionist", "inventory_manager", "cashier"];
 
@@ -21,6 +22,9 @@ export function EmployeeProfilePage() {
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([]);
+  const [payRate, setPayRate] = useState("");
+  const [payPeriod, setPayPeriod] = useState<"daily" | "weekly" | "monthly">("monthly");
+  const [nextPayDate, setNextPayDate] = useState("");
 
   useEffect(() => {
     if (!ready) return;
@@ -37,6 +41,9 @@ export function EmployeeProfilePage() {
   useEffect(() => {
     if (member) {
       setSelectedRoles(member.roles?.length ? member.roles : [member.role]);
+      setPayRate(String(member.payRate ?? ""));
+      setPayPeriod(member.payPeriod ?? "monthly");
+      setNextPayDate(member.nextPayDate ?? "");
     }
   }, [member]);
 
@@ -68,6 +75,10 @@ export function EmployeeProfilePage() {
         <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
           <div className="rounded-xl bg-slate-50 p-3">Active assigned orders: {assignedOrders.filter((o) => o.stage !== "delivered").length}</div>
           <div className="rounded-xl bg-slate-50 p-3">Delivered orders: {assignedOrders.filter((o) => o.stage === "delivered").length}</div>
+          <div className="rounded-xl bg-slate-50 p-3">
+            Pay: KES {(member.payRate ?? 0).toLocaleString()} / {member.payPeriod ?? "monthly"}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3">Next pay date: {member.nextPayDate || "Not set"}</div>
         </div>
 
         {permissions.canManageRoles && member.role !== "owner" && (
@@ -100,6 +111,45 @@ export function EmployeeProfilePage() {
               }}
             >
               Save roles
+            </Button>
+          </div>
+        )}
+
+        {permissions.canManageTeam && member.role !== "owner" && (
+          <div className="mt-6 space-y-3">
+            <p className="text-sm font-semibold">Compensation</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={payRate}
+                onChange={(e) => setPayRate(e.target.value)}
+                placeholder="Salary / pay"
+              />
+              <select
+                value={payPeriod}
+                onChange={(e) => setPayPeriod(e.target.value as "daily" | "weekly" | "monthly")}
+                className="flex h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <Input type="date" value={nextPayDate} onChange={(e) => setNextPayDate(e.target.value)} />
+            </div>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await updateMemberCompensation(businessId, member.uid, {
+                  payRate: Number(payRate) || 0,
+                  payPeriod,
+                  nextPayDate,
+                });
+                toast.success("Compensation updated");
+              }}
+            >
+              Save compensation
             </Button>
           </div>
         )}

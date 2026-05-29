@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import Link from "next/link";
 import { Plus, Pencil, Trash2, Receipt, Search, X } from "lucide-react";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { listenExpenses, createExpense, updateExpense, deleteExpense } from "@/services/expenses.service";
 import { calculateExpenses, expensesByCategory } from "@/services/finance.service";
 import type { Expense, ExpenseCategory } from "@/types/domain";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -175,6 +175,14 @@ export function ExpensesModulePage() {
           <Plus className="mr-1.5 h-4 w-4" />
           Add Expense
         </Button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 text-sm">
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance">Overview</Link>
+        <Link className="rounded-xl bg-slate-900 px-3 py-2 font-medium text-white" href="/finance/expenses">Expenses</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/withdrawals">Withdrawals</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/transactions">Transactions</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/reports">Reports</Link>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">

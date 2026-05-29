@@ -117,7 +117,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="h-screen overflow-hidden bg-slate-50">
       {/* Mobile header with notification/message bells */}
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
         <div className="flex items-center gap-3">
@@ -136,9 +136,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-[1500px]">
+      <div className="mx-auto flex h-full max-w-[1500px]">
         {/* Desktop sidebar - no notification icons here */}
-        <aside className="hidden h-screen w-64 border-r border-slate-200 bg-white lg:block">
+        <aside className="hidden h-screen w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
           <div className="flex h-full flex-col">
             <div className="border-b border-slate-200 px-5 py-4">
               <div className="text-lg font-bold text-emerald-700">{business?.name || "FundiFlow"}</div>
@@ -183,7 +183,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         {open && <button className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu" />}
 
         {/* Main content area with desktop notification/message bar */}
-        <main className="flex min-h-screen flex-1 flex-col">
+        <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
           {/* Desktop notification/message bar - only visible on lg+ */}
           <div className="hidden border-b border-slate-200 bg-white lg:flex items-center justify-end gap-2 px-6 py-2">
             <span className="text-xs text-slate-400 mr-auto">
@@ -192,7 +192,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <MessageBell />
             <NotificationBell />
           </div>
-          <div className="flex-1 p-4 sm:p-6">{children}</div>
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
         </main>
       </div>
     </div>

@@ -9,6 +9,7 @@ import {
   createConversation,
 } from "@/services/messaging.service";
 import { listenMembers } from "@/services/firestore.service";
+import { uploadImage } from "@/services/cloudinary/upload.service";
 import { UserAvatar } from "@/components/profile/user-avatar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,8 @@ import {
   Send,
   ArrowLeft,
   Loader2,
-  UserPlus,
+  Search,
+  ImageIcon,
 } from "lucide-react";
 import type { Conversation, Message, UserProfile } from "@/types/domain";
 
@@ -34,8 +36,11 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showMobileList, setShowMobileList] = useState(true);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Conversations
   useEffect(() => {
@@ -96,6 +101,7 @@ export default function MessagesPage() {
           },
           member,
         ],
+        type: "direct",
       });
 
       setSelectedConv(convId);
@@ -107,12 +113,47 @@ export default function MessagesPage() {
     }
   };
 
+  const handleImageSend = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.businessId || !selectedConv || uploadingImage) return;
+
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadImage({ file, businessId: user.businessId, uploadedByUid: user.uid });
+      await sendMessage({
+        businessId: user.businessId,
+        conversationId: selectedConv,
+        senderUid: user.uid,
+        senderName: user.displayName,
+        text: "",
+        attachments: [{ type: "image", url: uploaded.url, name: file.name }],
+      });
+    } catch (err) {
+      console.error("Failed to upload image", err);
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
+
+  const filteredMembers = members
+    .filter((m) => m.uid !== user?.uid)
+    .filter((m) =>
+      memberSearch
+        ? m.displayName?.toLowerCase().includes(memberSearch.toLowerCase())
+        : true
+    );
+
+  const otherMembersForNew = filteredMembers.filter(
+    (m) => !conversations.some((c) => c.participants.includes(m.uid))
+  );
 
   const selectedConversation = conversations.find(
     (c) => c.id === selectedConv
@@ -125,9 +166,22 @@ export default function MessagesPage() {
 
   // ---------------- CONVERSATION LIST ----------------
   const ConversationList = (
-    <div className="divide-y divide-slate-100">
-      {conversations.length > 0 ? (
-        conversations.map((conv) => {
+    <div className="flex flex-col">
+      {/* Search members */}
+      <div className="px-3 py-2 border-b shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Input
+            placeholder="Search members..."
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            className="pl-8 h-9 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {conversations.length > 0 && conversations.map((conv) => {
           const other = conv.participantProfiles.filter(
             (p) => p.uid !== user?.uid
           );
@@ -176,43 +230,73 @@ export default function MessagesPage() {
               </div>
             </button>
           );
-        })
-      ) : (
-        <div className="p-3 space-y-3">
-          <EmptyState
-            icon={<MessageSquare className="h-8 w-8" />}
-            title="No conversations yet"
-            description="Start a chat with a team member"
-          />
+        })}
 
-          <div className="space-y-2">
-            {members
-              .filter((m) => m.uid !== user?.uid)
-              .map((member) => (
+        {/* New conversation starters */}
+        {otherMembersForNew.length > 0 && (
+          <div className="px-3 py-2">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
+              Start a conversation
+            </p>
+            <div className="space-y-1">
+              {otherMembersForNew.map((member) => (
                 <button
                   key={member.uid}
                   onClick={() => startConversation(member)}
                   disabled={creating}
-                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition"
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition text-left"
                 >
                   <UserAvatar profile={member} size="sm" />
-                  <div className="text-left flex-1">
-                    <p className="text-sm font-medium text-slate-900">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">
                       {member.displayName}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      Tap to start chat
-                    </p>
+                    <p className="text-xs text-slate-500">Start chat</p>
                   </div>
-
-                  {creating && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
+                  {creating && <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
                 </button>
               ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {conversations.length === 0 && otherMembersForNew.length === 0 && filteredMembers.length === 0 && (
+          <div className="p-6">
+            <EmptyState
+              icon={<MessageSquare className="h-8 w-8" />}
+              title="No conversations yet"
+              description="No other members found to start a chat with"
+            />
+          </div>
+        )}
+
+        {conversations.length === 0 && otherMembersForNew.length === 0 && filteredMembers.length > 0 && (
+          <div className="px-3 py-2">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
+              Start a conversation
+            </p>
+            <div className="space-y-1">
+              {filteredMembers.map((member) => (
+                <button
+                  key={member.uid}
+                  onClick={() => startConversation(member)}
+                  disabled={creating}
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition text-left"
+                >
+                  <UserAvatar profile={member} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">
+                      {member.displayName}
+                    </p>
+                    <p className="text-xs text-slate-500">Start chat</p>
+                  </div>
+                  {creating && <Loader2 className="h-4 w-4 animate-spin shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -220,7 +304,7 @@ export default function MessagesPage() {
   const MessageView = selectedConversation ? (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b px-4 py-3">
+      <div className="flex items-center gap-3 border-b px-4 py-3 shrink-0">
         <button
           className="lg:hidden"
           onClick={() => setShowMobileList(true)}
@@ -269,9 +353,27 @@ export default function MessagesPage() {
                     </p>
                   )}
 
-                  <p className="whitespace-pre-wrap break-words">
-                    {msg.text}
-                  </p>
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="space-y-1 mb-1">
+                      {msg.attachments.map((att, i) =>
+                        att.type === "image" ? (
+                          <img
+                            key={i}
+                            src={att.url}
+                            alt={att.name || "Image"}
+                            className="max-w-full rounded-lg max-h-48 object-cover cursor-pointer"
+                            onClick={() => window.open(att.url, "_blank")}
+                          />
+                        ) : null
+                      )}
+                    </div>
+                  )}
+
+                  {msg.text && (
+                    <p className="whitespace-pre-wrap break-words">
+                      {msg.text}
+                    </p>
+                  )}
 
                   <p className="text-[10px] text-right opacity-60 mt-1">
                     {msg.createdAt
@@ -292,7 +394,29 @@ export default function MessagesPage() {
       </div>
 
       {/* Input */}
-      <div className="border-t p-4 flex gap-2">
+      <div className="border-t p-4 flex gap-2 shrink-0">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSend}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-10 w-10 p-0 shrink-0"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadingImage || !selectedConv}
+        >
+          {uploadingImage ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ImageIcon className="h-4 w-4" />
+          )}
+        </Button>
+
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -303,6 +427,7 @@ export default function MessagesPage() {
         <Button
           onClick={handleSend}
           disabled={!text.trim() || sending}
+          className="shrink-0"
         >
           {sending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -324,19 +449,19 @@ export default function MessagesPage() {
 
   // ---------------- ROOT ----------------
   return (
-    <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-6xl overflow-hidden rounded-2xl border bg-white">
+    <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-2xl border bg-white">
       {/* Sidebar */}
       <div
         className={cn(
-          "w-full lg:w-72 border-r",
+          "w-full lg:w-72 border-r flex flex-col",
           showMobileList ? "block" : "hidden lg:block"
         )}
       >
-        <div className="px-4 py-3 border-b">
+        <div className="px-4 py-3 border-b shrink-0">
           <h2 className="text-sm font-semibold">Messages</h2>
         </div>
 
-        <div className="h-[calc(100%-53px)] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto">
           {ConversationList}
         </div>
       </div>

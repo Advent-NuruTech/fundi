@@ -13,11 +13,11 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   AlertTriangle,
-  FileText,
   Download,
   Calendar,
-  Smartphone,
+  Plus,
 } from "lucide-react";
+import Link from "next/link";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { listenAllFinanceData, type FinanceData } from "@/services/finance.service";
 import { useWeeklyReport } from "./use-weekly-report";
@@ -27,7 +27,6 @@ import {
   calculateWithdrawals,
   calculateInventoryValue,
   calculateOutstandingBalances,
-  calculateCustomerOutstandingBalances,
   calculateCashIn,
   calculateCashOut,
   calculateNetProfit,
@@ -40,21 +39,19 @@ import {
   generateFinanceAlerts,
   calculateHealthScore,
   calculateTrend,
+  calculatePayrollLiability,
+  payrollAlerts,
 } from "@/services/finance.service";
-import { lowStockMaterials, dueTodayOrders, revenueFromPayments } from "@/services/firestore.service";
+import { lowStockMaterials, dueTodayOrders } from "@/services/firestore.service";
 import { StatsCard } from "@/components/ui/stats-card";
-import { ChartCard, FinanceAreaChart, FinanceBarChart, FinancePieChart } from "@/components/ui/finance-chart";
+import { ChartCard, FinanceAreaChart, FinancePieChart } from "@/components/ui/finance-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs } from "@/components/ui/tabs";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { formatKes } from "@/lib/utils";
-import { usePermissions } from "@/modules/shared/use-permissions";
 
 export function FinanceModulePage() {
   const { businessId, ready } = useBusinessContext();
-  const permissions = usePermissions();
   const [data, setData] = useState<FinanceData | null>(null);
 
   useEffect(() => {
@@ -86,6 +83,7 @@ export function FinanceModulePage() {
 
     const monthExpenses = calculateExpenses(data.expenses, monthStart, todayEnd);
     const monthWithdrawals = calculateWithdrawals(data.withdrawals, monthStart, todayEnd);
+    const payrollLiability = calculatePayrollLiability(data.members);
     const totalExpenses = calculateExpenses(data.expenses);
     const totalWithdrawals = calculateWithdrawals(data.withdrawals);
 
@@ -96,9 +94,9 @@ export function FinanceModulePage() {
     const cashOut = calculateCashOut(data.expenses, data.withdrawals, data.purchaseOrders);
 
     const monthInventoryCost = 0; // Simplified - would need cost tracking per order
-    const netProfit = calculateNetProfit(monthRevenue, monthExpenses, monthWithdrawals, monthInventoryCost);
+    const netProfit = calculateNetProfit(monthRevenue, monthExpenses + payrollLiability, monthWithdrawals, monthInventoryCost);
     const profitMargin = calculateProfitMargin(monthRevenue, netProfit);
-    const expenseRatio = calculateExpenseRatio(monthExpenses, monthRevenue);
+    const expenseRatio = calculateExpenseRatio(monthExpenses + payrollLiability, monthRevenue);
 
     const trends = comparePeriods("monthly", monthRevenue, monthExpenses, monthWithdrawals, data.payments, data.expenses, data.withdrawals);
 
@@ -115,7 +113,7 @@ export function FinanceModulePage() {
       overdue.length,
       outstandingBalances,
       inventoryValue
-    );
+    ).concat(payrollAlerts(data.members));
 
     const health = calculateHealthScore(monthRevenue, monthExpenses, monthWithdrawals, outstandingBalances, inventoryValue);
 
@@ -126,6 +124,7 @@ export function FinanceModulePage() {
       yearRevenue,
       monthExpenses,
       monthWithdrawals,
+      payrollLiability,
       totalExpenses,
       totalWithdrawals,
       inventoryValue,
@@ -158,14 +157,14 @@ export function FinanceModulePage() {
     const expMap = new Map(dailyExpenses.map((e) => [e.date, e.amount]));
     const allDates = [...new Set([...revMap.keys(), ...expMap.keys()])].sort();
 
-    let runningProfit = 0;
-    return allDates.map((date) => {
+    return allDates.reduce<Array<{ date: string; revenue: number; expenses: number; profit: number; cumulativeProfit: number }>>((rows, date) => {
       const revenue = revMap.get(date) ?? 0;
       const expenses = expMap.get(date) ?? 0;
       const profit = revenue - expenses;
-      runningProfit += profit;
-      return { date, revenue, expenses, profit, cumulativeProfit: runningProfit };
-    });
+      const previous = rows.at(-1)?.cumulativeProfit ?? 0;
+      rows.push({ date, revenue, expenses, profit, cumulativeProfit: previous + profit });
+      return rows;
+    }, []);
   }, [dailyRevenue, dailyExpenses]);
 
   const expenseCategoryData = useMemo(() => {
@@ -232,7 +231,29 @@ export function FinanceModulePage() {
             <Download className="mr-1.5 h-4 w-4" />
             Export
           </Button>
+          <Link
+            href="/finance/expenses"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Expense
+          </Link>
+          <Link
+            href="/finance/withdrawals"
+            className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-600 px-3 text-sm font-medium text-white transition hover:bg-emerald-500"
+          >
+            <Wallet className="mr-1.5 h-4 w-4" />
+            Withdrawal
+          </Link>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 text-sm">
+        <Link className="rounded-xl bg-slate-900 px-3 py-2 font-medium text-white" href="/finance">Overview</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/expenses">Expenses</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/withdrawals">Withdrawals</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/transactions">Transactions</Link>
+        <Link className="rounded-xl px-3 py-2 font-medium text-slate-600 hover:bg-slate-100" href="/finance/reports">Reports</Link>
       </div>
 
       {/* Alerts */}
@@ -322,6 +343,12 @@ export function FinanceModulePage() {
           variant="warning"
           icon={<Wallet className="h-4 w-4" />}
         />
+        <StatsCard
+          title="Payroll Due"
+          value={formatKes(metrics.payrollLiability)}
+          variant="warning"
+          icon={<Users className="h-4 w-4" />}
+        />
       </div>
 
       {/* Secondary Stats Row */}
@@ -399,6 +426,10 @@ export function FinanceModulePage() {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-500">Withdrawals</span>
                 <span className="font-medium text-amber-600">{formatKes(metrics.monthWithdrawals)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Payroll Due</span>
+                <span className="font-medium text-blue-600">{formatKes(metrics.payrollLiability)}</span>
               </div>
               <div className="border-t border-slate-200 pt-2">
                 <div className="flex items-center justify-between text-sm">

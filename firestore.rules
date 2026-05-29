@@ -61,9 +61,18 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow create: if signedIn() && request.auth.uid == uid;
-      allow update: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && (
+        request.auth.uid == uid ||
+        (businessId(request.auth.uid) == resource.data.businessId && ownerOrAdmin(request.auth.uid))
+      );
+      allow create: if signedIn() && (
+        request.auth.uid == uid ||
+        (businessId(request.auth.uid) == request.resource.data.businessId && ownerOrAdmin(request.auth.uid) && !isOwnerProfile(request.resource.data))
+      );
+      allow update: if signedIn() && (
+        request.auth.uid == uid ||
+        (businessId(request.auth.uid) == resource.data.businessId && ownerOrAdmin(request.auth.uid) && !isOwnerProfile(resource.data) && !isOwnerProfile(request.resource.data))
+      );
       allow delete: if false;
     }
 
@@ -75,18 +84,30 @@ service cloud.firestore {
       allow delete: if sameBusiness(bid) && hasRole(request.auth.uid, 'owner');
 
       match /members/{uid} {
-        allow read: if sameBusiness(bid);
+        allow read: if sameBusiness(bid) && (request.auth.uid == uid || ownerOrAdmin(request.auth.uid));
         allow create: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid) && !isOwnerProfile(request.resource.data);
         allow update: if sameBusiness(bid) && (
           hasRole(request.auth.uid, 'owner') ||
-          (hasRole(request.auth.uid, 'admin_manager') && !isOwnerProfile(resource.data) && !isOwnerProfile(request.resource.data))
+          (hasRole(request.auth.uid, 'admin_manager') && !isOwnerProfile(resource.data) && !isOwnerProfile(request.resource.data)) ||
+          (
+            request.auth.uid == uid &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'mustChangePassword', 'lastActiveAt'])
+          )
         );
         allow delete: if sameBusiness(bid) && hasRole(request.auth.uid, 'owner') && !isOwnerProfile(resource.data);
       }
 
       match /invitations/{docId} {
-        allow read, create, update: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
-        allow delete: if false;
+        allow read, create: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow update: if sameBusiness(bid) && (
+          ownerOrAdmin(request.auth.uid) ||
+          (
+            resource.data.invitedUid == request.auth.uid &&
+            resource.data.status == 'pending' &&
+            request.resource.data.status == 'accepted'
+          )
+        );
+        allow delete: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
       }
 
       match /customers/{docId} {
@@ -138,6 +159,30 @@ service cloud.firestore {
         allow read: if sameBusiness(bid);
         allow create: if sameBusiness(bid) && canManagePayments(request.auth.uid);
         allow update, delete: if false;
+      }
+
+      match /expenses/{docId} {
+        allow read: if sameBusiness(bid) && (ownerOrAdmin(request.auth.uid) || hasRole(request.auth.uid, 'cashier'));
+        allow create, update: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow delete: if sameBusiness(bid) && hasRole(request.auth.uid, 'owner');
+      }
+
+      match /withdrawals/{docId} {
+        allow read: if sameBusiness(bid) && (ownerOrAdmin(request.auth.uid) || hasRole(request.auth.uid, 'cashier'));
+        allow create, update: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow delete: if sameBusiness(bid) && hasRole(request.auth.uid, 'owner');
+      }
+
+      match /transactions/{docId} {
+        allow read: if sameBusiness(bid) && (ownerOrAdmin(request.auth.uid) || hasRole(request.auth.uid, 'cashier'));
+        allow create: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow update, delete: if false;
+      }
+
+      match /notifications/{docId} {
+        allow read: if sameBusiness(bid) && resource.data.recipientUid == request.auth.uid;
+        allow create: if sameBusiness(bid) && ownerOrAdmin(request.auth.uid);
+        allow update, delete: if sameBusiness(bid) && resource.data.recipientUid == request.auth.uid;
       }
 
       match /images/{docId} {

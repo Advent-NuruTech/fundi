@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ExternalLink, Package, AlertTriangle, ImageIcon } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ExternalLink, Package, AlertTriangle, ImageIcon, ShoppingCart } from "lucide-react";
 import type { InventoryMaterial, Supplier } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { fetchMaterialById, fetchSupplierById } from "@/services/firestore.service";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatKes } from "@/lib/utils";
 
 export function MaterialDetailModulePage() {
   const params = useParams<{ materialId: string }>();
+  const router = useRouter();
   const { businessId, ready } = useBusinessContext();
   const [material, setMaterial] = useState<InventoryMaterial | null>(null);
   const [supplier, setSupplier] = useState<Supplier | null>(null);
@@ -57,6 +59,8 @@ export function MaterialDetailModulePage() {
   const isLowStock = material.quantity <= material.reorderLevel;
   const fabricMeta = material.fabricMeta;
 
+  const allImages = material.images || (material.imageUrl ? [{ url: material.imageUrl, publicId: material.imagePublicId || "" }] : []);
+
   return (
     <div className="space-y-4">
       <Card>
@@ -70,12 +74,22 @@ export function MaterialDetailModulePage() {
               )}
               <CardTitle>{material.name}</CardTitle>
             </div>
-            {isLowStock && (
-              <Badge variant="warning" className="gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                Low Stock
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {isLowStock && (
+                <Badge variant="warning" className="gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Low Stock
+                </Badge>
+              )}
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => router.push(`/inventory?section=purchase-orders&reorderMaterialId=${material.id}&reorderSupplierId=${material.supplierId || ""}&reorderQuantity=${Math.max(material.reorderLevel, material.quantity + 1)}&reorderUnit=${material.unitName}&reorderUnitCost=${material.averageUnitCost}`)}
+              >
+                <ShoppingCart className="h-4 w-4 mr-1" />
+                Reorder
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -104,15 +118,19 @@ export function MaterialDetailModulePage() {
                   <p className="text-xs text-slate-400 mt-0.5">{supplier.phone}</p>
                 )}
               </div>
-
-              {material.imageUrl && (
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500 mb-2">Image</p>
-                  <img src={material.imageUrl} alt={material.name} className="max-h-48 rounded-lg object-cover" />
-                </div>
-              )}
             </div>
           </div>
+
+          {allImages.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-slate-500 mb-2">Images ({allImages.length})</p>
+              <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin" }}>
+                {allImages.map((img, i) => (
+                  <img key={i} src={img.url} alt={`${material.name} ${i + 1}`} className="h-24 w-24 shrink-0 rounded-lg object-contain border" />
+                ))}
+              </div>
+            </div>
+          )}
 
           {fabricMeta && (
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

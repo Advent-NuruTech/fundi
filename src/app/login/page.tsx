@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Loader2, ArrowRight, Mail, Lock } from "lucide-react";
+import { Loader2, ArrowRight, Mail } from "lucide-react";
 
 import { useAuth } from "@/features/auth/components/auth-context";
 import { loginSchema, type LoginValues } from "@/schemas/auth.schema";
@@ -28,15 +28,13 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, refreshProfile } = useAuth();
 
   const inviteToken = searchParams.get("invite");
-  const workspace = searchParams.get("workspace");
-
   const [step, setStep] = useState<"idle" | "authenticating" | "setting_up" | "redirecting">("idle");
   const [error, setError] = useState("");
 
-  const { register, handleSubmit, formState } = useForm<LoginValues>({
+  const { register, handleSubmit } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
   });
 
@@ -55,6 +53,7 @@ function LoginForm() {
         const { auth } = await import("@/lib/firebase");
         if (auth.currentUser) {
           await acceptInvitationByToken(inviteToken, auth.currentUser.uid);
+          await refreshProfile();
         }
       }
 
@@ -71,6 +70,8 @@ function LoginForm() {
         setError("Invalid email or password. Please try again.");
       } else if (message.includes("too-many-requests")) {
         setError("Too many attempts. Please try again later.");
+      } else if (message.includes("invitation")) {
+        setError(message);
       } else {
         setError("Login failed. Check your email and password.");
       }

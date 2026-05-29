@@ -1,5 +1,4 @@
 import {
-  addDoc,
   doc,
   getDoc,
   getDocs,
@@ -8,8 +7,6 @@ import {
   query,
   serverTimestamp,
   Timestamp,
-  updateDoc,
-  deleteDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -79,14 +76,32 @@ export async function updateExpense(
   expenseId: string,
   payload: Partial<Omit<Expense, "id" | "businessId" | "createdAt" | "createdByUid" | "createdByName">>
 ) {
-  await updateDoc(doc(expensesCollection(businessId), expenseId), {
+  const batch = writeBatch(db);
+  batch.update(doc(expensesCollection(businessId), expenseId), {
     ...payload,
     updatedAt: serverTimestamp(),
   });
+  const txSnapshot = await getDocs(query(transactionsCollection(businessId), where("referenceId", "==", expenseId)));
+  txSnapshot.docs.forEach((tx) => {
+    batch.update(tx.ref, {
+      amount: payload.amount !== undefined ? -Math.abs(payload.amount) : tx.data().amount,
+      description: payload.description ? `Expense: ${payload.description}` : tx.data().description,
+      referenceLabel: payload.category ?? tx.data().referenceLabel,
+      linkedEntityId: payload.supplierId ?? tx.data().linkedEntityId ?? "",
+      linkedEntityName: payload.supplierName ?? tx.data().linkedEntityName ?? "",
+      notes: payload.notes ?? tx.data().notes ?? "",
+      updatedAt: serverTimestamp(),
+    });
+  });
+  await batch.commit();
 }
 
 export async function deleteExpense(businessId: string, expenseId: string) {
-  await deleteDoc(doc(expensesCollection(businessId), expenseId));
+  const batch = writeBatch(db);
+  batch.delete(doc(expensesCollection(businessId), expenseId));
+  const txSnapshot = await getDocs(query(transactionsCollection(businessId), where("referenceId", "==", expenseId)));
+  txSnapshot.docs.forEach((tx) => batch.delete(tx.ref));
+  await batch.commit();
 }
 
 export async function fetchExpenseById(businessId: string, expenseId: string): Promise<Expense | null> {

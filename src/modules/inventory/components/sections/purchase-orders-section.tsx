@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { createPurchaseOrder, receiveStockFromPurchaseOrder } from "@/services/firestore.service";
+import { createMaterial, createPurchaseOrder, createSupplier, updatePurchaseOrder, deletePurchaseOrder, receiveStockFromPurchaseOrder, createUnit } from "@/services/firestore.service";
 import { notifyPurchaseOrderCreated, notifyStockReceived, notifyPurchaseOrderReceived } from "@/services/notification-catalog";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
 import { formatKes } from "@/lib/utils";
 import type { PurchaseOrder, Supplier, InventoryMaterial } from "@/types/domain";
-import { addDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Plus, X, ChevronRight, Package, Calendar, Truck, DollarSign, CheckCircle, Clock, Search } from "lucide-react";
+import { Plus, X, ChevronRight, Package, Calendar, Truck, DollarSign, CheckCircle, Clock, Search, Pencil, Trash2, AlertTriangle } from "lucide-react";
 
 interface PoForm {
   supplierId: string;
@@ -196,17 +194,16 @@ export function PurchaseOrdersSection({
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  
+  const [editingPo, setEditingPo] = useState<PurchaseOrder | null>(null);
+
   const [suppliers, setSuppliers] = useState(initialSuppliers);
   const [materials, setMaterials] = useState(initialMaterials);
   const [units, setUnits] = useState(initialUnits);
-  
+
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [showAddMaterial, setShowAddMaterial] = useState(false);
-  const [showAddUnit, setShowAddUnit] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
   const [newMaterialName, setNewMaterialName] = useState('');
-  const [newUnitName, setNewUnitName] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
   const { register, handleSubmit, reset, setValue, watch } = useForm<PoForm>({
@@ -224,6 +221,42 @@ export function PurchaseOrdersSection({
   const unitOptions: SearchableOption[] = units.map((u) => ({ value: u.name, label: u.name }));
 
   const selectedMaterial = materials.find((m) => m.id === selectedMaterialId);
+  const formQuantity = Number(watch("quantity") || 0);
+  const formUnitCost = Number(watch("unitCost") || 0);
+  const formUnit = watch("unit") || selectedMaterial?.unitName || "";
+
+  // Handle reorder params from URL
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const reorderMaterialId = searchParams.get("reorderMaterialId");
+    const reorderSupplierId = searchParams.get("reorderSupplierId");
+    const reorderQuantity = searchParams.get("reorderQuantity");
+    const reorderUnit = searchParams.get("reorderUnit");
+    const reorderUnitCost = searchParams.get("reorderUnitCost");
+
+    if (reorderMaterialId) {
+      setShowPurchaseForm(true);
+      setValue("materialId", reorderMaterialId);
+      if (reorderSupplierId) setValue("supplierId", reorderSupplierId);
+      if (reorderQuantity) setValue("quantity", Number(reorderQuantity));
+      if (reorderUnit) setValue("unit", reorderUnit);
+      if (reorderUnitCost) setValue("unitCost", Number(reorderUnitCost));
+    }
+  }, [setValue]);
+
+  useEffect(() => {
+    setReceiveQuantities((current) => {
+      const defaults: Record<string, number> = {};
+      for (const po of purchaseOrders) {
+        if (po.status === "received") continue;
+        const remaining = po.quantity - (po.quantityReceived || 0);
+        if (remaining > 0) {
+          defaults[po.id] = current[po.id] ?? remaining;
+        }
+      }
+      return defaults;
+    });
+  }, [purchaseOrders]);
 
   const handleAddSupplier = async () => {
     if (!newSupplierName.trim()) {
@@ -233,25 +266,20 @@ export function PurchaseOrdersSection({
     
     setIsAdding(true);
     try {
-      const q = query(
-        collection(db, `businesses/${businessId}/suppliers`), 
-        where('name', '==', newSupplierName.trim())
-      );
-      const existing = await getDocs(q);
-      
-      if (!existing.empty) {
+      const existing = suppliers.find((supplier) => supplier.name.toLowerCase() === newSupplierName.trim().toLowerCase());
+      if (existing) {
         toast.error("Supplier Already Exists");
         return;
       }
-      
-      const docRef = await addDoc(collection(db, `businesses/${businessId}/suppliers`), {
+
+      const supplierId = await createSupplier(businessId, {
         name: newSupplierName.trim(),
         businessId,
-        createdAt: new Date().toISOString(),
+        phone: "",
       });
       
       const newSupplier: Supplier = { 
-        id: docRef.id, 
+        id: supplierId, 
         businessId,
         name: newSupplierName.trim(),
         phone: '',
@@ -259,7 +287,7 @@ export function PurchaseOrdersSection({
       };
       
       setSuppliers(prev => [...prev, newSupplier]);
-      setValue("supplierId", docRef.id);
+      setValue("supplierId", supplierId);
       setNewSupplierName('');
       setShowAddSupplier(false);
       toast.success("Supplier Added Successfully");
@@ -279,28 +307,27 @@ export function PurchaseOrdersSection({
     
     setIsAdding(true);
     try {
-      const q = query(
-        collection(db, `businesses/${businessId}/inventoryMaterials`), 
-        where('name', '==', newMaterialName.trim())
-      );
-      const existing = await getDocs(q);
-      
-      if (!existing.empty) {
+      const existing = materials.find((material) => material.name.toLowerCase() === newMaterialName.trim().toLowerCase());
+
+      if (existing) {
         toast.error("Material Already Exists");
         return;
       }
-      
-      const docRef = await addDoc(collection(db, `businesses/${businessId}/inventoryMaterials`), {
+
+      const materialId = await createMaterial(businessId, {
         name: newMaterialName.trim(),
         businessId,
+        categoryId: "",
+        categoryName: "",
+        unitId: "",
+        unitName: "",
         quantity: 0,
-        unitName: '',
-        unitCost: 0,
-        createdAt: new Date().toISOString(),
+        reorderLevel: 0,
+        averageUnitCost: 0,
       });
       
       const newMaterial: InventoryMaterial = { 
-        id: docRef.id, 
+        id: materialId, 
         businessId,
         name: newMaterialName.trim(),
         categoryId: '',
@@ -315,56 +342,13 @@ export function PurchaseOrdersSection({
       };
       
       setMaterials(prev => [...prev, newMaterial]);
-      setValue("materialId", docRef.id);
+      setValue("materialId", materialId);
       setNewMaterialName('');
       setShowAddMaterial(false);
       toast.success("Material Added Successfully");
     } catch (error) {
       console.error("Error Adding Material:", error);
       toast.error("Could Not Add Material");
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const handleAddUnit = async () => {
-    if (!newUnitName.trim()) {
-      toast.error("Please Enter A Unit Name");
-      return;
-    }
-    
-    setIsAdding(true);
-    try {
-      const q = query(
-        collection(db, `businesses/${businessId}/units`), 
-        where('name', '==', newUnitName.trim())
-      );
-      const existing = await getDocs(q);
-      
-      if (!existing.empty) {
-        toast.error("Unit Already Exists");
-        return;
-      }
-      
-      const docRef = await addDoc(collection(db, `businesses/${businessId}/units`), {
-        name: newUnitName.trim(),
-        businessId,
-        createdAt: new Date().toISOString(),
-      });
-      
-      const newUnit = { 
-        id: docRef.id, 
-        name: newUnitName.trim()
-      };
-      
-      setUnits(prev => [...prev, newUnit]);
-      setValue("unit", newUnitName.trim());
-      setNewUnitName('');
-      setShowAddUnit(false);
-      toast.success("Unit Added Successfully");
-    } catch (error) {
-      console.error("Error Adding Unit:", error);
-      toast.error("Could Not Add Unit");
     } finally {
       setIsAdding(false);
     }
@@ -381,43 +365,96 @@ export function PurchaseOrdersSection({
       toast.error("Select A Material");
       return;
     }
+    const quantity = Number(values.quantity);
+    const quantityReceived = editingPo?.quantityReceived || 0;
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error("Enter A Purchase Quantity Above 0");
+      return;
+    }
+    if (editingPo && quantity < quantityReceived) {
+      toast.error(`Quantity Cannot Be Less Than The ${quantityReceived} Already Received`);
+      return;
+    }
     try {
-      await createPurchaseOrder(businessId, {
-        businessId,
-        supplierId: supplier.id,
-        supplierName: supplier.name,
-        materialId: material.id,
-        materialName: material.name,
-        quantity: Number(values.quantity),
-        unit: values.unit || material.unitName,
-        unitCost: Number(values.unitCost),
-        status: "pending",
-        quantityReceived: 0,
-        expectedDate: values.expectedDate,
-      });
-      if (user) {
-        await notifyPurchaseOrderCreated(businessId, supplier.name, material.name, "", user.uid);
+      if (editingPo) {
+        const nextStatus = quantityReceived >= quantity ? "received" : quantityReceived > 0 ? "partial" : "pending";
+        await updatePurchaseOrder(businessId, editingPo.id, {
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          materialId: material.id,
+          materialName: material.name,
+          quantity,
+          unit: values.unit || material.unitName,
+          unitCost: Number(values.unitCost),
+          expectedDate: values.expectedDate,
+          status: nextStatus,
+        });
+        toast.success("Purchase Order Updated");
+      } else {
+        await createPurchaseOrder(businessId, {
+          businessId,
+          supplierId: supplier.id,
+          supplierName: supplier.name,
+          materialId: material.id,
+          materialName: material.name,
+          quantity,
+          unit: values.unit || material.unitName,
+          unitCost: Number(values.unitCost),
+          status: "pending",
+          quantityReceived: 0,
+          expectedDate: values.expectedDate,
+        });
+        if (user) {
+          await notifyPurchaseOrderCreated(businessId, supplier.name, material.name, "", user.uid);
+        }
+        toast.success("Purchase Order Created");
       }
       reset({
         unit: "",
         expectedDate: new Date().toISOString().slice(0, 10),
       });
+      setEditingPo(null);
       setShowPurchaseForm(false);
-      toast.success("Purchase Order Created");
     } catch {
-      toast.error("Could Not Create Purchase Order");
+      toast.error(editingPo ? "Could Not Update Purchase Order" : "Could Not Create Purchase Order");
     }
   });
+
+  const handleDeletePo = async (po: PurchaseOrder) => {
+    if (!confirm(`Delete purchase order for "${po.materialName}"?`)) return;
+    try {
+      await deletePurchaseOrder(businessId, po.id);
+      toast.success("Purchase Order Deleted");
+    } catch {
+      toast.error("Could Not Delete Purchase Order");
+    }
+  };
+
+  const handleEditPo = (po: PurchaseOrder) => {
+    setEditingPo(po);
+    setValue("supplierId", po.supplierId);
+    setValue("materialId", po.materialId);
+    setValue("quantity", po.quantity);
+    setValue("unit", po.unit);
+    setValue("unitCost", po.unitCost);
+    setValue("expectedDate", po.expectedDate);
+    setShowPurchaseForm(true);
+  };
 
   const handleReceive = async (po: PurchaseOrder, quantity?: number) => {
     if (!user) return;
     const qtyToReceive = quantity || receiveQuantities[po.id] || po.quantity - (po.quantityReceived || 0);
+    const remaining = po.quantity - (po.quantityReceived || 0);
     if (qtyToReceive <= 0) {
       toast.error("Enter A Quantity To Receive");
       return;
     }
+    if (qtyToReceive > remaining) {
+      toast.error(`Only ${remaining} ${po.unit} Is Still Waiting To Be Received`);
+      return;
+    }
     try {
-      await receiveStockFromPurchaseOrder(businessId, {
+      const materialId = await receiveStockFromPurchaseOrder(businessId, {
         purchaseOrderId: po.id,
         materialId: po.materialId,
         materialName: po.materialName,
@@ -426,16 +463,15 @@ export function PurchaseOrdersSection({
         actorUid: user.uid,
         actorName: user.displayName,
       });
-      await notifyStockReceived(businessId, po.materialName, qtyToReceive, po.unit, po.materialId, user.uid);
-      const updatedPo = purchaseOrders.find((p) => p.id === po.id);
-      if (updatedPo && (updatedPo.quantityReceived || 0) + qtyToReceive >= updatedPo.quantity) {
+      await notifyStockReceived(businessId, po.materialName, qtyToReceive, po.unit, materialId, user.uid);
+      if ((po.quantityReceived || 0) + qtyToReceive >= po.quantity) {
         await notifyPurchaseOrderReceived(businessId, po.materialName, po.id, user.uid);
       }
       setReceiveQuantities((prev) => ({ ...prev, [po.id]: 0 }));
       setSelectedOrder(null);
-      toast.success("Stock Received");
-    } catch {
-      toast.error("Could Not Receive Stock");
+      toast.success(`${qtyToReceive} ${po.unit} Added To Inventory`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could Not Receive Stock");
     }
   };
 
@@ -461,7 +497,12 @@ export function PurchaseOrdersSection({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Purchase Orders</CardTitle>
+          <div>
+            <CardTitle>Purchase Orders And Receiving</CardTitle>
+            <p className="mt-1 text-sm text-gray-500">
+              Buy materials here, then receive them here. Inventory updates immediately.
+            </p>
+          </div>
           <Button onClick={() => setShowPurchaseForm(!showPurchaseForm)}>
             {showPurchaseForm ? "Close Form" : "New Purchase"}
           </Button>
@@ -569,6 +610,7 @@ export function PurchaseOrdersSection({
               </div>
 
               <div>
+                <p className="mb-1 text-xs text-gray-500">Purchase Quantity</p>
                 <Input 
                   type="number" 
                   placeholder="Quantity" 
@@ -577,64 +619,55 @@ export function PurchaseOrdersSection({
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <p className="text-xs text-gray-500">Unit</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => setShowAddUnit(true)}
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add New
-                  </Button>
-                </div>
-                {showAddUnit ? (
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Enter Unit Name"
-                      value={newUnitName}
-                      onChange={(e) => setNewUnitName(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddUnit()}
-                      className="flex-1"
-                      autoFocus
-                    />
-                    <Button type="button" size="sm" onClick={handleAddUnit} disabled={isAdding}>
-                      Add
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => {
-                      setShowAddUnit(false);
-                      setNewUnitName('');
-                    }}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <SearchableSelect
-                    options={unitOptions}
-                    value={watch("unit") || selectedMaterial?.unitName || ""}
-                    onChange={(v) => setValue("unit", v)}
-                    placeholder="Select Unit"
-                  />
-                )}
+                <p className="mb-1 text-xs text-gray-500">Unit</p>
+                <SearchableSelect
+                  options={unitOptions}
+                  value={watch("unit") || selectedMaterial?.unitName || ""}
+                  onChange={(v) => setValue("unit", v)}
+                  placeholder="Select or create unit"
+                  onCreate={async (label) => {
+                    const id = await createUnit(businessId, label);
+                    setUnits(prev => [...prev, { id, name: label }]);
+                    setValue("unit", label);
+                    toast.success(`Unit "${label}" created`);
+                  }}
+                />
               </div>
 
               <div>
+                <p className="mb-1 text-xs text-gray-500">Price Per Unit</p>
                 <Input 
                   type="number" 
                   step="0.01" 
-                  placeholder="Price Per Item" 
+                  placeholder="Unit Cost" 
                   {...register("unitCost", { valueAsNumber: true, required: "Unit Cost Is Required" })} 
                 />
               </div>
 
               <div>
-                <Input type="date" {...register("expectedDate")} />
+                <p className="mb-1 text-xs text-gray-500">Expected Delivery Date</p>
+                <Input type="date" placeholder="Expected Date" {...register("expectedDate")} />
               </div>
 
+              {selectedMaterial && (
+                <div className="md:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-emerald-900">{selectedMaterial.name}</p>
+                      <p className="text-xs text-emerald-700">
+                        Current stock: {selectedMaterial.quantity} {selectedMaterial.unitName || formUnit}
+                        {formQuantity > 0 ? ` - Stock after full receive: ${selectedMaterial.quantity + formQuantity} ${formUnit || selectedMaterial.unitName}` : ""}
+                      </p>
+                    </div>
+                    <Badge variant="success">
+                      Total {formatKes((formQuantity || 0) * (formUnitCost || 0))}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+
               <div className="md:col-span-2">
-                <Button type="submit">Create Purchase Order</Button>
+                <Button type="submit">{editingPo ? "Update Purchase Order" : "Create Purchase Order"}</Button>
               </div>
             </form>
           )}
@@ -652,32 +685,50 @@ export function PurchaseOrdersSection({
             <div className="space-y-2">
               {pendingPOs.map((po) => {
                 const remaining = po.quantity - (po.quantityReceived || 0);
+                const materialForPo = materials.find((material) => material.id === po.materialId);
+                const nextReceiveQuantity = receiveQuantities[po.id] ?? remaining;
                 return (
                   <div 
                     key={po.id} 
-                    className="border rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-blue-300"
+                    className="border rounded-lg px-3 py-3 text-sm cursor-pointer hover:border-emerald-300"
                     onClick={() => setSelectedOrder(po)}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                    <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium">{po.materialName}</p>
                           <ChevronRight className="h-3 w-3 text-gray-400" />
+                          <Badge variant={po.status === "partial" ? "default" : "warning"}>
+                            {po.status === "partial" ? "Partial" : "Waiting"}
+                          </Badge>
+                          {!materialForPo && (
+                            <Badge variant="danger" className="gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              Material Missing
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-xs text-gray-500">
-                          {po.supplierName} · {po.quantityReceived || 0}/{po.quantity} {po.unit} @ {formatKes(po.unitCost)} · Due {po.expectedDate}
+                          {po.supplierName} - {po.quantityReceived || 0}/{po.quantity} {po.unit} @ {formatKes(po.unitCost)} - Due {new Date(po.expectedDate).toLocaleDateString()}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Current stock: {materialForPo ? `${materialForPo.quantity} ${materialForPo.unitName || po.unit}` : "not linked"} - After this receive: {materialForPo ? `${materialForPo.quantity + nextReceiveQuantity} ${po.unit}` : `${nextReceiveQuantity} ${po.unit}`}
                         </p>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant={po.status === "partial" ? "default" : "warning"}>
-                          {po.status === "partial" ? "Partial" : "Pending"}
-                        </Badge>
+                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); handleEditPo(po); }}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={(e) => { e.stopPropagation(); handleDeletePo(po); }}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <Input
                             type="number"
-                            className="h-8 w-24 text-xs"
+                            className="h-8 w-28 text-xs"
                             placeholder={`Max ${remaining}`}
                             max={remaining}
+                            min={0}
                             value={receiveQuantities[po.id] ?? ""}
                             onChange={(e) =>
                               setReceiveQuantities((prev) => ({ ...prev, [po.id]: Number(e.target.value) }))
@@ -687,9 +738,9 @@ export function PurchaseOrdersSection({
                             size="sm"
                             variant="default"
                             onClick={() => handleReceive(po)}
-                            disabled={!receiveQuantities[po.id] || receiveQuantities[po.id] <= 0}
+                            disabled={!nextReceiveQuantity || nextReceiveQuantity <= 0 || nextReceiveQuantity > remaining}
                           >
-                            Receive
+                            Receive Into Stock
                           </Button>
                         </div>
                       </div>
@@ -716,12 +767,17 @@ export function PurchaseOrdersSection({
                   onClick={() => setSelectedOrder(po)}
                 >
                   <div>
-                    <p className="font-medium">{po.materialName}</p>
+                    <p className="font-medium">{po.materialName} <span className="text-xs text-gray-400">#{po.id?.slice(-8)}</span></p>
                     <p className="text-xs text-gray-500">
-                      {po.supplierName} · {po.quantity} {po.unit} @ {formatKes(po.unitCost)}
+                      {po.supplierName} - {po.quantityReceived}/{po.quantity} {po.unit} @ {formatKes(po.unitCost)} - Due {new Date(po.expectedDate).toLocaleDateString()}
                     </p>
                   </div>
-                  <Badge variant="success">Received</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="success">Received</Badge>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); handleEditPo(po); }}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

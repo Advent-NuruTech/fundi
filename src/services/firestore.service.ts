@@ -14,6 +14,7 @@ import {
   where,
   writeBatch,
   increment,
+  runTransaction,
   arrayUnion,
   Timestamp,
   startAfter,
@@ -234,11 +235,13 @@ export async function updateMemberRoles(businessId: string, memberUid: string, r
 
 export async function createInvitationRecord(
   businessId: string,
-  payload: Omit<EmployeeInvitation, "id" | "createdAt" | "status">
+  payload: Omit<EmployeeInvitation, "id" | "createdAt" | "status" | "expiresAt">
 ) {
+  const expiresAt = Timestamp.fromDate(new Date(Date.now() + 48 * 60 * 60 * 1000));
   const ref = await addDoc(invitationsCollection(businessId), {
     ...payload,
     status: "pending",
+    expiresAt,
     createdAt: serverTimestamp(),
   });
   return ref.id;
@@ -252,6 +255,9 @@ export async function upsertInvitedMember(input: {
   roles: UserRole[];
   invitedByUid: string;
   invitedByName: string;
+  payRate?: number;
+  payPeriod?: "daily" | "weekly" | "monthly";
+  nextPayDate?: string;
 }) {
   const roles = normalizedRoles(input.roles);
   const payload = {
@@ -261,10 +267,13 @@ export async function upsertInvitedMember(input: {
     roles,
     role: roleFromRoles(roles),
     businessId: input.businessId,
-    active: true,
+    active: false,
     mustChangePassword: true,
     invitedByUid: input.invitedByUid,
     invitedByName: input.invitedByName,
+    payRate: input.payRate ?? 0,
+    payPeriod: input.payPeriod ?? "monthly",
+    nextPayDate: input.nextPayDate ?? "",
     createdAt: serverTimestamp(),
     lastActiveAt: serverTimestamp(),
   };
@@ -276,8 +285,24 @@ export async function upsertInvitedMember(input: {
 export function listenInvitations(businessId: string, callback: (rows: EmployeeInvitation[]) => void) {
   const q = query(invitationsCollection(businessId), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map((row) => ({ ...row.data(), id: row.id })));
+    const now = Date.now();
+    const invitations = snapshot.docs.map((row) => ({ ...row.data(), id: row.id }));
+    const expiredPending = invitations.filter((invite) => {
+      const expiresAt = invite.expiresAt?.toDate?.();
+      return invite.status === "pending" && expiresAt && expiresAt.getTime() <= now;
+    });
+    void Promise.all(expiredPending.map((invite) => deleteDoc(doc(invitationsCollection(businessId), invite.id))));
+    callback(
+      invitations.filter((invite) => {
+        const expiresAt = invite.expiresAt?.toDate?.();
+        return invite.status !== "pending" || !expiresAt || expiresAt.getTime() > now;
+      })
+    );
   });
+}
+
+export async function deleteInvitation(businessId: string, invitationId: string) {
+  await deleteDoc(doc(invitationsCollection(businessId), invitationId));
 }
 
 export async function completeFirstPasswordChange(uid: string) {
@@ -297,17 +322,36 @@ export async function acceptInvitationByToken(token: string, uid: string) {
   const invite = rows.docs[0];
   const data = invite.data();
   const businessId = data.businessId;
+  const expiresAt = data.expiresAt?.toDate?.();
+  if (data.status !== "pending" || data.invitedUid !== uid || (expiresAt && expiresAt.getTime() <= Date.now())) {
+    throw new Error("This invitation has expired or is no longer valid.");
+  }
   await updateDoc(doc(invitationsCollection(businessId), invite.id), {
     status: "accepted",
     acceptedAt: serverTimestamp(),
   });
   await updateDoc(doc(usersCollection(), uid), {
+    active: true,
     mustChangePassword: true,
   });
   await updateDoc(doc(membersCollection(businessId), uid), {
+    active: true,
     mustChangePassword: true,
   });
   return businessId;
+}
+
+export async function updateMemberCompensation(
+  businessId: string,
+  memberUid: string,
+  payload: {
+    payRate: number;
+    payPeriod: "daily" | "weekly" | "monthly";
+    nextPayDate: string;
+  }
+) {
+  await updateDoc(doc(membersCollection(businessId), memberUid), payload);
+  await updateDoc(doc(usersCollection(), memberUid), payload);
 }
 
 // ─── DYNAMIC UNITS & CATEGORIES ───
@@ -731,6 +775,29 @@ export async function createPurchaseOrder(
   return ref.id;
 }
 
+export async function fetchPurchaseOrderById(businessId: string, poId: string) {
+  const snapshot = await getDoc(doc(purchaseOrdersCollection(businessId), poId));
+  if (!snapshot.exists()) return null;
+  return { ...snapshot.data(), id: snapshot.id } as PurchaseOrder;
+}
+
+export async function updatePurchaseOrder(
+  businessId: string,
+  poId: string,
+  payload: Partial<Omit<PurchaseOrder, "id" | "businessId" | "createdAt">>
+) {
+  await updateDoc(doc(purchaseOrdersCollection(businessId), poId), {
+    ...payload,
+  });
+}
+
+export async function deletePurchaseOrder(
+  businessId: string,
+  poId: string
+) {
+  await deleteDoc(doc(purchaseOrdersCollection(businessId), poId));
+}
+
 export function listenPurchaseOrders(businessId: string, callback: (rows: PurchaseOrder[]) => void) {
   const q = query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
@@ -754,14 +821,16 @@ export async function receiveStockFromPurchaseOrder(
     actorName: string;
   }
 ) {
+  if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
+    throw new Error("Receive quantity must be greater than zero.");
+  }
+
   const poRef = doc(purchaseOrdersCollection(businessId), payload.purchaseOrderId);
   const poSnapshot = await getDoc(poRef);
   if (!poSnapshot.exists()) {
     throw new Error("Purchase order not found.");
   }
   const poData = poSnapshot.data();
-  const newReceived = (poData.quantityReceived ?? 0) + payload.quantity;
-  const newStatus = newReceived >= poData.quantity ? "received" : "partial";
 
   let materialId = payload.materialId;
 
@@ -774,7 +843,7 @@ export async function receiveStockFromPurchaseOrder(
     } else {
       const catId = payload.categoryId;
       let resolvedCatId = catId;
-      let resolvedCatName = payload.categoryName || "Uncategorized";
+      const resolvedCatName = payload.categoryName || "Uncategorized";
       if (!resolvedCatId) {
         const cats = await getDocs(query(categoriesCollection(businessId), where("name", "==", resolvedCatName)));
         if (!cats.empty) {
@@ -806,30 +875,64 @@ export async function receiveStockFromPurchaseOrder(
   }
 
   const materialRef = doc(materialsCollection(businessId), materialId);
-  const batch = writeBatch(poRef.firestore);
+  const movementRef = doc(stockMovementsCollection(businessId));
 
-  batch.update(poRef, {
-    status: newStatus,
-    quantityReceived: newReceived,
-  });
-  batch.update(materialRef, {
-    quantity: increment(payload.quantity),
-    updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(stockMovementsCollection(businessId)), {
-    businessId,
-    movementType: "stock in",
-    materialId,
-    materialName: payload.materialName,
-    quantityChange: payload.quantity,
-    unit: payload.unit,
-    reason: `Purchase order delivery (${newReceived}/${poData.quantity} ${payload.unit})`,
-    createdByUid: payload.actorUid,
-    createdByName: payload.actorName,
-    createdAt: serverTimestamp(),
+  await runTransaction(poRef.firestore, async (transaction) => {
+    const freshPoSnapshot = await transaction.get(poRef);
+    const materialSnapshot = await transaction.get(materialRef);
+
+    if (!freshPoSnapshot.exists()) {
+      throw new Error("Purchase order not found.");
+    }
+    if (!materialSnapshot.exists()) {
+      throw new Error("Material not found.");
+    }
+
+    const freshPo = freshPoSnapshot.data();
+    const currentReceived = freshPo.quantityReceived ?? 0;
+    const remaining = freshPo.quantity - currentReceived;
+
+    if (remaining <= 0) {
+      throw new Error("Purchase order is already fully received.");
+    }
+    if (payload.quantity > remaining) {
+      throw new Error(`Cannot receive more than the remaining ${remaining} ${payload.unit}.`);
+    }
+
+    const material = materialSnapshot.data();
+    const currentQuantity = Number(material.quantity ?? 0);
+    const currentAverageCost = Number(material.averageUnitCost ?? 0);
+    const newQuantity = currentQuantity + payload.quantity;
+    const newAverageCost = newQuantity > 0
+      ? ((currentQuantity * currentAverageCost) + (payload.quantity * Number(freshPo.unitCost ?? 0))) / newQuantity
+      : currentAverageCost;
+    const newReceived = currentReceived + payload.quantity;
+    const newStatus = newReceived >= freshPo.quantity ? "received" : "partial";
+
+    transaction.update(poRef, {
+      status: newStatus,
+      quantityReceived: newReceived,
+    });
+    transaction.update(materialRef, {
+      quantity: newQuantity,
+      averageUnitCost: newAverageCost,
+      unitName: payload.unit,
+      updatedAt: serverTimestamp(),
+    });
+    transaction.set(movementRef, {
+      businessId,
+      movementType: "stock in",
+      materialId,
+      materialName: payload.materialName,
+      quantityChange: payload.quantity,
+      unit: payload.unit,
+      reason: `Purchase order delivery (${newReceived}/${freshPo.quantity} ${payload.unit})`,
+      createdByUid: payload.actorUid,
+      createdByName: payload.actorName,
+      createdAt: serverTimestamp(),
+    });
   });
 
-  await batch.commit();
   return materialId;
 }
 

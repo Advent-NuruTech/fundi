@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Copy, Check, UserPlus, Loader2, ExternalLink } from "lucide-react";
+import { ArrowLeft, Copy, Check, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { UserRole } from "@/types/domain";
 import { inviteEmployeeToWorkshop } from "@/services/auth.service";
@@ -27,6 +27,9 @@ export function EmployeeForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>(["tailor"]);
+  const [payRate, setPayRate] = useState("");
+  const [payPeriod, setPayPeriod] = useState<"daily" | "weekly" | "monthly">("monthly");
+  const [nextPayDate, setNextPayDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [tempPassword, setTempPassword] = useState("");
@@ -63,6 +66,9 @@ export function EmployeeForm() {
         email,
         displayName: name,
         roles: selectedRoles,
+        payRate: Number(payRate) || 0,
+        payPeriod,
+        nextPayDate,
       });
       setInviteLink(result.invitationLink);
       setTempPassword(result.temporaryPassword);
@@ -80,6 +86,8 @@ export function EmployeeForm() {
       ``,
       `Business: ${user?.displayName}'s Workshop`,
       `Role: ${selectedRoles.map((r) => r.replace("_", " ")).join(", ")}`,
+      `Pay: KES ${Number(payRate || 0).toLocaleString()} / ${payPeriod}`,
+      nextPayDate ? `Next Pay Date: ${nextPayDate}` : "",
       `Email: ${email}`,
       `Temporary Password: ${tempPassword}`,
       ``,
@@ -135,6 +143,13 @@ export function EmployeeForm() {
                 <p className="text-xs text-slate-500">Role</p>
                 <p className="font-medium text-slate-900 capitalize">
                   {selectedRoles.map((r) => r.replace("_", " ")).join(", ")}
+                </p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">Pay</p>
+                <p className="font-medium text-slate-900">
+                  KES {Number(payRate || 0).toLocaleString()} / {payPeriod}
+                  {nextPayDate ? `, next due ${nextPayDate}` : ""}
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 p-4">
@@ -236,6 +251,40 @@ export function EmployeeForm() {
                     </div>
                   </label>
                 ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Salary / Pay (KES)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={payRate}
+                  onChange={(e) => setPayRate(e.target.value)}
+                  placeholder="25000"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Pay Period</label>
+                <select
+                  value={payPeriod}
+                  onChange={(e) => setPayPeriod(e.target.value as "daily" | "weekly" | "monthly")}
+                  className="flex h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Next Pay Date</label>
+                <Input
+                  type="date"
+                  value={nextPayDate}
+                  onChange={(e) => setNextPayDate(e.target.value)}
+                />
               </div>
             </div>
 

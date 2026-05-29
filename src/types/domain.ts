@@ -71,6 +71,9 @@ export interface UserProfile {
   phone?: string;
   invitedByUid?: string;
   invitedByName?: string;
+  payRate?: number;
+  payPeriod?: "daily" | "weekly" | "monthly";
+  nextPayDate?: string;
   createdAt: Timestamp;
   lastActiveAt?: Timestamp;
 }
@@ -241,6 +244,11 @@ export interface FabricMeta {
   }>;
 }
 
+export interface MaterialImage {
+  url: string;
+  publicId: string;
+}
+
 export interface InventoryMaterial {
   id: string;
   businessId: string;
@@ -255,6 +263,7 @@ export interface InventoryMaterial {
   supplierId?: string;
   imageUrl?: string;
   imagePublicId?: string;
+  images?: MaterialImage[];
   fabricMeta?: FabricMeta;
   updatedAt: Timestamp;
   createdAt: Timestamp;
@@ -337,11 +346,13 @@ export interface EmployeeInvitation {
   displayName: string;
   roles: UserRole[];
   token: string;
+  invitedUid: string;
   temporaryPassword: string;
   invitedByUid: string;
   invitedByName: string;
   status: "pending" | "accepted" | "revoked";
   createdAt: Timestamp;
+  expiresAt: Timestamp;
   acceptedAt?: Timestamp;
 }
 

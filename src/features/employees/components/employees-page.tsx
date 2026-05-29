@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Trash2 } from "lucide-react";
 import type { EmployeeInvitation, Order, UserProfile } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { usePermissions } from "@/modules/shared/use-permissions";
-import { deactivateMember, listenInvitations, listenMembers, listenOrders } from "@/services/firestore.service";
+import { deactivateMember, deleteInvitation, listenInvitations, listenMembers, listenOrders } from "@/services/firestore.service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -87,6 +87,8 @@ export function EmployeesPage() {
               <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-xl bg-slate-50 p-2">Assigned: {assignedOrders}</div>
                 <div className="rounded-xl bg-rose-50 p-2 text-rose-700">Late: {lateOrders}</div>
+                <div className="rounded-xl bg-slate-50 p-2">Pay: KES {(member.payRate ?? 0).toLocaleString()}</div>
+                <div className="rounded-xl bg-slate-50 p-2 capitalize">{member.payPeriod ?? "monthly"}</div>
               </div>
               <div className="mt-4 flex gap-2">
                 <Link href={`/employees/${member.uid}`} className="rounded-xl border px-3 py-2 text-xs">View activity</Link>
@@ -109,8 +111,25 @@ export function EmployeesPage() {
         <h2 className="text-sm font-semibold">Recent Invitations</h2>
         <div className="mt-2 space-y-2 text-sm">
           {invitations.slice(0, 8).map((invite) => (
-            <div key={invite.id} className="rounded-xl border border-slate-200 px-3 py-2">
-              {invite.displayName} ({invite.email}) - {invite.status}
+            <div key={invite.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2">
+              <div>
+                {invite.displayName} ({invite.email}) - {invite.status}
+                {invite.status === "pending" && invite.expiresAt?.toDate && (
+                  <span className="ml-2 text-xs text-slate-500">
+                    expires {invite.expiresAt.toDate().toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {invite.status === "pending" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => deleteInvitation(businessId, invite.id)}
+                  aria-label="Delete invitation"
+                >
+                  <Trash2 className="h-4 w-4 text-rose-500" />
+                </Button>
+              )}
             </div>
           ))}
         </div>

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
-import type { InventoryMaterial, Supplier, DbUnit, DbCategory, FabricMeta } from "@/types/domain";
+import type { InventoryMaterial, Supplier, DbUnit, DbCategory, FabricMeta, MaterialImage } from "@/types/domain";
 
 interface MaterialForm {
   name: string;
@@ -43,8 +43,9 @@ export function MaterialsSection({
   const [categories, setCategories] = useState<DbCategory[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [editingMaterial, setEditingMaterial] = useState<InventoryMaterial | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>("");
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [existingImages, setExistingImages] = useState<MaterialImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const [customFields, setCustomFields] = useState<Array<{ key: string; value: string }>>([]);
   const [catManageOpen, setCatManageOpen] = useState(false);
@@ -52,6 +53,8 @@ export function MaterialsSection({
   const [catEditName, setCatEditName] = useState("");
   const [catSearch, setCatSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
 
   useEffect(() => {
     const unsubUnits = listenUnits(businessId, setUnits);
@@ -118,8 +121,9 @@ export function MaterialsSection({
       composition: "",
     });
     setEditingMaterial(null);
-    setImageFile(null);
-    setImagePreview("");
+    setImageFiles([]);
+    setImagePreviews([]);
+    setExistingImages([]);
     setCustomFields([]);
   };
 
@@ -139,19 +143,49 @@ export function MaterialsSection({
       setValue("pattern", mat.fabricMeta.pattern || "");
       setValue("composition", mat.fabricMeta.composition || "");
     }
-    if (mat.imageUrl) setImagePreview(mat.imageUrl);
+    if (mat.images && mat.images.length > 0) {
+      setExistingImages(mat.images);
+    } else if (mat.imageUrl) {
+      setExistingImages([{ url: mat.imageUrl, publicId: mat.imagePublicId || "" }]);
+    }
     if (mat.fabricMeta?.customFields) {
       setCustomFields(mat.fabricMeta.customFields.map((f) => ({ key: f.key, value: String(f.value) })));
     }
     setShowForm(true);
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+  const handleImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const total = imageFiles.length + existingImages.length + files.length;
+    if (total > 10) {
+      toast.error(`Maximum 10 images allowed (${existingImages.length + imageFiles.length} already selected)`);
+      return;
     }
+    setImageFiles((prev) => [...prev, ...files]);
+    const newPreviews = files.map((f) => URL.createObjectURL(f));
+    setImagePreviews((prev) => [...prev, ...newPreviews]);
+  };
+
+  const removeNewImage = (index: number) => {
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
+    setImagePreviews((prev) => {
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const removeExistingImage = async (index: number) => {
+    const img = existingImages[index];
+    if (img.publicId) {
+      try {
+        await fetch("/api/cloudinary/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ publicId: img.publicId }),
+        });
+      } catch { /* ignore */ }
+    }
+    setExistingImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const saveMaterial = handleSubmit(async (values) => {
@@ -163,25 +197,17 @@ export function MaterialsSection({
 
     setUploading(true);
     try {
-      let imageUrl = editingMaterial?.imageUrl || "";
-      let imagePublicId = editingMaterial?.imagePublicId || "";
+      let allImages: MaterialImage[] = [...existingImages];
 
-      if (imageFile) {
-        if (editingMaterial?.imagePublicId) {
-          try {
-            await fetch("/api/cloudinary/delete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ publicId: editingMaterial.imagePublicId }),
-            });
-          } catch { /* ignore delete errors */ }
-        }
-        if (user) {
-          const uploaded = await uploadImage({ file: imageFile, businessId, uploadedByUid: user.uid });
-          imageUrl = uploaded.url;
-          imagePublicId = uploaded.publicId;
+      if (imageFiles.length > 0 && user) {
+        for (const file of imageFiles) {
+          const uploaded = await uploadImage({ file, businessId, uploadedByUid: user.uid });
+          allImages.push({ url: uploaded.url, publicId: uploaded.publicId });
         }
       }
+
+      const imageUrl = allImages[0]?.url || "";
+      const imagePublicId = allImages[0]?.publicId || "";
 
       const fabricMeta: FabricMeta | undefined = values.color || values.gsm || values.rollLength || values.pattern || values.composition || customFields.length > 0
         ? {
@@ -210,6 +236,7 @@ export function MaterialsSection({
           supplierId: values.supplierId || undefined,
           imageUrl: imageUrl || undefined,
           imagePublicId: imagePublicId || undefined,
+          images: allImages.length > 0 ? allImages : undefined,
           fabricMeta,
         });
         toast.success("Material updated");
@@ -227,6 +254,7 @@ export function MaterialsSection({
           supplierId: values.supplierId || undefined,
           imageUrl: imageUrl || undefined,
           imagePublicId: imagePublicId || undefined,
+          images: allImages.length > 0 ? allImages : undefined,
           fabricMeta,
         });
         if (user) {
@@ -246,14 +274,17 @@ export function MaterialsSection({
   const handleDelete = async (mat: InventoryMaterial) => {
     if (!confirm(`Delete "${mat.name}"? This cannot be undone.`)) return;
     try {
-      if (mat.imagePublicId) {
-        try {
-          await fetch("/api/cloudinary/delete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ publicId: mat.imagePublicId }),
-          });
-        } catch { /* ignore */ }
+      const allImgs = mat.images || (mat.imagePublicId ? [{ url: mat.imageUrl || "", publicId: mat.imagePublicId }] : []);
+      for (const img of allImgs) {
+        if (img.publicId) {
+          try {
+            await fetch("/api/cloudinary/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ publicId: img.publicId }),
+            });
+          } catch { /* ignore */ }
+        }
       }
       await deleteMaterial(businessId, mat.id);
       toast.success("Material deleted");
@@ -353,10 +384,30 @@ export function MaterialsSection({
                   onChange={(e) => setCatSearch(e.target.value)}
                   className="flex-1"
                 />
-                <Button size="sm" onClick={() => { setCatEditName(""); setEditingCategory(null); }}>
+                <Button size="sm" onClick={() => { setShowNewCategoryInput(!showNewCategoryInput); setNewCategoryName(""); setEditingCategory(null); }}>
                   <Plus className="h-4 w-4 mr-1" /> New
                 </Button>
               </div>
+              {showNewCategoryInput && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="New category name"
+                    className="flex-1"
+                    autoFocus
+                  />
+                  <Button size="sm" onClick={async () => {
+                    if (!newCategoryName.trim()) return;
+                    await handleCreateCategory(newCategoryName.trim());
+                    setNewCategoryName("");
+                    setShowNewCategoryInput(false);
+                  }}>Create</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setShowNewCategoryInput(false); setNewCategoryName(""); }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
               {editingCategory && (
                 <div className="flex items-center gap-2">
                   <Input
@@ -444,23 +495,33 @@ export function MaterialsSection({
 
               <div className="space-y-3">
                 <div>
-                  <p className="mb-1 text-xs text-slate-500">Image (optional)</p>
-                  <div className="flex items-center gap-3">
-                    <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">
-                      <Upload className="h-4 w-4" />
-                      Choose file
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
-                    </label>
-                    {imagePreview && (
-                      <div className="relative">
-                        <img src={imagePreview} alt="Preview" className="h-12 w-12 rounded-lg object-cover" />
-                        <button type="button" onClick={() => { setImageFile(null); setImagePreview(""); }} className="absolute -right-1 -top-1 rounded-full bg-red-500 text-white p-0.5">
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    )}
-                    {!imagePreview && <ImageIcon className="h-8 w-8 text-slate-300" />}
-                  </div>
+                  <p className="mb-1 text-xs text-slate-500">Images (optional, max 10)</p>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 w-fit">
+                    <Upload className="h-4 w-4" />
+                    Add Images
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handleImagesSelect} />
+                  </label>
+                  {(existingImages.length > 0 || imagePreviews.length > 0) && (
+                    <div className="flex gap-2 overflow-x-auto py-2" style={{ scrollbarWidth: "thin" }}>
+                      {existingImages.map((img, i) => (
+                        <div key={`e${i}`} className="relative shrink-0">
+                          <img src={img.url} alt="" className="h-16 w-16 rounded-lg object-contain border" />
+                          <button type="button" onClick={() => removeExistingImage(i)} className="absolute -right-1 -top-1 rounded-full bg-red-500 text-white p-0.5">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {imagePreviews.map((preview, i) => (
+                        <div key={`n${i}`} className="relative shrink-0">
+                          <img src={preview} alt="" className="h-16 w-16 rounded-lg object-contain border" />
+                          <button type="button" onClick={() => removeNewImage(i)} className="absolute -right-1 -top-1 rounded-full bg-red-500 text-white p-0.5">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {existingImages.length === 0 && imagePreviews.length === 0 && <ImageIcon className="h-8 w-8 text-slate-300" />}
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">

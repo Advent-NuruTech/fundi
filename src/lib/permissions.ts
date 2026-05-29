@@ -57,7 +57,7 @@ const roleCapabilities: Record<UserRole, AppCapability[]> = {
   tailor: ["orders.read", "orders.assigned_only", "production.read", "production.write"],
   receptionist: ["customers.read", "customers.write", "orders.read", "orders.write", "payments.read", "payments.write"],
   inventory_manager: ["inventory.read", "inventory.write", "orders.read", "production.read"],
-  cashier: ["payments.read", "payments.write", "orders.read", "customers.read", "finance.read"],
+  cashier: ["payments.read", "payments.write", "orders.read", "customers.read"],
 };
 
 export function getUserRoles(profile: UserProfile | null | undefined): UserRole[] {

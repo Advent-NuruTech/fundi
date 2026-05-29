@@ -81,6 +81,9 @@ export async function inviteEmployeeToWorkshop(input: {
   email: string;
   displayName: string;
   roles: UserRole[];
+  payRate?: number;
+  payPeriod?: "daily" | "weekly" | "monthly";
+  nextPayDate?: string;
 }) {
   const tempPassword = buildTempPassword();
   const token = buildInviteToken();
@@ -97,6 +100,9 @@ export async function inviteEmployeeToWorkshop(input: {
       roles: input.roles,
       invitedByUid: input.inviterUid,
       invitedByName: input.inviterName,
+      payRate: input.payRate,
+      payPeriod: input.payPeriod,
+      nextPayDate: input.nextPayDate,
     });
 
     await createInvitationRecord(input.businessId, {
@@ -105,6 +111,7 @@ export async function inviteEmployeeToWorkshop(input: {
       displayName: input.displayName,
       roles: input.roles,
       token,
+      invitedUid: invitedCredential.user.uid,
       temporaryPassword: tempPassword,
       invitedByUid: input.inviterUid,
       invitedByName: input.inviterName,

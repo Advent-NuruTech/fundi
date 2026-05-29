@@ -16,6 +16,7 @@ import {
   customersCollection,
   expensesCollection,
   materialsCollection,
+  membersCollection,
   ordersCollection,
   paymentsCollection,
   purchaseOrdersCollection,
@@ -31,6 +32,7 @@ import type {
   Payment,
   StockMovement,
   Transaction,
+  UserProfile,
   Withdrawal,
 } from "@/types/domain";
 
@@ -265,7 +267,7 @@ export function calculateExpenseRatio(expenses: number, revenue: number): number
 // ─── INVENTORY COST OF GOODS SOLD ───
 
 export function calculateInventoryCOGS(movements: StockMovement[], start?: Date, end?: Date): number {
-  let filtered = movements.filter((m) => m.movementType === "consumption");
+  let filtered = movements.filter((m) => m.movementType === "used in order");
   if (start && end) {
     filtered = filtered.filter((m) => {
       const d = m.createdAt?.toDate ? m.createdAt.toDate() : new Date();
@@ -375,6 +377,7 @@ export interface FinanceData {
   payments: Payment[];
   orders: Order[];
   customers: Customer[];
+  members: UserProfile[];
   expenses: Expense[];
   withdrawals: Withdrawal[];
   materials: InventoryMaterial[];
@@ -394,6 +397,7 @@ export function listenAllFinanceData(
       data.payments &&
       data.orders &&
       data.customers &&
+      data.members &&
       data.expenses &&
       data.withdrawals &&
       data.materials &&
@@ -432,6 +436,15 @@ export function listenAllFinanceData(
   );
 
   const unsub4 = onSnapshot(
+    query(membersCollection(businessId), orderBy("displayName", "asc")),
+    (snap) => {
+      data.members = snap.docs.map((d) => ({ ...d.data(), uid: d.id })) as UserProfile[];
+      checkReady();
+    },
+    onError
+  );
+
+  const unsub5 = onSnapshot(
     query(expensesCollection(businessId), orderBy("expenseDate", "desc")),
     (snap) => {
       data.expenses = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Expense[];
@@ -440,7 +453,7 @@ export function listenAllFinanceData(
     onError
   );
 
-  const unsub5 = onSnapshot(
+  const unsub6 = onSnapshot(
     query(withdrawalsCollection(businessId), orderBy("withdrawalDate", "desc")),
     (snap) => {
       data.withdrawals = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Withdrawal[];
@@ -449,7 +462,7 @@ export function listenAllFinanceData(
     onError
   );
 
-  const unsub6 = onSnapshot(
+  const unsub7 = onSnapshot(
     query(materialsCollection(businessId), orderBy("updatedAt", "desc")),
     (snap) => {
       data.materials = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as InventoryMaterial[];
@@ -458,7 +471,7 @@ export function listenAllFinanceData(
     onError
   );
 
-  const unsub7 = onSnapshot(
+  const unsub8 = onSnapshot(
     query(stockMovementsCollection(businessId), orderBy("createdAt", "desc")),
     (snap) => {
       data.movements = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as StockMovement[];
@@ -467,7 +480,7 @@ export function listenAllFinanceData(
     onError
   );
 
-  const unsub8 = onSnapshot(
+  const unsub9 = onSnapshot(
     query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc")),
     (snap) => {
       data.purchaseOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
@@ -485,7 +498,43 @@ export function listenAllFinanceData(
     unsub6();
     unsub7();
     unsub8();
+    unsub9();
   };
+}
+
+export function calculatePayrollLiability(members: UserProfile[]) {
+  return members
+    .filter((member) => member.active && member.role !== "owner")
+    .reduce((total, member) => total + (member.payRate ?? 0), 0);
+}
+
+export function payrollAlerts(members: UserProfile[]) {
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  return members
+    .filter((member) => member.active && member.role !== "owner" && member.payRate && member.nextPayDate)
+    .map((member) => {
+      const payDate = new Date(`${member.nextPayDate}T00:00:00`);
+      const daysRemaining = Math.ceil((payDate.getTime() - now.getTime()) / dayMs);
+      const periodDays = member.payPeriod === "daily" ? 1 : member.payPeriod === "weekly" ? 7 : 30;
+      const quarterWindow = Math.max(1, Math.ceil(periodDays / 4));
+      if (daysRemaining < 0) {
+        return {
+          type: "danger" as const,
+          title: "Salary Payment Overdue",
+          message: `${member.displayName} was due KES ${(member.payRate ?? 0).toLocaleString()} on ${member.nextPayDate}.`,
+        };
+      }
+      if (daysRemaining <= quarterWindow) {
+        return {
+          type: "warning" as const,
+          title: "Salary Payment Due Soon",
+          message: `${member.displayName} is due KES ${(member.payRate ?? 0).toLocaleString()} in ${daysRemaining} day(s).`,
+        };
+      }
+      return null;
+    })
+    .filter((alert): alert is { type: "danger" | "warning"; title: string; message: string } => Boolean(alert));
 }
 
 // ─── BUSINESS HEALTH INDICATORS ───

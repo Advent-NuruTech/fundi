@@ -1,5 +1,4 @@
 import {
-  addDoc,
   doc,
   getDoc,
   getDocs,
@@ -8,8 +7,6 @@ import {
   query,
   serverTimestamp,
   Timestamp,
-  updateDoc,
-  deleteDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -69,11 +66,27 @@ export async function updateWithdrawal(
   withdrawalId: string,
   payload: Partial<Omit<Withdrawal, "id" | "businessId" | "createdAt" | "withdrawnByUid" | "withdrawnByName">>
 ) {
-  await updateDoc(doc(withdrawalsCollection(businessId), withdrawalId), { ...payload });
+  const batch = writeBatch(db);
+  batch.update(doc(withdrawalsCollection(businessId), withdrawalId), { ...payload });
+  const txSnapshot = await getDocs(query(transactionsCollection(businessId), where("referenceId", "==", withdrawalId)));
+  txSnapshot.docs.forEach((tx) => {
+    batch.update(tx.ref, {
+      amount: payload.amount !== undefined ? -Math.abs(payload.amount) : tx.data().amount,
+      description: payload.reason ? `Withdrawal: ${payload.reason}` : tx.data().description,
+      referenceLabel: payload.category ?? tx.data().referenceLabel,
+      notes: payload.notes ?? tx.data().notes ?? "",
+      updatedAt: serverTimestamp(),
+    });
+  });
+  await batch.commit();
 }
 
 export async function deleteWithdrawal(businessId: string, withdrawalId: string) {
-  await deleteDoc(doc(withdrawalsCollection(businessId), withdrawalId));
+  const batch = writeBatch(db);
+  batch.delete(doc(withdrawalsCollection(businessId), withdrawalId));
+  const txSnapshot = await getDocs(query(transactionsCollection(businessId), where("referenceId", "==", withdrawalId)));
+  txSnapshot.docs.forEach((tx) => batch.delete(tx.ref));
+  await batch.commit();
 }
 
 export async function fetchWithdrawalById(businessId: string, withdrawalId: string): Promise<Withdrawal | null> {
