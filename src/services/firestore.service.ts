@@ -1,6 +1,7 @@
 import {
   addDoc,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -14,10 +15,8 @@ import {
   writeBatch,
   increment,
   arrayUnion,
-  and,
-  runTransaction,
-  startAfter,
   Timestamp,
+  startAfter,
   type DocumentData,
   type QueryConstraint,
   type QueryDocumentSnapshot,
@@ -27,7 +26,6 @@ import type {
   Customer,
   EmployeeInvitation,
   Business,
-  FabricRoll,
   InventoryMaterial,
   Order,
   Payment,
@@ -38,11 +36,14 @@ import type {
   UserRole,
   PaymentMethod,
   ProductionStage,
+  DbUnit,
+  DbCategory,
+  MaterialUsageRecord,
+  FabricMeta,
 } from "@/types/domain";
 import {
   businessesCollection,
   customersCollection,
-  fabricRollsCollection,
   materialsCollection,
   membersCollection,
   invitationsCollection,
@@ -52,6 +53,9 @@ import {
   stockMovementsCollection,
   suppliersCollection,
   usersCollection,
+  unitsCollection,
+  categoriesCollection,
+  consumptionReportsCollection,
 } from "@/services/collections";
 
 const orderStageSort: Record<ProductionStage, number> = {
@@ -76,9 +80,7 @@ function roleFromRoles(roles: UserRole[]): UserRole {
   return "cashier";
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
+// ─── BUSINESS ───
 
 export async function bootstrapBusiness(input: {
   uid: string;
@@ -112,6 +114,19 @@ export async function bootstrapBusiness(input: {
 
   await setDoc(doc(usersCollection(), input.uid), userPayload);
   await setDoc(doc(membersCollection(businessRef.id), input.uid), userPayload);
+
+  const batch = writeBatch(db);
+  const defaultUnits = ["Pieces", "Meters", "Cones", "Kilograms", "Liters"];
+  const defaultCategories = ["Fabrics", "Threads", "Buttons", "Zips", "Elastic", "Lining", "Accessories"];
+
+  for (const unit of defaultUnits) {
+    batch.set(doc(unitsCollection(businessRef.id)), { businessId: businessRef.id, name: unit, createdAt: serverTimestamp() });
+  }
+  for (const cat of defaultCategories) {
+    batch.set(doc(categoriesCollection(businessRef.id)), { businessId: businessRef.id, name: cat, createdAt: serverTimestamp() });
+  }
+  await batch.commit();
+
   return businessRef.id;
 }
 
@@ -136,6 +151,8 @@ export async function updateBusinessProfile(businessId: string, data: Partial<Pi
     ...data,
   });
 }
+
+// ─── CUSTOMERS ───
 
 export async function createCustomer(businessId: string, payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">) {
   const phoneQuery = await getDocs(query(customersCollection(businessId), where("phone", "==", payload.phone)));
@@ -176,6 +193,8 @@ export function listenCustomer(businessId: string, customerId: string, callback:
   });
 }
 
+// ─── MEMBERS ───
+
 export async function fetchMembers(businessId: string) {
   const rows = await getDocs(query(membersCollection(businessId), where("active", "==", true)));
   return rows.docs.map((row) => row.data());
@@ -210,6 +229,8 @@ export async function updateMemberRoles(businessId: string, memberUid: string, r
     role: roleFromRoles(cleanRoles),
   });
 }
+
+// ─── INVITATIONS ───
 
 export async function createInvitationRecord(
   businessId: string,
@@ -289,10 +310,68 @@ export async function acceptInvitationByToken(token: string, uid: string) {
   return businessId;
 }
 
+// ─── DYNAMIC UNITS & CATEGORIES ───
+
+export async function createUnit(businessId: string, name: string): Promise<string> {
+  const ref = await addDoc(unitsCollection(businessId), {
+    businessId,
+    name,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function createCategory(businessId: string, name: string): Promise<string> {
+  const ref = await addDoc(categoriesCollection(businessId), {
+    businessId,
+    name,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export function listenUnits(businessId: string, callback: (rows: DbUnit[]) => void) {
+  const q = query(unitsCollection(businessId), orderBy("name", "asc"));
+  return onSnapshot(q, (snapshot) => {
+    callback(snapshot.docs.map((d) => ({ ...d.data(), id: d.id })));
+  });
+}
+
+export function listenCategories(businessId: string, callback: (rows: DbCategory[]) => void) {
+  const q = query(categoriesCollection(businessId), orderBy("name", "asc"));
+  return onSnapshot(q, (snapshot) => {
+    callback(snapshot.docs.map((d) => ({ ...d.data(), id: d.id })));
+  });
+}
+
+export async function fetchUnits(businessId: string): Promise<DbUnit[]> {
+  const q = query(unitsCollection(businessId), orderBy("name", "asc"));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
+}
+
+export async function fetchCategories(businessId: string): Promise<DbCategory[]> {
+  const q = query(categoriesCollection(businessId), orderBy("name", "asc"));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ ...d.data(), id: d.id }));
+}
+
+export async function updateCategory(businessId: string, categoryId: string, name: string) {
+  await updateDoc(doc(categoriesCollection(businessId), categoryId), { name });
+}
+
+export async function deleteCategory(businessId: string, categoryId: string) {
+  await deleteDoc(doc(categoriesCollection(businessId), categoryId));
+}
+
+// ─── ORDER NUMBER ───
+
 function buildOrderNumber() {
   const stamp = Date.now().toString().slice(-6);
   return `FF-${stamp}`;
 }
+
+// ─── ORDERS ───
 
 export async function createOrder(
   businessId: string,
@@ -306,6 +385,7 @@ export async function createOrder(
     | "amountPaid"
     | "balanceAmount"
     | "fittingRecords"
+    | "materialUsage"
     | "imageIds"
     | "deliveryStatus"
     | "stage"
@@ -323,6 +403,7 @@ export async function createOrder(
     amountPaid: depositAmount,
     balanceAmount: Math.max(0, payload.subtotalAmount - depositAmount),
     fittingRecords: [],
+    materialUsage: [],
     imageIds: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -349,30 +430,6 @@ export async function createOrder(
       recordedAt: serverTimestamp(),
       recordedByUid: actor.uid,
       recordedByName: actor.name,
-    });
-  }
-
-  for (const selection of payload.fabricSelections) {
-    if (!selection.materialId) {
-      continue;
-    }
-    const materialRef = doc(materialsCollection(businessId), selection.materialId);
-    batch.update(materialRef, {
-      quantity: increment(-Math.abs(selection.metersRequired)),
-      updatedAt: serverTimestamp(),
-    });
-    batch.set(doc(stockMovementsCollection(businessId)), {
-      businessId,
-      movementType: "consumption",
-      materialId: selection.materialId,
-      materialName: selection.materialName,
-      orderId: orderRef.id,
-      quantityChange: -Math.abs(selection.metersRequired),
-      unit: "meters",
-      reason: "Order fabric reservation",
-      createdByUid: actor.uid,
-      createdByName: actor.name,
-      createdAt: serverTimestamp(),
     });
   }
 
@@ -457,6 +514,69 @@ export async function appendOrderImageId(businessId: string, orderId: string, im
   });
 }
 
+export async function recordMaterialUsage(
+  businessId: string,
+  orderId: string,
+  items: Omit<MaterialUsageRecord, "recordedAt">[],
+  actor: { uid: string; name: string }
+) {
+  const orderRef = doc(ordersCollection(businessId), orderId);
+  const orderSnapshot = await getDoc(orderRef);
+  if (!orderSnapshot.exists()) {
+    throw new Error("Order not found.");
+  }
+  const orderData = orderSnapshot.data();
+
+  const batch = writeBatch(orderRef.firestore);
+  const usageRecords: MaterialUsageRecord[] = items.map((item) => ({
+    ...item,
+    recordedByUid: actor.uid,
+    recordedByName: actor.name,
+    recordedAt: Timestamp.fromDate(new Date()),
+  }));
+
+  for (const record of usageRecords) {
+    const materialRef = doc(materialsCollection(businessId), record.materialId);
+    batch.update(materialRef, {
+      quantity: increment(-Math.abs(record.quantityUsed)),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(stockMovementsCollection(businessId)), {
+      businessId,
+      movementType: "used in order",
+      materialId: record.materialId,
+      materialName: record.materialName,
+      orderId,
+      quantityChange: -Math.abs(record.quantityUsed),
+      unit: record.unit,
+      reason: `Used in order ${orderData.orderNumber}`,
+      createdByUid: actor.uid,
+      createdByName: actor.name,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  const existingUsage = orderData.materialUsage ?? [];
+  batch.update(orderRef, {
+    materialUsage: [...existingUsage, ...usageRecords],
+    updatedAt: serverTimestamp(),
+  });
+
+  batch.set(doc(consumptionReportsCollection(businessId)), {
+    businessId,
+    orderId,
+    orderNumber: orderData.orderNumber,
+    items: usageRecords,
+    totalItems: usageRecords.length,
+    createdAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+  return usageRecords;
+}
+
+// ─── MATERIALS ───
+
 export function listenMaterials(businessId: string, callback: (rows: InventoryMaterial[]) => void) {
   const q = query(materialsCollection(businessId), orderBy("updatedAt", "desc"));
   return onSnapshot(q, (snapshot) => {
@@ -472,19 +592,104 @@ export async function fetchMaterialById(businessId: string, materialId: string) 
   return { ...snapshot.data(), id: snapshot.id } as InventoryMaterial;
 }
 
-export function listenFabricRolls(businessId: string, callback: (rows: FabricRoll[]) => void) {
-  const q = query(fabricRollsCollection(businessId), orderBy("updatedAt", "desc"));
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map((row) => ({ ...row.data(), id: row.id })));
+export async function createMaterial(
+  businessId: string,
+  payload: Omit<InventoryMaterial, "id" | "createdAt" | "updatedAt">
+) {
+  const ref = await addDoc(materialsCollection(businessId), {
+    ...payload,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function deleteMaterial(
+  businessId: string,
+  materialId: string
+) {
+  await deleteDoc(doc(materialsCollection(businessId), materialId));
+}
+
+export async function updateMaterial(
+  businessId: string,
+  materialId: string,
+  payload: Partial<Omit<InventoryMaterial, "id" | "businessId" | "createdAt" | "updatedAt">>
+) {
+  await updateDoc(doc(materialsCollection(businessId), materialId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
   });
 }
 
-export function listenStockMovements(businessId: string, callback: (rows: StockMovement[]) => void) {
-  const q = query(stockMovementsCollection(businessId), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map((row) => ({ ...row.data(), id: row.id })));
+export async function adjustMaterialStock(
+  businessId: string,
+  payload: {
+    materialId: string;
+    materialName: string;
+    adjustment: number;
+    unit: string;
+    reason: string;
+    actorUid: string;
+    actorName: string;
+  }
+) {
+  const materialRef = doc(materialsCollection(businessId), payload.materialId);
+  const batch = writeBatch(materialRef.firestore);
+  batch.update(materialRef, {
+    quantity: increment(payload.adjustment),
+    updatedAt: serverTimestamp(),
   });
+  batch.set(doc(stockMovementsCollection(businessId)), {
+    businessId,
+    movementType: "adjustment",
+    materialId: payload.materialId,
+    materialName: payload.materialName,
+    quantityChange: payload.adjustment,
+    unit: payload.unit,
+    reason: payload.reason,
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+    createdAt: serverTimestamp(),
+  });
+  await batch.commit();
 }
+
+// ─── SUPPLIERS ───
+
+export async function createSupplier(
+  businessId: string,
+  payload: Omit<Supplier, "id" | "createdAt">
+) {
+  const ref = await addDoc(suppliersCollection(businessId), {
+    ...payload,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}export async function updateSupplier(
+  businessId: string,
+  supplierId: string,
+  payload: Partial<Omit<Supplier, "id" | "businessId" | "createdAt">>
+) {
+  await updateDoc(
+    doc(suppliersCollection(businessId), supplierId),
+    {
+      ...payload,
+      updatedAt: serverTimestamp(),
+    }
+  );
+}
+
+export async function deleteSupplier(
+  businessId: string,
+  supplierId: string
+) {
+  await deleteDoc(
+    doc(suppliersCollection(businessId), supplierId)
+  );
+}
+
+
 
 export function listenSuppliers(businessId: string, callback: (rows: Supplier[]) => void) {
   const q = query(suppliersCollection(businessId), orderBy("name", "asc"));
@@ -493,12 +698,142 @@ export function listenSuppliers(businessId: string, callback: (rows: Supplier[])
   });
 }
 
+export async function fetchSupplierById(
+  businessId: string,
+  supplierId: string
+): Promise<Supplier | null> {
+  const snapshot = await getDoc(doc(suppliersCollection(businessId), supplierId));
+  if (!snapshot.exists()) {
+    return null;
+  }
+  return { ...snapshot.data(), id: snapshot.id } as Supplier;
+}
+
+// ─── STOCK MOVEMENTS ───
+
+export function listenStockMovements(businessId: string, callback: (rows: StockMovement[]) => void) {
+  const q = query(stockMovementsCollection(businessId), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    callback(snapshot.docs.map((row) => ({ ...row.data(), id: row.id })));
+  });
+}
+
+// ─── PURCHASE ORDERS ───
+
+export async function createPurchaseOrder(
+  businessId: string,
+  payload: Omit<PurchaseOrder, "id" | "createdAt">
+) {
+  const ref = await addDoc(purchaseOrdersCollection(businessId), {
+    ...payload,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
 export function listenPurchaseOrders(businessId: string, callback: (rows: PurchaseOrder[]) => void) {
   const q = query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
     callback(snapshot.docs.map((row) => ({ ...row.data(), id: row.id })));
   });
 }
+
+export async function receiveStockFromPurchaseOrder(
+  businessId: string,
+  payload: {
+    purchaseOrderId: string;
+    materialId?: string;
+    materialName: string;
+    categoryId?: string;
+    categoryName?: string;
+    unitId?: string;
+    unitName?: string;
+    quantity: number;
+    unit: string;
+    actorUid: string;
+    actorName: string;
+  }
+) {
+  const poRef = doc(purchaseOrdersCollection(businessId), payload.purchaseOrderId);
+  const poSnapshot = await getDoc(poRef);
+  if (!poSnapshot.exists()) {
+    throw new Error("Purchase order not found.");
+  }
+  const poData = poSnapshot.data();
+  const newReceived = (poData.quantityReceived ?? 0) + payload.quantity;
+  const newStatus = newReceived >= poData.quantity ? "received" : "partial";
+
+  let materialId = payload.materialId;
+
+  if (!materialId || !(await getDoc(doc(materialsCollection(businessId), materialId))).exists()) {
+    const existing = await getDocs(
+      query(materialsCollection(businessId), where("name", "==", payload.materialName))
+    );
+    if (!existing.empty) {
+      materialId = existing.docs[0].id;
+    } else {
+      const catId = payload.categoryId;
+      let resolvedCatId = catId;
+      let resolvedCatName = payload.categoryName || "Uncategorized";
+      if (!resolvedCatId) {
+        const cats = await getDocs(query(categoriesCollection(businessId), where("name", "==", resolvedCatName)));
+        if (!cats.empty) {
+          resolvedCatId = cats.docs[0].id;
+        } else {
+          const newCatRef = await addDoc(categoriesCollection(businessId), {
+            businessId,
+            name: resolvedCatName,
+            createdAt: serverTimestamp(),
+          });
+          resolvedCatId = newCatRef.id;
+        }
+      }
+      const newMatRef = await addDoc(materialsCollection(businessId), {
+        businessId,
+        name: payload.materialName,
+        categoryId: resolvedCatId,
+        categoryName: resolvedCatName,
+        unitId: payload.unitId || "",
+        unitName: payload.unitName || payload.unit,
+        quantity: 0,
+        reorderLevel: 0,
+        averageUnitCost: poData.unitCost || 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      materialId = newMatRef.id;
+    }
+  }
+
+  const materialRef = doc(materialsCollection(businessId), materialId);
+  const batch = writeBatch(poRef.firestore);
+
+  batch.update(poRef, {
+    status: newStatus,
+    quantityReceived: newReceived,
+  });
+  batch.update(materialRef, {
+    quantity: increment(payload.quantity),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(stockMovementsCollection(businessId)), {
+    businessId,
+    movementType: "stock in",
+    materialId,
+    materialName: payload.materialName,
+    quantityChange: payload.quantity,
+    unit: payload.unit,
+    reason: `Purchase order delivery (${newReceived}/${poData.quantity} ${payload.unit})`,
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+    createdAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+  return materialId;
+}
+
+// ─── PAYMENTS ───
 
 export function listenPayments(businessId: string, callback: (rows: Payment[]) => void) {
   const q = query(paymentsCollection(businessId), orderBy("recordedAt", "desc"));
@@ -560,181 +895,7 @@ export async function recordPayment(
   await batch.commit();
 }
 
-export async function createMaterial(
-  businessId: string,
-  payload: Omit<InventoryMaterial, "id" | "createdAt" | "updatedAt">
-) {
-  if (!payload.supplierId) {
-    throw new Error("Select a supplier before creating a material.");
-  }
-  await addDoc(materialsCollection(businessId), {
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function createFabricRoll(
-  businessId: string,
-  payload: Omit<FabricRoll, "id" | "createdAt" | "updatedAt">
-) {
-  await addDoc(fabricRollsCollection(businessId), {
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function createSupplier(
-  businessId: string,
-  payload: Omit<Supplier, "id" | "createdAt">
-) {
-  await addDoc(suppliersCollection(businessId), {
-    ...payload,
-    createdAt: serverTimestamp(),
-  });
-}
-
-export async function createPurchaseOrder(
-  businessId: string,
-  payload: Omit<PurchaseOrder, "id" | "createdAt">
-) {
-  await addDoc(purchaseOrdersCollection(businessId), {
-    ...payload,
-    createdAt: serverTimestamp(),
-  });
-}
-
-export async function fetchSupplierById(
-  businessId: string,
-  supplierId: string
-): Promise<Supplier | null> {
-  const snapshot = await getDoc(doc(suppliersCollection(businessId), supplierId));
-  if (!snapshot.exists()) {
-    return null;
-  }
-  return { ...snapshot.data(), id: snapshot.id } as Supplier;
-}
-
-export async function updateMaterial(
-  businessId: string,
-  materialId: string,
-  payload: Partial<Omit<InventoryMaterial, "id" | "businessId" | "createdAt" | "updatedAt">>
-) {
-  await updateDoc(doc(materialsCollection(businessId), materialId), {
-    ...payload,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function adjustMaterialStock(
-  businessId: string,
-  payload: {
-    materialId: string;
-    materialName: string;
-    adjustment: number;
-    unit: string;
-    reason: string;
-    actorUid: string;
-    actorName: string;
-  }
-) {
-  const materialRef = doc(materialsCollection(businessId), payload.materialId);
-  const batch = writeBatch(materialRef.firestore);
-  batch.update(materialRef, {
-    quantity: increment(payload.adjustment),
-    updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(stockMovementsCollection(businessId)), {
-    businessId,
-    movementType: "adjustment",
-    materialId: payload.materialId,
-    materialName: payload.materialName,
-    quantityChange: payload.adjustment,
-    unit: payload.unit,
-    reason: payload.reason,
-    createdByUid: payload.actorUid,
-    createdByName: payload.actorName,
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
-}
-
-export async function receiveStockFromPurchaseOrder(
-  businessId: string,
-  payload: {
-    purchaseOrderId: string;
-    materialId: string;
-    materialName: string;
-    quantity: number;
-    unit: string;
-    actorUid: string;
-    actorName: string;
-  }
-) {
-  const poRef = doc(purchaseOrdersCollection(businessId), payload.purchaseOrderId);
-  const materialRef = doc(materialsCollection(businessId), payload.materialId);
-  const batch = writeBatch(poRef.firestore);
-
-  batch.update(poRef, { status: "received" });
-  batch.update(materialRef, {
-    quantity: increment(payload.quantity),
-    updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(stockMovementsCollection(businessId)), {
-    businessId,
-    movementType: "stock_in",
-    materialId: payload.materialId,
-    materialName: payload.materialName,
-    quantityChange: payload.quantity,
-    unit: payload.unit,
-    reason: "Supplier delivery",
-    createdByUid: payload.actorUid,
-    createdByName: payload.actorName,
-    createdAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-}
-
-export async function consumeFabricForOrder(
-  businessId: string,
-  payload: {
-    orderId: string;
-    rollId: string;
-    materialName: string;
-    metersUsed: number;
-    actorUid: string;
-    actorName: string;
-  }
-) {
-  const rollRef = doc(fabricRollsCollection(businessId), payload.rollId);
-  const orderRef = doc(ordersCollection(businessId), payload.orderId);
-
-  const batch = writeBatch(rollRef.firestore);
-  batch.update(rollRef, {
-    metersRemaining: increment(-payload.metersUsed),
-    updatedAt: serverTimestamp(),
-  });
-  batch.set(doc(stockMovementsCollection(businessId)), {
-    businessId,
-    movementType: "consumption",
-    materialName: payload.materialName,
-    rollId: payload.rollId,
-    orderId: payload.orderId,
-    quantityChange: -payload.metersUsed,
-    unit: "meters",
-    reason: "Order fabric consumption",
-    createdByUid: payload.actorUid,
-    createdByName: payload.actorName,
-    createdAt: serverTimestamp(),
-  });
-  batch.update(orderRef, {
-    updatedAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-}
+// ─── HELPERS ───
 
 export async function paginatedQuery<T extends DocumentData>(
   constraints: QueryConstraint[],
@@ -753,9 +914,9 @@ export function lowStockMaterials(materials: InventoryMaterial[]) {
   return materials.filter((material) => material.quantity <= material.reorderLevel);
 }
 
-export function fabricConsumptionFromMovements(movements: StockMovement[]) {
+export function materialConsumptionFromMovements(movements: StockMovement[]) {
   return movements
-    .filter((movement) => movement.movementType === "consumption")
+    .filter((movement) => movement.movementType === "used in order")
     .reduce<Record<string, number>>((acc, movement) => {
       const key = movement.materialName;
       acc[key] = (acc[key] ?? 0) + Math.abs(movement.quantityChange);

@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import type { Customer, InventoryMaterial, UserProfile } from "@/types/domain";
+import type { Customer, UserProfile } from "@/types/domain";
 import { orderSchema, type OrderInput, type OrderValues } from "@/schemas/order.schema";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
-import { appendOrderImageId, createOrder, fetchMembers, listenCustomers, listenMaterials } from "@/services/firestore.service";
+import { appendOrderImageId, createOrder, fetchMembers, listenCustomers } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
+import { notifyNewOrder } from "@/services/notification-catalog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,6 @@ export function NewOrderModulePage() {
   const { businessId, user, ready } = useBusinessContext();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tailors, setTailors] = useState<UserProfile[]>([]);
-  const [materials, setMaterials] = useState<InventoryMaterial[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
 
   const { register, handleSubmit, formState } = useForm<OrderInput, undefined, OrderValues>({
@@ -35,11 +35,9 @@ export function NewOrderModulePage() {
       return;
     }
     const unsub = listenCustomers(businessId, setCustomers);
-    const unsubMaterials = listenMaterials(businessId, setMaterials);
     fetchMembers(businessId).then((rows) => setTailors(rows.filter((member) => member.role === "tailor")));
     return () => {
       unsub();
-      unsubMaterials();
     };
   }, [businessId, ready]);
 
@@ -54,7 +52,6 @@ export function NewOrderModulePage() {
     }
 
     const tailor = tailors.find((entry) => entry.uid === values.assignedTailorId);
-    const linkedMaterial = materials.find((entry) => entry.id === values.materialId);
 
     try {
       const orderId = await createOrder(
@@ -76,13 +73,7 @@ export function NewOrderModulePage() {
           ],
           measurementsSnapshot: customer.measurements,
           designNotes: values.designNotes,
-          fabricSelections: [
-            {
-              materialName: values.fabricName,
-              materialId: linkedMaterial?.id,
-              metersRequired: values.fabricMeters,
-            },
-          ],
+          fabricSelections: [],
           dueDate: values.dueDate,
           subtotalAmount: values.agreedPrice * values.quantity,
         },
@@ -102,6 +93,7 @@ export function NewOrderModulePage() {
         });
         await appendOrderImageId(businessId, orderId, meta.id);
       }
+      await notifyNewOrder(businessId, `FF-${Date.now().toString().slice(-6)}`, customer.fullName, orderId, user.uid);
       toast.success("Order created");
       router.push(`/orders/${orderId}`);
     } catch {
@@ -141,7 +133,7 @@ export function NewOrderModulePage() {
             <Input type="number" {...register("quantity")} />
           </div>
           <div>
-            <Label>Price per garment (KES)</Label>
+            <Label>Price per garment</Label>
             <Input type="number" {...register("agreedPrice")} />
           </div>
           <div>
@@ -149,34 +141,15 @@ export function NewOrderModulePage() {
             <Input type="date" {...register("dueDate")} />
           </div>
           <div>
-            <Label>Fabric name</Label>
-            <Input {...register("fabricName")} />
-          </div>
-          <div>
-            <Label>Link material from inventory</Label>
-            <Select {...register("materialId")}>
-              <option value="">No linked material</option>
-              {materials.map((material) => (
-                <option key={material.id} value={material.id}>
-                  {material.name} ({material.quantity} {material.unit})
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Label>Fabric meters</Label>
-            <Input type="number" step="0.1" {...register("fabricMeters")} />
-          </div>
-          <div>
-            <Label>Deposit (KES)</Label>
+            <Label>Deposit</Label>
             <Input type="number" {...register("depositAmount")} />
           </div>
           <div className="md:col-span-2">
-            <Label>Design/style notes</Label>
+            <Label>Design / style notes</Label>
             <Textarea {...register("designNotes")} />
           </div>
           <div className="md:col-span-2">
-            <Label>Garment reference image</Label>
+            <Label>Garment reference image (optional)</Label>
             <Input type="file" accept="image/*" onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} />
           </div>
           <div className="md:col-span-2">

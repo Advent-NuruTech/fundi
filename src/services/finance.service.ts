@@ -15,7 +15,6 @@ import { db } from "@/lib/firebase";
 import {
   customersCollection,
   expensesCollection,
-  fabricRollsCollection,
   materialsCollection,
   ordersCollection,
   paymentsCollection,
@@ -27,7 +26,6 @@ import {
 import type {
   Customer,
   Expense,
-  FabricRoll,
   InventoryMaterial,
   Order,
   Payment,
@@ -206,10 +204,8 @@ export function withdrawalsByCategory(withdrawals: Withdrawal[], start?: Date, e
 
 // ─── INVENTORY VALUE ───
 
-export function calculateInventoryValue(materials: InventoryMaterial[], fabricRolls: FabricRoll[]): number {
-  const materialValue = materials.reduce((sum, m) => sum + m.quantity * m.averageUnitCost, 0);
-  const fabricValue = fabricRolls.reduce((sum, r) => sum + r.metersRemaining * r.costPerMeter, 0);
-  return materialValue + fabricValue;
+export function calculateInventoryValue(materials: InventoryMaterial[]): number {
+  return materials.reduce((sum, m) => sum + m.quantity * m.averageUnitCost, 0);
 }
 
 // ─── OUTSTANDING BALANCES ───
@@ -382,7 +378,6 @@ export interface FinanceData {
   expenses: Expense[];
   withdrawals: Withdrawal[];
   materials: InventoryMaterial[];
-  fabricRolls: FabricRoll[];
   movements: StockMovement[];
   purchaseOrders: any[];
 }
@@ -402,7 +397,6 @@ export function listenAllFinanceData(
       data.expenses &&
       data.withdrawals &&
       data.materials &&
-      data.fabricRolls &&
       data.movements &&
       data.purchaseOrders
     ) {
@@ -465,15 +459,6 @@ export function listenAllFinanceData(
   );
 
   const unsub7 = onSnapshot(
-    query(fabricRollsCollection(businessId), orderBy("updatedAt", "desc")),
-    (snap) => {
-      data.fabricRolls = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as FabricRoll[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub8 = onSnapshot(
     query(stockMovementsCollection(businessId), orderBy("createdAt", "desc")),
     (snap) => {
       data.movements = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as StockMovement[];
@@ -482,7 +467,7 @@ export function listenAllFinanceData(
     onError
   );
 
-  const unsub9 = onSnapshot(
+  const unsub8 = onSnapshot(
     query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc")),
     (snap) => {
       data.purchaseOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
@@ -500,7 +485,6 @@ export function listenAllFinanceData(
     unsub6();
     unsub7();
     unsub8();
-    unsub9();
   };
 }
 

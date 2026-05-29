@@ -89,7 +89,7 @@ export function FinanceModulePage() {
     const totalExpenses = calculateExpenses(data.expenses);
     const totalWithdrawals = calculateWithdrawals(data.withdrawals);
 
-    const inventoryValue = calculateInventoryValue(data.materials, data.fabricRolls);
+    const inventoryValue = calculateInventoryValue(data.materials);
     const outstandingBalances = calculateOutstandingBalances(data.orders);
 
     const cashIn = calculateCashIn(data.payments);

@@ -95,7 +95,7 @@ export function ReportsModulePage() {
     const expenseRatio = calculateExpenseRatio(expenses, revenue);
 
     const outstandingBalances = calculateOutstandingBalances(data.orders);
-    const inventoryValue = calculateInventoryValue(data.materials, data.fabricRolls);
+    const inventoryValue = calculateInventoryValue(data.materials);
 
     const ordersInPeriod = data.orders.filter((o) => {
       const d = o.createdAt?.toDate?.() ?? new Date();

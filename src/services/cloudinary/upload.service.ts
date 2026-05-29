@@ -56,6 +56,19 @@ export async function uploadImage(input: {
   };
 }
 
+export async function deleteImageFromCloudinary(publicId: string) {
+  const response = await fetch("/api/cloudinary/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ publicId }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error || "Failed to delete image from Cloudinary");
+  }
+}
+
 export async function deleteImageMetadata(businessId: string, imageId: string) {
   await deleteDoc(doc(imagesCollection(businessId), imageId));
 }

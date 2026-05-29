@@ -1,24 +1,33 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useInventory } from "@/modules/inventory/hooks/use-inventory";
+import { listenUnits } from "@/services/firestore.service";
 import { InventoryTabs } from "@/modules/inventory/components/inventory-tabs";
 import { OverviewSection } from "@/modules/inventory/components/sections/overview-section";
 import { MaterialsSection } from "@/modules/inventory/components/sections/materials-section";
-import { FabricRollsSection } from "@/modules/inventory/components/sections/fabric-rolls-section";
 import { SuppliersSection } from "@/modules/inventory/components/sections/suppliers-section";
 import { PurchaseOrdersSection } from "@/modules/inventory/components/sections/purchase-orders-section";
 import { StockMovementsSection } from "@/modules/inventory/components/sections/stock-movements-section";
 import { LowStockSection } from "@/modules/inventory/components/sections/low-stock-section";
 import { FabricConsumptionSection } from "@/modules/inventory/components/sections/fabric-consumption-section";
+import { useBusinessContext } from "@/modules/shared/use-business-context";
+import type { DbUnit } from "@/types/domain";
 
 export function InventoryModulePage({ section: defaultSection }: { section?: string }) {
   const searchParams = useSearchParams();
   const activeSection = searchParams.get("section") || defaultSection || "overview";
+  const { businessId, ready } = useBusinessContext();
+  const [units, setUnits] = useState<DbUnit[]>([]);
+
+  useEffect(() => {
+    if (!ready) return;
+    return listenUnits(businessId, setUnits);
+  }, [businessId, ready]);
 
   const {
     materials,
-    rolls,
     movements,
     suppliers,
     purchaseOrders,
@@ -35,7 +44,6 @@ export function InventoryModulePage({ section: defaultSection }: { section?: str
       {activeSection === "overview" && (
         <OverviewSection
           materials={materials}
-          rolls={rolls}
           movements={movements}
           suppliers={suppliers}
           purchaseOrders={purchaseOrders}
@@ -49,10 +57,6 @@ export function InventoryModulePage({ section: defaultSection }: { section?: str
         <MaterialsSection materials={materials} suppliers={suppliers} />
       )}
 
-      {activeSection === "fabric-rolls" && (
-        <FabricRollsSection rolls={rolls} />
-      )}
-
       {activeSection === "suppliers" && (
         <SuppliersSection suppliers={suppliers} />
       )}
@@ -62,6 +66,7 @@ export function InventoryModulePage({ section: defaultSection }: { section?: str
           purchaseOrders={purchaseOrders}
           suppliers={suppliers}
           materials={materials}
+          units={units}
         />
       )}
 

@@ -8,11 +8,18 @@ export const orderSchema = z.object({
   designNotes: z.string().optional(),
   dueDate: z.string().min(1),
   assignedTailorId: z.string().optional(),
-  fabricName: z.string().min(2),
-  materialId: z.string().optional(),
-  fabricMeters: z.coerce.number().min(0.1),
   depositAmount: z.coerce.number().min(0),
 });
 
 export type OrderValues = z.infer<typeof orderSchema>;
 export type OrderInput = z.input<typeof orderSchema>;
+
+export const materialUsageSchema = z.object({
+  materialId: z.string().min(1, "Select a material"),
+  materialName: z.string().min(1),
+  quantityUsed: z.coerce.number().min(0.01, "Quantity must be more than 0"),
+  unit: z.string().min(1),
+});
+
+export type MaterialUsageInput = z.input<typeof materialUsageSchema>;
+export type MaterialUsageValues = z.infer<typeof materialUsageSchema>;

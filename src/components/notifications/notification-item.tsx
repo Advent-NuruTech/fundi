@@ -21,6 +21,15 @@ const typeLabels: Record<string, { color: string }> = {
   low_stock: { color: "text-rose-600" },
   member_joined: { color: "text-teal-600" },
   system: { color: "text-slate-600" },
+  material_added: { color: "text-emerald-600" },
+  stock_received: { color: "text-emerald-600" },
+  stock_adjusted: { color: "text-amber-600" },
+  purchase_order_created: { color: "text-blue-600" },
+  purchase_order_received: { color: "text-emerald-600" },
+  new_order_created: { color: "text-indigo-600" },
+  order_stage_changed: { color: "text-purple-600" },
+  order_completed: { color: "text-emerald-600" },
+  materials_consumed: { color: "text-amber-600" },
 };
 
 export function NotificationItem({ notification, onClick, onArchive, onDelete }: Props) {

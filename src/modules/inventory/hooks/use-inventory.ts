@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import type { FabricRoll, InventoryMaterial, PurchaseOrder, StockMovement, Supplier } from "@/types/domain";
+import type { InventoryMaterial, PurchaseOrder, StockMovement, Supplier } from "@/types/domain";
 import {
   listenMaterials,
-  listenFabricRolls,
   listenStockMovements,
   listenSuppliers,
   listenPurchaseOrders,
   lowStockMaterials,
-  fabricConsumptionFromMovements,
+  materialConsumptionFromMovements,
 } from "@/services/firestore.service";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 
@@ -17,7 +16,6 @@ export function useInventory() {
   const { businessId, ready } = useBusinessContext();
 
   const [materials, setMaterials] = useState<InventoryMaterial[]>([]);
-  const [rolls, setRolls] = useState<FabricRoll[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
@@ -26,14 +24,13 @@ export function useInventory() {
   useEffect(() => {
     if (!ready) return;
 
-    const state = { materials: false, rolls: false, movements: false, suppliers: false, purchaseOrders: false };
+    const state = { materials: false, movements: false, suppliers: false, purchaseOrders: false };
     const checkLoaded = () => {
       if (Object.values(state).every(Boolean)) setLoading(false);
     };
 
     const unsubs = [
       listenMaterials(businessId, (data) => { setMaterials(data); if (!state.materials) { state.materials = true; checkLoaded(); } }),
-      listenFabricRolls(businessId, (data) => { setRolls(data); if (!state.rolls) { state.rolls = true; checkLoaded(); } }),
       listenStockMovements(businessId, (data) => { setMovements(data); if (!state.movements) { state.movements = true; checkLoaded(); } }),
       listenSuppliers(businessId, (data) => { setSuppliers(data); if (!state.suppliers) { state.suppliers = true; checkLoaded(); } }),
       listenPurchaseOrders(businessId, (data) => { setPurchaseOrders(data); if (!state.purchaseOrders) { state.purchaseOrders = true; checkLoaded(); } }),
@@ -43,7 +40,7 @@ export function useInventory() {
   }, [businessId, ready]);
 
   const lowStock = useMemo(() => lowStockMaterials(materials), [materials]);
-  const consumption = useMemo(() => fabricConsumptionFromMovements(movements), [movements]);
+  const consumption = useMemo(() => materialConsumptionFromMovements(movements), [movements]);
   const stockValue = useMemo(
     () => materials.reduce((sum, m) => sum + m.quantity * m.averageUnitCost, 0),
     [materials]
@@ -61,7 +58,6 @@ export function useInventory() {
 
   return {
     materials,
-    rolls,
     movements,
     suppliers,
     purchaseOrders,

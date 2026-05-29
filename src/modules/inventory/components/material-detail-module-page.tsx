@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ExternalLink, Package, AlertTriangle } from "lucide-react";
+import { ExternalLink, Package, AlertTriangle, ImageIcon } from "lucide-react";
 import type { InventoryMaterial, Supplier } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { fetchMaterialById, fetchSupplierById } from "@/services/firestore.service";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatKes } from "@/lib/utils";
 
 export function MaterialDetailModulePage() {
   const params = useParams<{ materialId: string }>();
@@ -54,6 +55,7 @@ export function MaterialDetailModulePage() {
   }
 
   const isLowStock = material.quantity <= material.reorderLevel;
+  const fabricMeta = material.fabricMeta;
 
   return (
     <div className="space-y-4">
@@ -61,7 +63,11 @@ export function MaterialDetailModulePage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Package className="h-5 w-5 text-emerald-600" />
+              {material.imageUrl ? (
+                <img src={material.imageUrl} alt={material.name} className="h-10 w-10 rounded-lg object-cover" />
+              ) : (
+                <Package className="h-5 w-5 text-emerald-600" />
+              )}
               <CardTitle>{material.name}</CardTitle>
             </div>
             {isLowStock && (
@@ -75,12 +81,12 @@ export function MaterialDetailModulePage() {
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-3">
-              <DetailRow label="Category" value={material.category.replace("_", " ")} />
-              <DetailRow label="Current stock" value={`${material.quantity} ${material.unit}`} />
-              <DetailRow label="Reorder level" value={`${material.reorderLevel} ${material.unit}`} />
+              <DetailRow label="Category" value={material.categoryName} />
+              <DetailRow label="Current stock" value={`${material.quantity} ${material.unitName}`} />
+              <DetailRow label="Reorder level" value={`${material.reorderLevel} ${material.unitName}`} />
+              <DetailRow label="Price per item" value={formatKes(material.averageUnitCost || 0)} />
             </div>
             <div className="space-y-3">
-              <DetailRow label="Unit cost" value={`KES ${material.averageUnitCost?.toLocaleString() || "0"}`} />
               <div className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs text-slate-500">Supplier</p>
                 {supplier ? (
@@ -98,8 +104,36 @@ export function MaterialDetailModulePage() {
                   <p className="text-xs text-slate-400 mt-0.5">{supplier.phone}</p>
                 )}
               </div>
+
+              {material.imageUrl && (
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500 mb-2">Image</p>
+                  <img src={material.imageUrl} alt={material.name} className="max-h-48 rounded-lg object-cover" />
+                </div>
+              )}
             </div>
           </div>
+
+          {fabricMeta && (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {fabricMeta.color && <DetailRow label="Color" value={fabricMeta.color} />}
+              {fabricMeta.gsm !== undefined && <DetailRow label="GSM" value={String(fabricMeta.gsm)} />}
+              {fabricMeta.rollLength !== undefined && <DetailRow label="Roll Length" value={`${fabricMeta.rollLength}`} />}
+              {fabricMeta.pattern && <DetailRow label="Pattern" value={fabricMeta.pattern} />}
+              {fabricMeta.composition && <DetailRow label="Composition" value={fabricMeta.composition} />}
+            </div>
+          )}
+
+          {fabricMeta?.customFields && fabricMeta.customFields.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Custom Fields</p>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {fabricMeta.customFields.map((field, i) => (
+                  <DetailRow key={i} label={field.key} value={String(field.value)} />
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

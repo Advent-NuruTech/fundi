@@ -21,7 +21,7 @@ const searchSuggestions = [
     icon: Package,
   },
   {
-    title: "Fabric Rolls",
+    title: "Materials",
     category: "Inventory",
     icon: Warehouse,
   },

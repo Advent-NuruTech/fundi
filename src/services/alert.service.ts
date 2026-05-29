@@ -8,13 +8,6 @@ import { fetchMembers } from "@/services/firestore.service";
 import type { InventoryMaterial, Order } from "@/types/domain";
 
 export async function checkAndNotifyLowStock(businessId: string) {
-  const q = query(
-    materialsCollection(businessId),
-    where("quantity", "<=", 0),
-    limit(1)
-  );
-  const snapshot = await getDocs(q);
-
   const allMaterials = await getDocs(
     query(materialsCollection(businessId), orderBy("quantity", "asc"))
   );
@@ -22,23 +15,25 @@ export async function checkAndNotifyLowStock(businessId: string) {
   const lowStockItems = allMaterials.docs
     .map((d) => ({ ...d.data(), id: d.id } as unknown as InventoryMaterial))
     .filter((m) => m.quantity <= m.reorderLevel)
-    .slice(0, 5);
+    .slice(0, 10);
 
   if (lowStockItems.length === 0) return;
 
   const members = await fetchMembers(businessId);
-  const names = lowStockItems.map((m) => `${m.name} (${m.quantity} ${m.unit})`).join(", ");
 
-  for (const member of members) {
-    if (!member.active) continue;
-    await createNotification({
-      businessId,
-      recipientUid: member.uid,
-      type: "low_stock",
-      title: "Low Stock Alert",
-      message: `${lowStockItems.length} material(s) running low: ${names}`,
-      link: "/inventory/low-stock",
-    });
+  for (const item of lowStockItems) {
+    for (const member of members) {
+      if (!member.active) continue;
+      await createNotification({
+        businessId,
+        recipientUid: member.uid,
+        type: "low_stock",
+        title: "Low Stock Alert",
+        message: `${item.name} is running low (${item.quantity} ${item.unitName} remaining). Reorder at ${item.reorderLevel}.`,
+        link: `/inventory/materials/${item.id}`,
+        metadata: { materialId: item.id, materialName: item.name },
+      });
+    }
   }
 }
 

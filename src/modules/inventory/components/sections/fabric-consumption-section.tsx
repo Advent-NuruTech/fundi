@@ -14,7 +14,7 @@ export function FabricConsumptionSection({
   const totalConsumed = sorted.reduce((sum, [, v]) => sum + v, 0);
 
   const consumptionMovements = movements.filter(
-    (m) => m.movementType === "consumption" && m.unit === "meters"
+    (m) => m.movementType === "used in order"
   );
 
   return (
@@ -22,8 +22,8 @@ export function FabricConsumptionSection({
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="pt-5">
-            <p className="text-xs text-slate-500">Total Fabric Consumed</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalConsumed.toFixed(1)}m</p>
+            <p className="text-xs text-slate-500">Total Material Used</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{totalConsumed.toFixed(1)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -34,7 +34,7 @@ export function FabricConsumptionSection({
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <p className="text-xs text-slate-500">Consumption Records</p>
+            <p className="text-xs text-slate-500">Usage Records</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">{consumptionMovements.length}</p>
           </CardContent>
         </Card>
@@ -43,16 +43,16 @@ export function FabricConsumptionSection({
       {sorted.length === 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Fabric Consumption</CardTitle>
+            <CardTitle>Material Usage</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-slate-500">No consumption data yet. Consumption is tracked when orders are created with linked materials.</p>
+            <p className="text-sm text-slate-500">No usage data yet. Usage is tracked when orders are completed and materials are recorded.</p>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Consumption by Material</CardTitle>
+            <CardTitle>Usage by Material</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -62,7 +62,7 @@ export function FabricConsumptionSection({
                   <div key={name}>
                     <div className="mb-1 flex items-center justify-between text-sm">
                       <span className="font-medium text-slate-900">{name}</span>
-                      <span className="text-slate-600">{total.toFixed(1)}m ({percentage.toFixed(1)}%)</span>
+                      <span className="text-slate-600">{total.toFixed(1)} ({percentage.toFixed(1)}%)</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                       <div
@@ -81,7 +81,7 @@ export function FabricConsumptionSection({
       {consumptionMovements.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Recent Consumption Records</CardTitle>
+            <CardTitle>Recent Usage Records</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -94,7 +94,7 @@ export function FabricConsumptionSection({
                       {m.orderId && <> &middot; Order ref: {m.orderId.slice(0, 8)}</>}
                     </p>
                   </div>
-                  <p className="font-semibold text-amber-600">-{Math.abs(m.quantityChange)}m</p>
+                  <p className="font-semibold text-amber-600">-{Math.abs(m.quantityChange)}{m.unit ? ` ${m.unit}` : ""}</p>
                 </div>
               ))}
             </div>

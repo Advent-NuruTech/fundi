@@ -5,7 +5,6 @@ import type {
   Customer,
   EmployeeInvitation,
   Expense,
-  FabricRoll,
   ImageMeta,
   InventoryMaterial,
   Message,
@@ -18,6 +17,9 @@ import type {
   Transaction,
   UserProfile,
   Withdrawal,
+  DbUnit,
+  DbCategory,
+  ConsumptionReport,
 } from "@/types/domain";
 
 type DbRecord<T extends { id: string }> = Omit<T, "id"> & DocumentData;
@@ -39,9 +41,6 @@ export const ordersCollection = (businessId: string) =>
 
 export const materialsCollection = (businessId: string) =>
   collection(db, "businesses", businessId, "inventory_materials") as CollectionReference<DbRecord<InventoryMaterial>>;
-
-export const fabricRollsCollection = (businessId: string) =>
-  collection(db, "businesses", businessId, "fabric_rolls") as CollectionReference<DbRecord<FabricRoll>>;
 
 export const stockMovementsCollection = (businessId: string) =>
   collection(db, "businesses", businessId, "stock_movements") as CollectionReference<DbRecord<StockMovement>>;
@@ -66,6 +65,17 @@ export const conversationsCollection = (businessId: string) =>
 
 export const messagesCollection = (businessId: string, conversationId: string) =>
   collection(db, "businesses", businessId, "conversations", conversationId, "messages") as CollectionReference<DbRecord<Message>>;
+
+// ─── DYNAMIC INVENTORY COLLECTIONS ───
+
+export const unitsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "units") as CollectionReference<DbRecord<DbUnit>>;
+
+export const categoriesCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "categories") as CollectionReference<DbRecord<DbCategory>>;
+
+export const consumptionReportsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "consumption_reports") as CollectionReference<DbRecord<ConsumptionReport>>;
 
 // ─── FINANCE COLLECTIONS ───
 

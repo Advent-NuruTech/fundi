@@ -4,7 +4,6 @@ import {
   Boxes,
   ClipboardList,
   Factory,
-  Layers3,
   Package,
   Scissors,
   ShieldAlert,
@@ -27,12 +26,6 @@ export const inventoryNavigation = [
         label: "Materials",
         href: "/inventory/materials",
         icon: Package,
-      },
-
-      {
-        label: "Fabric Rolls",
-        href: "/inventory/fabric-rolls",
-        icon: Layers3,
       },
     ],
   },
@@ -70,15 +63,9 @@ export const inventoryNavigation = [
     title: "Production Intelligence",
     items: [
       {
-        label: "Fabric Consumption",
+        label: "Material Consumption",
         href: "/inventory/fabric-consumption",
         icon: Factory,
-      },
-
-      {
-        label: "Fabric Reservations",
-        href: "/inventory/fabric-reservations",
-        icon: Package,
       },
 
       {

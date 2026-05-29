@@ -4,11 +4,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatKes } from "@/lib/utils";
-import type { InventoryMaterial, FabricRoll, Supplier, StockMovement, PurchaseOrder } from "@/types/domain";
+import type { InventoryMaterial, Supplier, StockMovement, PurchaseOrder } from "@/types/domain";
 
 interface OverviewSectionProps {
   materials: InventoryMaterial[];
-  rolls: FabricRoll[];
   movements: StockMovement[];
   suppliers: Supplier[];
   purchaseOrders: PurchaseOrder[];
@@ -19,7 +18,6 @@ interface OverviewSectionProps {
 
 export function OverviewSection({
   materials,
-  rolls,
   movements,
   suppliers,
   purchaseOrders,
@@ -45,7 +43,7 @@ export function OverviewSection({
   }
 
   const consumptionMap = movements
-    .filter((m) => m.movementType === "consumption")
+    .filter((m) => m.movementType === "used in order")
     .reduce<Record<string, number>>((acc, m) => {
       const key = m.materialName;
       acc[key] = (acc[key] ?? 0) + Math.abs(m.quantityChange);
@@ -63,12 +61,6 @@ export function OverviewSection({
         </Card>
         <Card>
           <CardContent className="pt-5">
-            <p className="text-xs text-slate-500">Fabric Rolls</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{rolls.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-5">
             <p className="text-xs text-slate-500">Stock Value</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">{formatKes(stockValue)}</p>
           </CardContent>
@@ -77,6 +69,12 @@ export function OverviewSection({
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500">Suppliers</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">{suppliers.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-xs text-slate-500">Categories</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{new Set(materials.map((m) => m.categoryId)).size}</p>
           </CardContent>
         </Card>
       </div>
@@ -93,7 +91,7 @@ export function OverviewSection({
                   <div key={m.id} className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
                     <span className="font-medium text-amber-900">{m.name}</span>
                     <Badge variant="warning">
-                      {m.quantity} {m.unit}
+                      {m.quantity} {m.unitName}
                     </Badge>
                   </div>
                 ))}
@@ -118,8 +116,8 @@ export function OverviewSection({
                       <p className="font-medium">{m.materialName}</p>
                       <p className="text-xs text-slate-500">{m.reason}</p>
                     </div>
-                    <Badge variant={m.movementType === "stock_in" ? "success" : m.movementType === "consumption" ? "warning" : "default"}>
-                      {m.movementType === "stock_in" ? "+" : ""}{m.quantityChange} {m.unit}
+                    <Badge variant={m.movementType === "stock in" ? "success" : m.movementType === "used in order" ? "warning" : "default"}>
+                      {m.movementType === "stock in" ? "+" : ""}{m.quantityChange} {m.unit}
                     </Badge>
                   </div>
                 ))}
@@ -143,7 +141,7 @@ export function OverviewSection({
                   .map((po) => (
                     <div key={po.id} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
                       <div>
-                        <p className="font-medium">{po.itemName}</p>
+                        <p className="font-medium">{po.materialName}</p>
                         <p className="text-xs text-slate-500">{po.supplierName}</p>
                       </div>
                       <p className="text-slate-700">
@@ -169,7 +167,7 @@ export function OverviewSection({
                   .map(([name, total]) => (
                     <div key={name} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
                       <span className="font-medium">{name}</span>
-                      <span className="text-slate-700">{total} meters</span>
+                      <span className="text-slate-700">{total.toFixed(1)} used</span>
                     </div>
                   ))}
               </div>

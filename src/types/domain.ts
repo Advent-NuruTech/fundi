@@ -19,8 +19,7 @@ export type ProductionStage =
 export type DeliveryStatus = "pending" | "ready" | "picked";
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 export type PaymentMethod = "cash" | "mpesa";
-export type MaterialCategory = "buttons" | "zips" | "thread" | "elastic" | "lining" | "accessories";
-export type MovementType = "stock_in" | "consumption" | "wastage" | "adjustment";
+
 export type NotificationType =
   | "order_assigned"
   | "order_updated"
@@ -30,9 +29,33 @@ export type NotificationType =
   | "announcement"
   | "low_stock"
   | "member_joined"
-  | "system";
+  | "system"
+  | "material_added"
+  | "stock_received"
+  | "stock_adjusted"
+  | "purchase_order_created"
+  | "purchase_order_received"
+  | "new_order_created"
+  | "order_stage_changed"
+  | "order_completed"
+  | "materials_consumed";
+
 export type ConversationType = "direct" | "announcement";
 export type AnnouncementPriority = "low" | "normal" | "high" | "urgent";
+
+export interface DbUnit {
+  id: string;
+  businessId: string;
+  name: string;
+  createdAt: Timestamp;
+}
+
+export interface DbCategory {
+  id: string;
+  businessId: string;
+  name: string;
+  createdAt: Timestamp;
+}
 
 export interface UserProfile {
   uid: string;
@@ -112,8 +135,8 @@ export interface Business {
   name: string;
   phone: string;
   location: string;
-  currency: "KES";
-  country: "Kenya";
+  currency: string;
+  country: string;
   ownerUid: string;
   createdAt: Timestamp;
 }
@@ -157,7 +180,6 @@ export interface FabricSelection {
   materialId?: string;
   materialName: string;
   color?: string;
-  rollId?: string;
   metersRequired: number;
 }
 
@@ -167,6 +189,16 @@ export interface FittingRecord {
   adjustmentSummary?: string;
   byUid: string;
   byName: string;
+}
+
+export interface MaterialUsageRecord {
+  materialId: string;
+  materialName: string;
+  quantityUsed: number;
+  unit: string;
+  recordedByUid: string;
+  recordedByName: string;
+  recordedAt: Timestamp;
 }
 
 export interface Order {
@@ -191,46 +223,49 @@ export interface Order {
   balanceAmount: number;
   fittingRecords: FittingRecord[];
   productionNotes?: string;
+  materialUsage: MaterialUsageRecord[];
   imageIds: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+export interface FabricMeta {
+  color?: string;
+  gsm?: number;
+  rollLength?: number;
+  pattern?: string;
+  composition?: string;
+  customFields?: Array<{
+    key: string;
+    value: string | number;
+  }>;
 }
 
 export interface InventoryMaterial {
   id: string;
   businessId: string;
   name: string;
-  category: MaterialCategory;
-  unit: "pcs" | "meters" | "cones";
+  categoryId: string;
+  categoryName: string;
+  unitId: string;
+  unitName: string;
   quantity: number;
   reorderLevel: number;
   averageUnitCost: number;
   supplierId?: string;
+  imageUrl?: string;
+  imagePublicId?: string;
+  fabricMeta?: FabricMeta;
   updatedAt: Timestamp;
   createdAt: Timestamp;
-}
-
-export interface FabricRoll {
-  id: string;
-  businessId: string;
-  materialId?: string;
-  fabricType: string;
-  color: string;
-  supplierId?: string;
-  metersRemaining: number;
-  costPerMeter: number;
-  purchasedOn: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
 }
 
 export interface StockMovement {
   id: string;
   businessId: string;
-  movementType: MovementType;
+  movementType: string;
   materialId?: string;
   materialName: string;
-  rollId?: string;
   orderId?: string;
   quantityChange: number;
   unit: string;
@@ -255,11 +290,13 @@ export interface PurchaseOrder {
   businessId: string;
   supplierId: string;
   supplierName: string;
-  itemName: string;
+  materialId: string;
+  materialName: string;
   quantity: number;
   unit: string;
   unitCost: number;
-  status: "pending" | "received";
+  status: "pending" | "partial" | "received";
+  quantityReceived: number;
   expectedDate: string;
   createdAt: Timestamp;
 }
@@ -312,14 +349,26 @@ export interface TenantScoped {
   businessId: string;
 }
 
-// ─── FINANCE MODULE TYPES ───
+// Finance category types (backward-compatible string aliases)
+export type ExpenseCategory = string;
+export type WithdrawalCategory = string;
 
-export type ExpenseCategory = "rent" | "salaries" | "transport" | "utilities" | "inventory_purchases" | "marketing" | "maintenance" | "miscellaneous";
+export interface ConsumptionReport {
+  id: string;
+  businessId: string;
+  orderId: string;
+  orderNumber: string;
+  items: MaterialUsageRecord[];
+  totalItems: number;
+  createdAt: Timestamp;
+}
+
+// ─── FINANCE MODULE TYPES ───
 
 export interface Expense {
   id: string;
   businessId: string;
-  category: ExpenseCategory;
+  category: string;
   amount: number;
   description: string;
   notes?: string;
@@ -333,14 +382,12 @@ export interface Expense {
   updatedAt: Timestamp;
 }
 
-export type WithdrawalCategory = "owner_drawings" | "salary_advance" | "business_expenses" | "tax" | "other";
-
 export interface Withdrawal {
   id: string;
   businessId: string;
   amount: number;
   reason: string;
-  category: WithdrawalCategory;
+  category: string;
   withdrawnByUid: string;
   withdrawnByName: string;
   withdrawalDate: Timestamp;

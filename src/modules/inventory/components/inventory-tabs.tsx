@@ -6,12 +6,11 @@ import { Button } from "@/components/ui/button";
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "materials", label: "Materials" },
-  { key: "fabric-rolls", label: "Fabric Rolls" },
   { key: "suppliers", label: "Suppliers" },
   { key: "purchase-orders", label: "Purchase Orders" },
   { key: "stock-movements", label: "Stock Movements" },
   { key: "low-stock", label: "Low Stock" },
-  { key: "fabric-consumption", label: "Fabric Consumption" },
+  { key: "fabric-consumption", label: "Material Consumption" },
 ];
 
 export function InventoryTabs({ activeSection }: { activeSection: string }) {
