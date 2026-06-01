@@ -38,7 +38,7 @@ export function DashboardModulePage() {
     const unsubPayments = listenPayments(businessId, setPayments);
     const unsubMaterials = listenMaterials(businessId, setMaterials);
     const unsubPos = listenPurchaseOrders(businessId, setPurchaseOrders);
-    fetchMembers(businessId).then((rows) => setWorkers(rows.filter((row) => row.roles?.includes("tailor") || row.role === "tailor")));
+    fetchMembers(businessId).then((rows) => setWorkers(rows));
     return () => {
       unsubOrders();
       unsubPayments();
@@ -118,10 +118,10 @@ export function DashboardModulePage() {
         <p className="text-sm text-slate-500">Live view of production, payments, and stock health.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Today urgent" value={overdue.length.toString()} tone="warning" />
-        <Metric label="Low stock" value={lowStock.length.toString()} tone="warning" />
-        <Metric label="Revenue" value={formatKes(revenue)} tone="success" />
-        <Metric label="Pending balances" value={formatKes(pendingBalances)} tone="danger" />
+        <Metric label="Today urgent" value={overdue.length.toString()} tone="warning" href="/orders" />
+        <Metric label="Low stock" value={lowStock.length.toString()} tone="warning" href="/inventory" />
+        <Metric label="Revenue" value={formatKes(revenue)} tone="success" href="/finance" />
+        <Metric label="Pending balances" value={formatKes(pendingBalances)} tone="danger" href="/payments" />
       </div>
 
       {permissions.canReadFinance && (
@@ -178,9 +178,10 @@ export function DashboardModulePage() {
           <CardHeader><CardTitle>Workers</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {workers.map((worker) => (
-              <div key={worker.uid} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                {worker.displayName}
-              </div>
+              <Link key={worker.uid} href={`/employees/${worker.uid}`} className="block rounded-xl border border-slate-200 px-3 py-2 text-sm transition hover:border-emerald-200 hover:bg-emerald-50">
+                <p className="font-medium">{worker.displayName}</p>
+                {worker.employeeNumber && <p className="text-xs text-slate-400">{worker.employeeNumber}</p>}
+              </Link>
             ))}
           </CardContent>
         </Card>
@@ -191,7 +192,7 @@ export function DashboardModulePage() {
 
 function QueueRow({ order, showDelay = false }: { order: Order; showDelay?: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
+    <Link href={`/orders/${order.id}`} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm transition hover:border-emerald-200 hover:bg-emerald-50">
       <div>
         <p className="font-medium">{order.customerName}</p>
       <p className="text-xs text-slate-500">
@@ -201,12 +202,12 @@ function QueueRow({ order, showDelay = false }: { order: Order; showDelay?: bool
         )}
       </div>
       <Badge>{order.stage.replaceAll("_", " ")}</Badge>
-    </div>
+    </Link>
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "warning" | "success" | "danger" }) {
-  return (
+function Metric({ label, value, tone, href }: { label: string; value: string; tone?: "warning" | "success" | "danger"; href?: string }) {
+  const content = (
     <Card>
       <CardContent className="pt-5">
         <p className="text-xs text-slate-500">{label}</p>
@@ -216,6 +217,10 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
       </CardContent>
     </Card>
   );
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+  return content;
 }
 
 function withinRange(payments: Payment[], days: number) {

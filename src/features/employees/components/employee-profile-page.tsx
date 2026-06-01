@@ -62,6 +62,7 @@ export function EmployeeProfilePage() {
         <div>
           <h1 className="text-2xl font-bold">{member.displayName}</h1>
           <p className="text-sm text-gray-500">{member.email}</p>
+          {member.employeeNumber && <p className="text-xs text-emerald-600 font-medium">{member.employeeNumber}</p>}
         </div>
       </div>
 

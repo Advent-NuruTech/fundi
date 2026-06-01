@@ -1,6 +1,8 @@
 import {
   addDoc,
+  deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -61,7 +63,7 @@ export async function createConversation(input: {
         clean({
           uid: p.uid,
           displayName: p.displayName ?? "User",
-          photoURL: p.photoURL ?? null,
+          photoURL: p.photoURL || undefined,
         })
       ),
 
@@ -116,6 +118,7 @@ export async function sendMessage(input: {
     ),
     clean({
       lastMessage: clean({
+        messageId: messageRef.id,
         text: input.text,
         senderUid: input.senderUid,
         senderName: input.senderName ?? "User",
@@ -126,6 +129,122 @@ export async function sendMessage(input: {
   );
 
   return messageRef.id;
+}
+
+export async function updateMessage(input: {
+  businessId: string;
+  conversationId: string;
+  messageId: string;
+  senderUid: string;
+  text: string;
+}) {
+  const text = input.text.trim();
+  if (!text) {
+    throw new Error("Message cannot be empty.");
+  }
+
+  const messageRef = doc(
+    messagesCollection(input.businessId, input.conversationId),
+    input.messageId
+  );
+  const snapshot = await getDoc(messageRef);
+  if (!snapshot.exists()) {
+    throw new Error("Message not found.");
+  }
+
+  const message = snapshot.data();
+  if (message.senderUid !== input.senderUid || message.deletedAt) {
+    throw new Error("You can only edit your own active messages.");
+  }
+
+  await updateDoc(messageRef, {
+    text,
+    editedAt: serverTimestamp(),
+  });
+
+  await syncLastMessageAfterChange(input.businessId, input.conversationId);
+}
+
+export async function deleteMessage(input: {
+  businessId: string;
+  conversationId: string;
+  messageId: string;
+  senderUid: string;
+}) {
+  const messageRef = doc(
+    messagesCollection(input.businessId, input.conversationId),
+    input.messageId
+  );
+  const snapshot = await getDoc(messageRef);
+  if (!snapshot.exists()) {
+    return;
+  }
+
+  const message = snapshot.data();
+  if (message.senderUid !== input.senderUid) {
+    throw new Error("You can only delete your own messages.");
+  }
+
+  await updateDoc(messageRef, {
+    text: "",
+    attachments: [],
+    deletedAt: serverTimestamp(),
+    deletedByUid: input.senderUid,
+  });
+
+  await syncLastMessageAfterChange(input.businessId, input.conversationId);
+}
+
+export async function deleteMessagePermanently(input: {
+  businessId: string;
+  conversationId: string;
+  messageId: string;
+  senderUid: string;
+}) {
+  const messageRef = doc(
+    messagesCollection(input.businessId, input.conversationId),
+    input.messageId
+  );
+  const snapshot = await getDoc(messageRef);
+  if (!snapshot.exists()) {
+    return;
+  }
+
+  const message = snapshot.data();
+  if (message.senderUid !== input.senderUid) {
+    throw new Error("You can only delete your own messages.");
+  }
+
+  await deleteDoc(messageRef);
+  await syncLastMessageAfterChange(input.businessId, input.conversationId);
+}
+
+async function syncLastMessageAfterChange(
+  businessId: string,
+  conversationId: string
+) {
+  const snapshot = await getDocs(
+    query(
+      messagesCollection(businessId, conversationId),
+      orderBy("createdAt", "desc"),
+      limit(1)
+    )
+  );
+
+  const latest = snapshot.docs[0]?.data();
+  await updateDoc(doc(conversationsCollection(businessId), conversationId), {
+    lastMessage: latest
+      ? clean({
+          text: latest.deletedAt
+            ? "Message deleted"
+            : latest.text || (latest.attachments?.length ? "Image" : ""),
+          senderUid: latest.senderUid,
+          senderName: latest.senderName ?? "User",
+          createdAt: latest.createdAt ?? serverTimestamp(),
+        })
+      : null,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 /* =========================================================

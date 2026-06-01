@@ -201,8 +201,12 @@ export function MaterialsSection({
 
       if (imageFiles.length > 0 && user) {
         for (const file of imageFiles) {
-          const uploaded = await uploadImage({ file, businessId, uploadedByUid: user.uid });
-          allImages.push({ url: uploaded.url, publicId: uploaded.publicId });
+          try {
+            const uploaded = await uploadImage({ file, businessId, uploadedByUid: user.uid });
+            allImages.push({ url: uploaded.url, publicId: uploaded.publicId });
+          } catch {
+            toast.error(`Failed to upload image "${file.name}"`);
+          }
         }
       }
 

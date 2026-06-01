@@ -147,7 +147,7 @@ export function StockMovementsSection({
             </CardTitle>
 
             <Badge
-              variant="secondary"
+              variant="default"
               className="rounded-full px-3 py-1"
             >
               {movements.length} Activity

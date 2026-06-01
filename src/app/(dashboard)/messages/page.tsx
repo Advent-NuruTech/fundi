@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import {
   listenConversations,
   sendMessage,
   listenMessages,
   createConversation,
+  updateMessage,
+  deleteMessage,
 } from "@/services/messaging.service";
 import { listenMembers } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
+import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/user-avatar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,6 +25,11 @@ import {
   Loader2,
   Search,
   ImageIcon,
+  Pencil,
+  Trash2,
+  Megaphone,
+  X,
+  Check,
 } from "lucide-react";
 import type { Conversation, Message, UserProfile } from "@/types/domain";
 
@@ -38,6 +46,11 @@ export default function MessagesPage() {
   const [showMobileList, setShowMobileList] = useState(true);
   const [memberSearch, setMemberSearch] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [announcementText, setAnnouncementText] = useState("");
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +92,9 @@ export default function MessagesPage() {
         text: text.trim(),
       });
       setText("");
+    } catch (err) {
+      console.error("Failed to send message", err);
+      toast.error("Message could not be sent");
     } finally {
       setSending(false);
     }
@@ -106,16 +122,26 @@ export default function MessagesPage() {
 
       setSelectedConv(convId);
       setShowMobileList(false);
+      toast.success("Conversation ready");
     } catch (err) {
       console.error("Failed to create conversation", err);
+      toast.error("Could not start conversation");
     } finally {
       setCreating(false);
     }
   };
 
-  const handleImageSend = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSend = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user?.businessId || !selectedConv || uploadingImage) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8MB");
+      return;
+    }
 
     setUploadingImage(true);
     try {
@@ -128,15 +154,111 @@ export default function MessagesPage() {
         text: "",
         attachments: [{ type: "image", url: uploaded.url, name: file.name }],
       });
+      toast.success("Image sent");
     } catch (err) {
       console.error("Failed to upload image", err);
+      toast.error(err instanceof Error ? err.message : "Image upload failed");
     } finally {
       setUploadingImage(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const isOwner = user?.role === "owner" || user?.roles?.includes("owner");
+
+  const handleAnnouncementSend = async () => {
+    if (!announcementText.trim() || !user?.businessId || !user?.uid || sendingAnnouncement || !isOwner) return;
+
+    const activeMembers = members.filter((member) => member.active !== false);
+    if (activeMembers.length === 0) {
+      toast.error("No employees found for the announcement");
+      return;
+    }
+
+    setSendingAnnouncement(true);
+    try {
+      const convId = await createConversation({
+        businessId: user.businessId,
+        participants: Array.from(new Set(activeMembers.map((member) => member.uid))),
+        participantProfiles: activeMembers.map((member) => ({
+          uid: member.uid,
+          displayName: member.displayName,
+          photoURL: member.photoURL,
+        })),
+        type: "announcement",
+        title: "Team announcement",
+        priority: "normal",
+      });
+
+      await sendMessage({
+        businessId: user.businessId,
+        conversationId: convId,
+        senderUid: user.uid,
+        senderName: user.displayName,
+        text: announcementText.trim(),
+      });
+
+      setSelectedConv(convId);
+      setShowMobileList(false);
+      setAnnouncementText("");
+      setShowAnnouncementForm(false);
+      toast.success("Announcement sent to all employees");
+    } catch (err) {
+      console.error("Failed to send announcement", err);
+      toast.error("Could not send announcement");
+    } finally {
+      setSendingAnnouncement(false);
+    }
+  };
+
+  const startEditMessage = (message: Message) => {
+    setEditingMessageId(message.id);
+    setEditingText(message.text);
+  };
+
+  const cancelEditMessage = () => {
+    setEditingMessageId(null);
+    setEditingText("");
+  };
+
+  const saveEditMessage = async () => {
+    if (!user?.businessId || !selectedConv || !editingMessageId || !editingText.trim()) return;
+
+    try {
+      await updateMessage({
+        businessId: user.businessId,
+        conversationId: selectedConv,
+        messageId: editingMessageId,
+        senderUid: user.uid,
+        text: editingText.trim(),
+      });
+      cancelEditMessage();
+      toast.success("Message updated");
+    } catch (err) {
+      console.error("Failed to edit message", err);
+      toast.error("Could not edit message");
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!user?.businessId || !selectedConv) return;
+    if (!window.confirm("Delete this message?")) return;
+
+    try {
+      await deleteMessage({
+        businessId: user.businessId,
+        conversationId: selectedConv,
+        messageId,
+        senderUid: user.uid,
+      });
+      toast.success("Message deleted");
+    } catch (err) {
+      console.error("Failed to delete message", err);
+      toast.error("Could not delete message");
+    }
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -178,6 +300,45 @@ export default function MessagesPage() {
             className="pl-8 h-9 text-sm"
           />
         </div>
+        {isOwner && (
+          <div className="mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full justify-center gap-2"
+              onClick={() => setShowAnnouncementForm((value) => !value)}
+            >
+              <Megaphone className="h-4 w-4" />
+              Announcement
+            </Button>
+          </div>
+        )}
+        {showAnnouncementForm && isOwner && (
+          <div className="mt-2 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+            <Input
+              value={announcementText}
+              onChange={(event) => setAnnouncementText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleAnnouncementSend();
+                }
+              }}
+              placeholder="Message all employees..."
+              className="bg-white"
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="w-full"
+              onClick={handleAnnouncementSend}
+              disabled={!announcementText.trim() || sendingAnnouncement}
+            >
+              {sendingAnnouncement ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send to all"}
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="divide-y divide-slate-100">
@@ -302,7 +463,7 @@ export default function MessagesPage() {
 
   // ---------------- MESSAGE VIEW ----------------
   const MessageView = selectedConversation ? (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full w-full min-w-0 flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 border-b px-4 py-3 shrink-0">
         <button
@@ -325,7 +486,7 @@ export default function MessagesPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-sm text-slate-400">
             No messages yet. Start the conversation!
@@ -337,11 +498,11 @@ export default function MessagesPage() {
             return (
               <div
                 key={msg.id}
-                className={cn("flex", isMine ? "justify-end" : "justify-start")}
+                className={cn("group flex w-full", isMine ? "justify-end" : "justify-start")}
               >
                 <div
                   className={cn(
-                    "max-w-[75%] rounded-2xl px-4 py-2 text-sm",
+                    "max-w-[min(82%,40rem)] rounded-2xl px-4 py-2 text-sm",
                     isMine
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-100 text-slate-900"
@@ -369,22 +530,59 @@ export default function MessagesPage() {
                     </div>
                   )}
 
-                  {msg.text && (
+                  {editingMessageId === msg.id ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editingText}
+                        onChange={(event) => setEditingText(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            saveEditMessage();
+                          }
+                          if (event.key === "Escape") {
+                            cancelEditMessage();
+                          }
+                        }}
+                        className="h-8 bg-white text-slate-900"
+                      />
+                      <button type="button" onClick={saveEditMessage} className="opacity-80 hover:opacity-100">
+                        <Check className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={cancelEditMessage} className="opacity-80 hover:opacity-100">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : msg.text && (
                     <p className="whitespace-pre-wrap break-words">
                       {msg.text}
                     </p>
                   )}
 
-                  <p className="text-[10px] text-right opacity-60 mt-1">
-                    {msg.createdAt
-                      ? new Date(
-                          msg.createdAt.seconds * 1000
-                        ).toLocaleTimeString("en-KE", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : ""}
-                  </p>
+                  <div className="mt-1 flex items-center justify-end gap-2 text-[10px] opacity-60">
+                    {isMine && editingMessageId !== msg.id && (
+                      <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                        {msg.text && (
+                          <button type="button" onClick={() => startEditMessage(msg)} aria-label="Edit message">
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                        <button type="button" onClick={() => handleDeleteMessage(msg.id)} aria-label="Delete message">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                    <span>
+                      {msg.createdAt
+                        ? new Date(
+                            msg.createdAt.seconds * 1000
+                          ).toLocaleTimeString("en-KE", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : ""}
+                    </span>
+                  </div>
                 </div>
               </div>
             );
@@ -469,7 +667,7 @@ export default function MessagesPage() {
       {/* Chat */}
       <div
         className={cn(
-          "flex-1",
+          "min-w-0 flex-1",
           showMobileList ? "hidden lg:flex" : "flex"
         )}
       >

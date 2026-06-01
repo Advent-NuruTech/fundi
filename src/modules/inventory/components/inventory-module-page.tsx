@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useInventory } from "@/modules/inventory/hooks/use-inventory";
@@ -15,7 +16,7 @@ import { FabricConsumptionSection } from "@/modules/inventory/components/section
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import type { DbUnit } from "@/types/domain";
 
-export function InventoryModulePage({ section: defaultSection }: { section?: string }) {
+function InventoryModulePageContent({ section: defaultSection }: { section?: string }) {
   const searchParams = useSearchParams();
   const activeSection = searchParams.get("section") || defaultSection || "overview";
   const { businessId, ready } = useBusinessContext();
@@ -82,5 +83,13 @@ export function InventoryModulePage({ section: defaultSection }: { section?: str
         <FabricConsumptionSection consumption={consumption} movements={movements} />
       )}
     </div>
+  );
+}
+
+export function InventoryModulePage({ section }: { section?: string }) {
+  return (
+    <Suspense fallback={<div className="text-sm text-slate-500">Loading inventory...</div>}>
+      <InventoryModulePageContent section={section} />
+    </Suspense>
   );
 }

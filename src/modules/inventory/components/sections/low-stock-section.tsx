@@ -207,7 +207,7 @@ export function LowStockSection({
                           <Badge
                             variant={
                               isOut
-                                ? "destructive"
+                                ? "danger"
                                 : "warning"
                             }
                             className="rounded-full"

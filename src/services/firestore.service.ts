@@ -98,6 +98,8 @@ export async function bootstrapBusiness(input: {
     currency: "KES",
     country: "Kenya",
     ownerUid: input.uid,
+    orderCounter: 0,
+    employeeCounter: 0,
     createdAt: serverTimestamp(),
   });
 
@@ -260,10 +262,12 @@ export async function upsertInvitedMember(input: {
   nextPayDate?: string;
 }) {
   const roles = normalizedRoles(input.roles);
+  const employeeNumber = await getNextEmployeeNumber(input.businessId);
   const payload = {
     uid: input.uid,
     email: input.email,
     displayName: input.displayName,
+    employeeNumber,
     roles,
     role: roleFromRoles(roles),
     businessId: input.businessId,
@@ -408,11 +412,26 @@ export async function deleteCategory(businessId: string, categoryId: string) {
   await deleteDoc(doc(categoriesCollection(businessId), categoryId));
 }
 
-// ─── ORDER NUMBER ───
+// ─── COUNTER HELPERS ───
 
-function buildOrderNumber() {
-  const stamp = Date.now().toString().slice(-6);
-  return `FF-${stamp}`;
+async function getNextCounter(businessId: string, counterField: "orderCounter" | "employeeCounter", prefix: string, pad: number): Promise<string> {
+  const businessRef = doc(businessesCollection(), businessId);
+  const result = await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(businessRef);
+    const current = snap.data()?.[counterField] ?? 0;
+    const next = current + 1;
+    transaction.update(businessRef, { [counterField]: next });
+    return `${prefix}${String(next).padStart(pad, "0")}`;
+  });
+  return result;
+}
+
+export async function getNextOrderNumber(businessId: string): Promise<string> {
+  return getNextCounter(businessId, "orderCounter", "ON", 3);
+}
+
+export async function getNextEmployeeNumber(businessId: string): Promise<string> {
+  return getNextCounter(businessId, "employeeCounter", "ES", 3);
 }
 
 // ─── ORDERS ───
@@ -437,7 +456,7 @@ export async function createOrder(
   depositAmount: number,
   actor: { uid: string; name: string }
 ) {
-  const orderNumber = buildOrderNumber();
+  const orderNumber = await getNextOrderNumber(businessId);
   const orderRef = await addDoc(ordersCollection(businessId), {
     ...payload,
     orderNumber,
@@ -478,7 +497,7 @@ export async function createOrder(
   }
 
   await batch.commit();
-  return orderRef.id;
+  return { id: orderRef.id, orderNumber };
 }
 
 export function listenOrders(businessId: string, callback: (rows: Order[]) => void) {
@@ -710,7 +729,9 @@ export async function createSupplier(
     createdAt: serverTimestamp(),
   });
   return ref.id;
-}export async function updateSupplier(
+}
+
+export async function updateSupplier(
   businessId: string,
   supplierId: string,
   payload: Partial<Omit<Supplier, "id" | "businessId" | "createdAt">>

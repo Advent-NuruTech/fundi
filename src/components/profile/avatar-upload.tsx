@@ -30,6 +30,7 @@ export function AvatarUpload({
 
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Image must be under 5MB");
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
 
@@ -38,10 +39,11 @@ export function AvatarUpload({
       const url = await uploadProfileAvatar(file, businessId, uid);
       onUploadComplete(url);
       toast.success("Profile photo updated");
-    } catch {
-      toast.error("Failed to upload photo");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to upload photo");
     } finally {
       setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
     }
   };
 

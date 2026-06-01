@@ -61,6 +61,7 @@ export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  employeeNumber?: string;
   role: UserRole;
   roles?: UserRole[];
   businessId: string;
@@ -102,6 +103,7 @@ export interface Conversation {
     photoURL?: string;
   }>;
   lastMessage?: {
+    messageId?: string;
     text: string;
     senderUid: string;
     senderName: string;
@@ -130,6 +132,10 @@ export interface Message {
   text: string;
   attachments?: MessageAttachment[];
   readBy: string[];
+  editedAt?: Timestamp;
+  deletedAt?: Timestamp;
+  deletedByUid?: string;
+  isDeleted?: boolean;
   createdAt: Timestamp;
 }
 
@@ -141,6 +147,8 @@ export interface Business {
   currency: string;
   country: string;
   ownerUid: string;
+  orderCounter?: number;
+  employeeCounter?: number;
   createdAt: Timestamp;
 }
 
@@ -307,6 +315,8 @@ export interface PurchaseOrder {
   status: "pending" | "partial" | "received";
   quantityReceived: number;
   expectedDate: string;
+  imageUrl?: string;
+  imagePublicId?: string;
   createdAt: Timestamp;
 }
 

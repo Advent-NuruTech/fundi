@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,12 +30,33 @@ export function NewOrderModulePage() {
     defaultValues: { dueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10), quantity: 1 },
   });
 
+  const handleImageSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setImageFile(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      event.target.value = "";
+      setImageFile(null);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be 10MB or smaller");
+      event.target.value = "";
+      setImageFile(null);
+      return;
+    }
+    setImageFile(file);
+  };
+
   useEffect(() => {
     if (!ready) {
       return;
     }
     const unsub = listenCustomers(businessId, setCustomers);
-    fetchMembers(businessId).then((rows) => setTailors(rows.filter((member) => member.role === "tailor")));
+    fetchMembers(businessId).then((rows) => setTailors(rows.filter((member) => member.active !== false)));
     return () => {
       unsub();
     };
@@ -54,7 +75,7 @@ export function NewOrderModulePage() {
     const tailor = tailors.find((entry) => entry.uid === values.assignedTailorId);
 
     try {
-      const orderId = await createOrder(
+      const { id: orderId, orderNumber } = await createOrder(
         businessId,
         {
           businessId,
@@ -84,16 +105,20 @@ export function NewOrderModulePage() {
         }
       );
       if (imageFile) {
-        const meta = await uploadImage({
-          file: imageFile,
-          businessId,
-          uploadedByUid: user.uid,
-          orderId,
-          customerId: customer.id,
-        });
-        await appendOrderImageId(businessId, orderId, meta.id);
+        try {
+          const meta = await uploadImage({
+            file: imageFile,
+            businessId,
+            uploadedByUid: user.uid,
+            orderId,
+            customerId: customer.id,
+          });
+          await appendOrderImageId(businessId, orderId, meta.id);
+        } catch (error) {
+          toast.error(error instanceof Error ? `Order created but image upload failed: ${error.message}` : "Order created but image upload failed");
+        }
       }
-      await notifyNewOrder(businessId, `FF-${Date.now().toString().slice(-6)}`, customer.fullName, orderId, user.uid);
+      await notifyNewOrder(businessId, orderNumber, customer.fullName, orderId, user.uid);
       toast.success("Order created");
       router.push(`/orders/${orderId}`);
     } catch {
@@ -150,7 +175,7 @@ export function NewOrderModulePage() {
           </div>
           <div className="md:col-span-2">
             <Label>Garment reference image (optional)</Label>
-            <Input type="file" accept="image/*" onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} />
+            <Input type="file" accept="image/*" onChange={handleImageSelect} />
           </div>
           <div className="md:col-span-2">
             <Button type="submit" disabled={formState.isSubmitting}>

@@ -160,7 +160,7 @@ export function SuppliersSection({
             </CardTitle>
 
             <Badge
-              variant="secondary"
+              variant="default"
               className="rounded-full px-3 py-1"
             >
               {suppliers.length} Supplier
@@ -265,7 +265,7 @@ export function SuppliersSection({
                         {supplier.name}
                       </h3>
 
-                      <Badge variant="secondary">
+                      <Badge variant="default">
                         {supplier.phone}
                       </Badge>
                     </div>
@@ -301,7 +301,7 @@ export function SuppliersSection({
                     <Button
                       type="button"
                       size="sm"
-                      variant="destructive"
+                      variant="danger"
                       onClick={() =>
                         handleDeleteSupplier(supplier.id)
                       }

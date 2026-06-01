@@ -16,9 +16,19 @@ export async function uploadImage(input: {
   orderId?: string;
   customerId?: string;
 }) {
+  if (!input.file.type.startsWith("image/")) {
+    throw new Error("Please select a valid image file.");
+  }
+  if (input.file.size > 10 * 1024 * 1024) {
+    throw new Error("Image must be 10MB or smaller.");
+  }
+  if (!process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error("Missing Cloudinary upload preset.");
+  }
+
   const formData = new FormData();
   formData.append("file", input.file);
-  formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "");
+  formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
 
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   if (!cloudName) {
@@ -31,11 +41,12 @@ export async function uploadImage(input: {
   });
 
   if (!response.ok) {
-    throw new Error("Cloudinary upload failed.");
+    const errorText = await response.text().catch(() => "Unknown error");
+    throw new Error(`Image upload failed (${response.status}): ${errorText}`);
   }
 
   const data = (await response.json()) as CloudinaryUploadResult;
-  const metadata = {
+  const metadata = cleanUploadMetadata({
     businessId: input.businessId,
     orderId: input.orderId,
     customerId: input.customerId,
@@ -46,7 +57,7 @@ export async function uploadImage(input: {
     format: data.format,
     uploadedByUid: input.uploadedByUid,
     uploadedAt: serverTimestamp(),
-  };
+  });
 
   const ref = await addDoc(imagesCollection(input.businessId), metadata);
 
@@ -54,6 +65,12 @@ export async function uploadImage(input: {
     id: ref.id,
     ...metadata,
   };
+}
+
+function cleanUploadMetadata<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined)
+  ) as T;
 }
 
 export async function deleteImageFromCloudinary(publicId: string) {

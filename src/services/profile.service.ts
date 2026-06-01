@@ -29,9 +29,19 @@ export async function uploadProfileAvatar(
   businessId: string,
   uid: string
 ): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Please select a valid image file.");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("Image must be 10MB or smaller.");
+  }
+  if (!process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error("Missing Cloudinary upload preset.");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "");
+  formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
 
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   if (!cloudName) {
@@ -44,7 +54,8 @@ export async function uploadProfileAvatar(
   });
 
   if (!response.ok) {
-    throw new Error("Avatar upload failed.");
+    const errorText = await response.text().catch(() => "Unknown error");
+    throw new Error(`Avatar upload failed (${response.status}): ${errorText}`);
   }
 
   const data = await response.json();

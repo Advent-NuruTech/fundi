@@ -73,10 +73,11 @@ export function EmployeesPage() {
           return (
             <div key={member.uid} className="rounded-3xl border bg-white p-5">
               <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-semibold">{member.displayName}</p>
-                  <p className="text-xs text-slate-500">{member.email}</p>
-                </div>
+                  <div>
+                    <p className="font-semibold">{member.displayName}</p>
+                    <p className="text-xs text-slate-500">{member.email}</p>
+                    {member.employeeNumber && <p className="text-xs text-emerald-600 font-medium">{member.employeeNumber}</p>}
+                  </div>
                 <Badge variant={member.active ? "success" : "danger"}>{member.active ? "Active" : "Inactive"}</Badge>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
