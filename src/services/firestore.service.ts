@@ -57,6 +57,7 @@ import {
   unitsCollection,
   categoriesCollection,
   consumptionReportsCollection,
+  smsLogsCollection,
 } from "@/services/collections";
 
 const orderStageSort: Record<ProductionStage, number> = {
@@ -532,6 +533,44 @@ export async function updateOrderStage(businessId: string, orderId: string, stag
   await updateDoc(doc(ordersCollection(businessId), orderId), {
     stage,
     deliveryStatus,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function logSmsEntry(
+  businessId: string,
+  data: {
+    orderId: string;
+    recipient: string;
+    message: string;
+    type: "ready_for_pickup" | "delay_notification";
+    status: "success" | "failed";
+    response: unknown;
+  }
+) {
+  try {
+    await addDoc(smsLogsCollection(businessId), {
+      ...data,
+      businessId,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error("Failed to log SMS entry:", error);
+  }
+}
+
+export async function updateOrderSmsFields(
+  businessId: string,
+  orderId: string,
+  fields: {
+    readyPickupSmsSent?: boolean;
+    readyPickupSmsSentAt?: ReturnType<typeof serverTimestamp>;
+    expectedReadyDate?: Timestamp | null;
+    delayNotificationSentAt?: ReturnType<typeof serverTimestamp>;
+  }
+) {
+  await updateDoc(doc(ordersCollection(businessId), orderId), {
+    ...fields,
     updatedAt: serverTimestamp(),
   });
 }

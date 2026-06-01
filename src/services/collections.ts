@@ -20,6 +20,7 @@ import type {
   DbUnit,
   DbCategory,
   ConsumptionReport,
+  SmsLog,
 } from "@/types/domain";
 
 type DbRecord<T extends { id: string }> = Omit<T, "id"> & DocumentData;
@@ -76,6 +77,9 @@ export const categoriesCollection = (businessId: string) =>
 
 export const consumptionReportsCollection = (businessId: string) =>
   collection(db, "businesses", businessId, "consumption_reports") as CollectionReference<DbRecord<ConsumptionReport>>;
+
+export const smsLogsCollection = (businessId: string) =>
+  collection(db, "businesses", businessId, "sms_logs") as CollectionReference<DbRecord<SmsLog>>;
 
 // ─── FINANCE COLLECTIONS ───
 

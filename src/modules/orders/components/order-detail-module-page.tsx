@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
+import { Timestamp } from "firebase/firestore";
 import type { Order, InventoryMaterial } from "@/types/domain";
 import {
   listenOrder,
@@ -12,9 +13,13 @@ import {
   updateOrderProductionNotes,
   recordMaterialUsage,
   listenMaterials,
+  updateOrderSmsFields,
+  logSmsEntry,
 } from "@/services/firestore.service";
 import { notifyOrderStageChanged, notifyOrderCompleted, notifyMaterialsConsumed } from "@/services/notification-catalog";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useAuth } from "@/features/auth/components/auth-context";
+import { sendSms } from "@/lib/sms/sendSms";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,11 +48,15 @@ export function OrderDetailModulePage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const { businessId, user, ready } = useBusinessContext();
+  const { business } = useAuth();
   const [order, setOrder] = useState<Order | null>(null);
   const [materials, setMaterials] = useState<InventoryMaterial[]>([]);
   const [fittingNote, setFittingNote] = useState("");
   const [productionNotes, setProductionNotes] = useState("");
   const [usageRows, setUsageRows] = useState<UsageRow[]>([{ materialId: "", materialName: "", quantityUsed: 0, unit: "" }]);
+  const [smsLoading, setSmsLoading] = useState(false);
+  const [delaySmsLoading, setDelaySmsLoading] = useState(false);
+  const [expectedReadyDate, setExpectedReadyDate] = useState("");
 
   useEffect(() => {
     if (!ready || !orderId) {
@@ -235,7 +244,7 @@ export function OrderDetailModulePage() {
                 key={stage}
                 variant={order.stage === stage ? "default" : i < stageIndex ? "outline" : "outline"}
                 className="w-full justify-start"
-                disabled={i < stageIndex}
+                disabled={i < stageIndex || smsLoading}
                 onClick={async () => {
                   await updateOrderStage(businessId, orderId, stage);
                   if (user) {
@@ -246,6 +255,47 @@ export function OrderDetailModulePage() {
                     }
                   }
                   toast.success("Stage updated");
+
+                  if (stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent) {
+                    setSmsLoading(true);
+                    const businessName = business?.name ?? "Fundi Flow";
+                    const customerName = order.customerName || "Customer";
+                    const message = `Hello ${customerName},\n\nYour order "${order.orderNumber}" is complete and ready for pickup.\n\nThank you for choosing ${businessName}.`;
+                    try {
+                      const result = await sendSms(order.customerPhone, message);
+                      if (result.success) {
+                        await updateOrderSmsFields(businessId, orderId, {
+                          readyPickupSmsSent: true,
+                          readyPickupSmsSentAt: Timestamp.fromDate(new Date()),
+                        });
+                        await logSmsEntry(businessId, {
+                          orderId,
+                          recipient: order.customerPhone,
+                          message,
+                          type: "ready_for_pickup",
+                          status: "success",
+                          response: result.response,
+                        });
+                        toast.success("Pickup SMS sent");
+                      } else {
+                        await logSmsEntry(businessId, {
+                          orderId,
+                          recipient: order.customerPhone,
+                          message,
+                          type: "ready_for_pickup",
+                          status: "failed",
+                          response: result.error,
+                        });
+                        toast.warning("Stage updated but SMS failed");
+                      }
+                    } catch {
+                      toast.warning("Stage updated but SMS failed");
+                    } finally {
+                      setSmsLoading(false);
+                    }
+                  } else if (stage === "ready_for_pickup" && order.readyPickupSmsSent) {
+                    toast.info("Pickup SMS already sent");
+                  }
                 }}
               >
                 {stage.replaceAll("_", " ")}
@@ -298,6 +348,77 @@ export function OrderDetailModulePage() {
             </Button>
             <Button size="sm" className="w-full" onClick={handleRecordUsage}>
               Save Material Usage
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Delay Notification</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Notify the customer if the order will be delayed.
+            </p>
+            <Input
+              type="date"
+              value={expectedReadyDate}
+              onChange={(e) => setExpectedReadyDate(e.target.value)}
+            />
+            <Button
+              className="w-full"
+              disabled={delaySmsLoading || !expectedReadyDate}
+              onClick={async () => {
+                if (!expectedReadyDate || !order.customerPhone) {
+                  toast.error("Expected date and customer phone required");
+                  return;
+                }
+                setDelaySmsLoading(true);
+                const businessName = business?.name ?? "Fundi Flow";
+                const customerName = order.customerName || "Customer";
+                const formattedDate = new Date(expectedReadyDate).toLocaleDateString("en-KE", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                });
+                const message = `Hello ${customerName},\n\nYour order "${order.orderNumber}" has been delayed.\n\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${businessName}.`;
+                try {
+                  const result = await sendSms(order.customerPhone, message);
+                  if (result.success) {
+                    await updateOrderSmsFields(businessId, orderId, {
+                      expectedReadyDate: Timestamp.fromDate(new Date(expectedReadyDate)),
+                      delayNotificationSentAt: Timestamp.fromDate(new Date()),
+                    });
+                    await logSmsEntry(businessId, {
+                      orderId,
+                      recipient: order.customerPhone,
+                      message,
+                      type: "delay_notification",
+                      status: "success",
+                      response: result.response,
+                    });
+                    toast.success("Delay notification sent");
+                    setExpectedReadyDate("");
+                  } else {
+                    await logSmsEntry(businessId, {
+                      orderId,
+                      recipient: order.customerPhone,
+                      message,
+                      type: "delay_notification",
+                      status: "failed",
+                      response: result.error,
+                    });
+                    toast.warning("Failed to send delay notification");
+                  }
+                } catch {
+                  toast.warning("Failed to send delay notification");
+                } finally {
+                  setDelaySmsLoading(false);
+                }
+              }}
+            >
+              {delaySmsLoading ? "Sending SMS..." : "Send Delay Notification"}
             </Button>
           </CardContent>
         </Card>

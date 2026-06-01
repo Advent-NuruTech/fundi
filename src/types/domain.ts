@@ -238,6 +238,10 @@ export interface Order {
   imageIds: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  readyPickupSmsSent?: boolean;
+  readyPickupSmsSentAt?: Timestamp;
+  expectedReadyDate?: Timestamp | null;
+  delayNotificationSentAt?: Timestamp | null;
 }
 
 export interface FabricMeta {
@@ -462,6 +466,18 @@ export interface FinancialReport {
     byCategory: Record<string, number>;
     byDay: Array<{ date: string; revenue: number; expenses: number; profit: number }>;
   };
+}
+
+export interface SmsLog {
+  id: string;
+  businessId: string;
+  orderId: string;
+  recipient: string;
+  message: string;
+  type: "ready_for_pickup" | "delay_notification";
+  status: "success" | "failed";
+  response: unknown;
+  createdAt: Timestamp;
 }
 
 export interface FinanceAlert {
