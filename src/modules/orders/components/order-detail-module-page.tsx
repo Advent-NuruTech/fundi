@@ -272,10 +272,9 @@ export function OrderDetailModulePage() {
                     setSmsLoading(true);
                     const businessName = business?.name ?? "Fundi Flow";
                     const customerName = order.customerName || "Customer";
-                    const senderId = business?.smsSenderId;
                     const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup.\n\nThank you for choosing ${businessName}.`;
                     try {
-                      const result = await sendSms(order.customerPhone, message, senderId);
+                      const result = await sendSms(order.customerPhone, message);
                       if (result.success) {
                         await updateOrderSmsFields(businessId, orderId, {
                           readyPickupSmsSent: true,
@@ -389,7 +388,6 @@ export function OrderDetailModulePage() {
                 setDelaySmsLoading(true);
                 const businessName = business?.name ?? "Fundi Flow";
                 const customerName = order.customerName || "Customer";
-                const senderId = business?.smsSenderId;
                 const formattedDate = new Date(expectedReadyDate).toLocaleDateString("en-KE", {
                   weekday: "long",
                   year: "numeric",
@@ -398,7 +396,7 @@ export function OrderDetailModulePage() {
                 });
                 const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" has been delayed.\n\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${businessName}.`;
                 try {
-                  const result = await sendSms(order.customerPhone, message, senderId);
+                  const result = await sendSms(order.customerPhone, message);
                   if (result.success) {
                     await updateOrderSmsFields(businessId, orderId, {
                       expectedReadyDate: Timestamp.fromDate(new Date(expectedReadyDate)),
