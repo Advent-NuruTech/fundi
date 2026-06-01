@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { formatPhone, isValidKenyanPhone } from "@/lib/sms/formatPhone";
-import { formatSenderId } from "@/lib/sms/formatSenderId";
+
+const DEFAULT_WASMS_SENDER = "Alpha";
 
 type WasmsResult = {
   recipient?: string;
@@ -47,7 +48,7 @@ function wasSmsAccepted(data: WasmsResponse): boolean {
 
 export async function POST(request: Request) {
   try {
-    const { recipient, message, sender } = await request.json();
+    const { recipient, message } = await request.json();
 
     if (!recipient) {
       return NextResponse.json({ success: false, error: "Missing recipient" }, { status: 400 });
@@ -73,8 +74,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const safeSender = formatSenderId(sender);
-
     const response = await fetch("https://www.wasms.co.ke/sendsms", {
       method: "POST",
       headers: {
@@ -85,7 +84,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         recipient: formattedPhone,
         message,
-        sender: safeSender,
+        sender: DEFAULT_WASMS_SENDER,
       }),
     });
 
