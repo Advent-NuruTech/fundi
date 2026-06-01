@@ -1,6 +1,49 @@
 import { NextResponse } from "next/server";
-import { formatPhone } from "@/lib/sms/formatPhone";
+import { formatPhone, isValidKenyanPhone } from "@/lib/sms/formatPhone";
 import { formatSenderId } from "@/lib/sms/formatSenderId";
+
+type WasmsResult = {
+  recipient?: string;
+  success?: boolean;
+  message_id?: string;
+  error?: string;
+  message?: string;
+};
+
+type WasmsResponse = {
+  success?: boolean;
+  status?: string;
+  total?: number;
+  success_count?: number;
+  failed_count?: number;
+  results?: WasmsResult[];
+  error?: string;
+  message?: string;
+  credits_available?: number;
+  credits_needed?: number;
+};
+
+function getProviderError(data: WasmsResponse): string {
+  const failedResult = data.results?.find((result) => result.success === false);
+  return (
+    failedResult?.error ||
+    failedResult?.message ||
+    data.error ||
+    data.message ||
+    "SMS provider rejected the request"
+  );
+}
+
+function wasSmsAccepted(data: WasmsResponse): boolean {
+  const result = data.results?.[0];
+  return (
+    data.success === true &&
+    data.status === "success" &&
+    (data.success_count ?? 0) > 0 &&
+    (data.failed_count ?? 0) === 0 &&
+    result?.success === true
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -23,6 +66,13 @@ export async function POST(request: Request) {
     }
 
     const formattedPhone = formatPhone(recipient);
+    if (!isValidKenyanPhone(formattedPhone)) {
+      return NextResponse.json(
+        { success: false, error: "Use a valid Kenyan phone number with country code, for example 254712345678" },
+        { status: 400 }
+      );
+    }
+
     const safeSender = formatSenderId(sender);
 
     const response = await fetch("https://www.wasms.co.ke/sendsms", {
@@ -39,15 +89,17 @@ export async function POST(request: Request) {
       }),
     });
 
-    const data = await response.json();
+    const data = (await response.json()) as WasmsResponse;
 
-    const isSuccess = data?.success === true || response.ok;
-    if (!isSuccess) {
+    if (!response.ok || !wasSmsAccepted(data)) {
       console.error("WASMS API error:", data);
-      return NextResponse.json({ success: false, error: data?.message || "SMS provider rejected the request", response: data }, { status: 200 });
+      return NextResponse.json(
+        { success: false, error: getProviderError(data), response: data },
+        { status: response.ok ? 502 : response.status }
+      );
     }
 
-    return NextResponse.json({ success: true, response: data });
+    return NextResponse.json({ success: true, recipient: formattedPhone, response: data });
   } catch (error) {
     console.error("SMS send error:", error);
     return NextResponse.json({ success: false, error: "Failed to send SMS" }, { status: 500 });

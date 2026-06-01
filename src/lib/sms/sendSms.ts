@@ -11,7 +11,15 @@ export async function sendSms(recipient: string, message: string, sender?: strin
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ recipient, message, sender }),
     });
-    return response.json();
+    const result = await response.json();
+    if (!response.ok) {
+      return {
+        success: false,
+        error: result?.error || "SMS request failed",
+        response: result?.response || result,
+      };
+    }
+    return result;
   } catch {
     return { success: false, error: "Network error" };
   }
