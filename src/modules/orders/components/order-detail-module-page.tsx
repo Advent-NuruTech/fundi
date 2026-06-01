@@ -28,6 +28,18 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
 import { formatKes } from "@/lib/utils";
 
+function timeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function orderLabel(order: Order): string {
+  const firstGarment = order.garments?.[0]?.name;
+  return firstGarment ? `${firstGarment} - ${order.orderNumber}` : order.orderNumber;
+}
+
 const stages: Order["stage"][] = [
   "cutting",
   "stitching",
@@ -260,9 +272,10 @@ export function OrderDetailModulePage() {
                     setSmsLoading(true);
                     const businessName = business?.name ?? "Fundi Flow";
                     const customerName = order.customerName || "Customer";
-                    const message = `Hello ${customerName},\n\nYour order "${order.orderNumber}" is complete and ready for pickup.\n\nThank you for choosing ${businessName}.`;
+                    const senderId = business?.smsSenderId;
+                    const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup.\n\nThank you for choosing ${businessName}.`;
                     try {
-                      const result = await sendSms(order.customerPhone, message);
+                      const result = await sendSms(order.customerPhone, message, senderId);
                       if (result.success) {
                         await updateOrderSmsFields(businessId, orderId, {
                           readyPickupSmsSent: true,
@@ -367,7 +380,7 @@ export function OrderDetailModulePage() {
             />
             <Button
               className="w-full"
-              disabled={delaySmsLoading || !expectedReadyDate}
+              disabled={delaySmsLoading || order.deliveryStatus === "picked"}
               onClick={async () => {
                 if (!expectedReadyDate || !order.customerPhone) {
                   toast.error("Expected date and customer phone required");
@@ -376,15 +389,16 @@ export function OrderDetailModulePage() {
                 setDelaySmsLoading(true);
                 const businessName = business?.name ?? "Fundi Flow";
                 const customerName = order.customerName || "Customer";
+                const senderId = business?.smsSenderId;
                 const formattedDate = new Date(expectedReadyDate).toLocaleDateString("en-KE", {
                   weekday: "long",
                   year: "numeric",
                   month: "long",
                   day: "numeric",
                 });
-                const message = `Hello ${customerName},\n\nYour order "${order.orderNumber}" has been delayed.\n\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${businessName}.`;
+                const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" has been delayed.\n\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${businessName}.`;
                 try {
-                  const result = await sendSms(order.customerPhone, message);
+                  const result = await sendSms(order.customerPhone, message, senderId);
                   if (result.success) {
                     await updateOrderSmsFields(businessId, orderId, {
                       expectedReadyDate: Timestamp.fromDate(new Date(expectedReadyDate)),

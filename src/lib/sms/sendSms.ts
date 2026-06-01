@@ -4,12 +4,12 @@ export interface SendSmsResult {
   response?: unknown;
 }
 
-export async function sendSms(recipient: string, message: string): Promise<SendSmsResult> {
+export async function sendSms(recipient: string, message: string, sender?: string): Promise<SendSmsResult> {
   try {
     const response = await fetch("/api/send-sms", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recipient, message }),
+      body: JSON.stringify({ recipient, message, sender }),
     });
     return response.json();
   } catch {

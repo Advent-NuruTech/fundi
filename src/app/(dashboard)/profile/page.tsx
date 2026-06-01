@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { User, Mail, Shield, Building2, Lock, Loader2, Save, Store, Phone, MapPin, Eye, Users } from "lucide-react";
+import { User, Mail, Shield, Building2, Lock, Loader2, Save, Store, Phone, MapPin, Eye, Users, MessageSquare } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { updateProfileInfo, changeUserPassword } from "@/services/profile.service";
 import { updateBusinessProfile, listenOrdersAssignedToUser } from "@/services/firestore.service";
@@ -29,6 +29,7 @@ export default function ProfilePage() {
   const [businessName, setBusinessName] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
   const [businessLocation, setBusinessLocation] = useState("");
+  const [businessSmsSenderId, setBusinessSmsSenderId] = useState("");
   const [savingBusiness, setSavingBusiness] = useState(false);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export default function ProfilePage() {
       setBusinessName(business.name || "");
       setBusinessPhone(business.phone || "");
       setBusinessLocation(business.location || "");
+      setBusinessSmsSenderId(business.smsSenderId || "");
     }
   }, [user, business]);
 
@@ -95,6 +97,7 @@ export default function ProfilePage() {
         name: businessName,
         phone: businessPhone,
         location: businessLocation,
+        smsSenderId: businessSmsSenderId,
       });
       await refreshProfile();
       toast.success("Business settings updated");
@@ -103,7 +106,7 @@ export default function ProfilePage() {
     } finally {
       setSavingBusiness(false);
     }
-  }, [user?.businessId, businessName, businessPhone, businessLocation, refreshProfile]);
+  }, [user?.businessId, businessName, businessPhone, businessLocation, businessSmsSenderId, refreshProfile]);
 
   const handleAvatarUpload = useCallback(async () => {
     await refreshProfile();
@@ -263,6 +266,13 @@ export default function ProfilePage() {
             <div>
               <Label htmlFor="businessLocation" className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-slate-400" /> Location</Label>
               <Input id="businessLocation" value={businessLocation} onChange={(e) => setBusinessLocation(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="businessSmsSenderId" className="flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5 text-slate-400" /> SMS Sender Name</Label>
+              <Input id="businessSmsSenderId" value={businessSmsSenderId} onChange={(e) => setBusinessSmsSenderId(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 11))} placeholder="FundiFlow" maxLength={11} />
+              <p className="mt-1 text-xs text-slate-400">This name appears on customer phones when SMS notifications are sent. Max 11 characters, letters and numbers only.</p>
+              <p className="mt-0.5 text-xs text-slate-400">Preview: <span className="font-medium text-slate-600">{businessSmsSenderId || "FundiFlow"}</span></p>
+              <p className="mt-0.5 text-xs text-amber-500">Sender IDs may require approval by the SMS provider before appearing on customer devices.</p>
             </div>
             <div className="flex justify-end">
               <Button onClick={handleSaveBusiness} disabled={savingBusiness} className="gap-2">

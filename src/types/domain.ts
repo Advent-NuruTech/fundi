@@ -149,6 +149,7 @@ export interface Business {
   ownerUid: string;
   orderCounter?: number;
   employeeCounter?: number;
+  smsSenderId?: string;
   createdAt: Timestamp;
 }
 

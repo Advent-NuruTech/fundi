@@ -150,7 +150,7 @@ export async function fetchBusinessProfile(businessId: string): Promise<Business
   return { ...(snapshot.data() as Omit<Business, "id">), id: snapshot.id };
 }
 
-export async function updateBusinessProfile(businessId: string, data: Partial<Pick<Business, "name" | "phone" | "location">>) {
+export async function updateBusinessProfile(businessId: string, data: Partial<Pick<Business, "name" | "phone" | "location" | "smsSenderId">>) {
   await updateDoc(doc(businessesCollection(), businessId), {
     ...data,
   });

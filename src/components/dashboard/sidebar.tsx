@@ -24,6 +24,7 @@ import { hasCapability } from "@/lib/permissions";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { MessageBell } from "@/components/messaging/message-bell";
 import { UserAvatar } from "@/components/profile/user-avatar";
+import { SyncIndicator } from "@/components/pwa/sync-indicator";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -189,6 +190,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <span className="text-xs text-slate-400 mr-auto">
               {business?.name || "FundiFlow"}
             </span>
+            <SyncIndicator />
             <MessageBell />
             <NotificationBell />
           </div>
