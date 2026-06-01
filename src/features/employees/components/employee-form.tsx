@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { UserRole } from "@/types/domain";
 import { inviteEmployeeToWorkshop } from "@/services/auth.service";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useAuth } from "@/features/auth/components/auth-context";
 import { usePermissions } from "@/modules/shared/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ const ROLES: { value: UserRole; label: string; description: string }[] = [
 export function EmployeeForm() {
   const router = useRouter();
   const { businessId, user } = useBusinessContext();
+  const { business } = useAuth();
   const permissions = usePermissions();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -82,12 +84,10 @@ export function EmployeeForm() {
 
   const copyDetails = () => {
     const details = [
-      `You have been invited to join FundiFlow!`,
+      `Congratulations! You have been invited to join ${business?.name || user?.displayName + "'s Workshop"}!`,
       ``,
-      `Business: ${user?.displayName}'s Workshop`,
+      `Business: ${business?.name || user?.displayName + "'s Workshop"}`,
       `Role: ${selectedRoles.map((r) => r.replace("_", " ")).join(", ")}`,
-      `Pay: KES ${Number(payRate || 0).toLocaleString()} / ${payPeriod}`,
-      nextPayDate ? `Next Pay Date: ${nextPayDate}` : "",
       `Email: ${email}`,
       `Temporary Password: ${tempPassword}`,
       ``,
@@ -143,13 +143,6 @@ export function EmployeeForm() {
                 <p className="text-xs text-slate-500">Role</p>
                 <p className="font-medium text-slate-900 capitalize">
                   {selectedRoles.map((r) => r.replace("_", " ")).join(", ")}
-                </p>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">Pay</p>
-                <p className="font-medium text-slate-900">
-                  KES {Number(payRate || 0).toLocaleString()} / {payPeriod}
-                  {nextPayDate ? `, next due ${nextPayDate}` : ""}
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 p-4">
