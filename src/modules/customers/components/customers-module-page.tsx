@@ -197,7 +197,7 @@ updatedAt: Timestamp.now(),
 
               <div>
                 <Label>Phone</Label>
-                <Input {...register("phone")} />
+                <Input type="tel" placeholder="+254 7XX XXX XXX" {...register("phone")} />
               </div>
 
               <div>

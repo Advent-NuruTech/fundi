@@ -273,7 +273,6 @@ export async function upsertInvitedMember(input: {
     role: roleFromRoles(roles),
     businessId: input.businessId,
     active: false,
-    mustChangePassword: true,
     invitedByUid: input.invitedByUid,
     invitedByName: input.invitedByName,
     payRate: input.payRate ?? 0,
@@ -310,15 +309,6 @@ export async function deleteInvitation(businessId: string, invitationId: string)
   await deleteDoc(doc(invitationsCollection(businessId), invitationId));
 }
 
-export async function completeFirstPasswordChange(uid: string) {
-  const profile = await fetchUserProfile(uid);
-  if (!profile) {
-    return;
-  }
-  await updateDoc(doc(usersCollection(), uid), { mustChangePassword: false, lastActiveAt: serverTimestamp() });
-  await updateDoc(doc(membersCollection(profile.businessId), uid), { mustChangePassword: false, lastActiveAt: serverTimestamp() });
-}
-
 export async function acceptInvitationByToken(token: string, uid: string) {
   const rows = await getDocs(query(collectionGroup(db, "invitations"), where("token", "==", token)));
   if (rows.empty) {
@@ -337,11 +327,9 @@ export async function acceptInvitationByToken(token: string, uid: string) {
   });
   await updateDoc(doc(usersCollection(), uid), {
     active: true,
-    mustChangePassword: true,
   });
   await updateDoc(doc(membersCollection(businessId), uid), {
     active: true,
-    mustChangePassword: true,
   });
   return businessId;
 }

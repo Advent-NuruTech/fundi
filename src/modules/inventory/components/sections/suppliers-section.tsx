@@ -210,7 +210,8 @@ export function SuppliersSection({
               />
 
               <Input
-                placeholder="Phone number"
+                type="tel"
+                placeholder="+254 7XX XXX XXX"
                 {...register("phone", { required: true })}
               />
 

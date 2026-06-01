@@ -261,7 +261,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <Label htmlFor="businessPhone" className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-slate-400" /> Phone number</Label>
-              <Input id="businessPhone" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} />
+              <Input id="businessPhone" type="tel" placeholder="+254 7XX XXX XXX" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} />
             </div>
             <div>
               <Label htmlFor="businessLocation" className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-slate-400" /> Location</Label>

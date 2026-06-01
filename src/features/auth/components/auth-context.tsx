@@ -129,11 +129,6 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (user.mustChangePassword && pathname !== "/change-password") {
-      router.replace("/change-password");
-      return;
-    }
-
     if (!canAccessRoute(user, pathname)) {
       router.replace("/dashboard");
     }

@@ -4,7 +4,6 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
-  updatePassword,
   getAuth,
   type User,
 } from "firebase/auth";
@@ -12,7 +11,6 @@ import { deleteApp, initializeApp } from "firebase/app";
 import { auth } from "@/lib/firebase";
 import {
   bootstrapBusiness,
-  completeFirstPasswordChange,
   createInvitationRecord,
   fetchUserProfile,
   upsertInvitedMember,
@@ -126,7 +124,4 @@ export async function inviteEmployeeToWorkshop(input: {
   }
 }
 
-export async function forcePasswordResetForFirstLogin(user: User, newPassword: string) {
-  await updatePassword(user, newPassword);
-  await completeFirstPasswordChange(user.uid);
-}
+

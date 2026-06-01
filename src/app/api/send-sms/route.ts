@@ -41,6 +41,12 @@ export async function POST(request: Request) {
 
     const data = await response.json();
 
+    const isSuccess = data?.success === true || response.ok;
+    if (!isSuccess) {
+      console.error("WASMS API error:", data);
+      return NextResponse.json({ success: false, error: data?.message || "SMS provider rejected the request", response: data }, { status: 200 });
+    }
+
     return NextResponse.json({ success: true, response: data });
   } catch (error) {
     console.error("SMS send error:", error);
