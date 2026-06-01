@@ -23,6 +23,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { formatKes } from "@/lib/utils";
 import type {
   Customer,
   EmployeeInvitation,
@@ -470,6 +471,8 @@ export async function createOrder(
   });
 
   if (depositAmount > 0) {
+    const now = new Date();
+    const depositDescription = `${payload.customerName} paid - deposit of ${formatKes(depositAmount)} on ${now.toLocaleDateString()} at ${now.toLocaleTimeString()}`;
     const paymentRef = doc(paymentsCollection(businessId));
     batch.set(paymentRef, {
       businessId,
@@ -479,6 +482,7 @@ export async function createOrder(
       orderNumber,
       amount: depositAmount,
       method: "cash",
+      description: depositDescription,
       recordedAt: serverTimestamp(),
       recordedByUid: actor.uid,
       recordedByName: actor.name,
@@ -1003,6 +1007,7 @@ export async function recordPayment(
     amount: number;
     method: PaymentMethod;
     mpesaCode?: string;
+    description?: string;
     actorUid: string;
     actorName: string;
   }
@@ -1029,6 +1034,7 @@ export async function recordPayment(
     amount: payload.amount,
     method: payload.method,
     mpesaCode: payload.mpesaCode,
+    description: payload.description,
     recordedAt: serverTimestamp(),
     recordedByUid: payload.actorUid,
     recordedByName: payload.actorName,

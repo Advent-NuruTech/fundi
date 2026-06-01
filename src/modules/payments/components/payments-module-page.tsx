@@ -86,6 +86,9 @@ export function PaymentsModulePage() {
       return;
     }
 
+    const now = new Date();
+    const description = `${selectedOrder.customerName} paid - reduced the outstanding balance by adding ${formatKes(values.amount)} on ${now.toLocaleDateString()} at ${now.toLocaleTimeString()}`;
+
     try {
       await recordPayment(businessId, {
         orderId: selectedOrder.id,
@@ -96,6 +99,7 @@ export function PaymentsModulePage() {
         amount: values.amount,
         method: values.method,
         mpesaCode: values.mpesaCode || "",
+        description,
 
         actorUid: user.uid,
         actorName: user.displayName,
@@ -246,25 +250,33 @@ export function PaymentsModulePage() {
             payments.map((payment) => (
               <div
                 key={payment.id}
-                className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
+                className="rounded-xl border border-slate-200 px-4 py-3"
               >
-                <div className="space-y-1">
-                  <p className="font-medium text-slate-900">
-                    {payment.customerName}
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="font-medium text-slate-900">
+                      {payment.customerName}
+                    </p>
 
-                  <p className="text-xs text-slate-500">
-                    {payment.orderNumber} -{" "}
-                    {payment.method.toUpperCase()}
-                    {payment.mpesaCode
-                      ? ` (${payment.mpesaCode})`
-                      : ""}
-                  </p>
+                    <p className="text-xs text-slate-500">
+                      {payment.orderNumber} -{" "}
+                      {payment.method.toUpperCase()}
+                      {payment.mpesaCode
+                        ? ` (${payment.mpesaCode})`
+                        : ""}
+                    </p>
+
+                    {payment.description && (
+                      <p className="text-xs text-slate-400 italic leading-relaxed pt-0.5">
+                        {payment.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <Badge variant="success">
+                    {formatKes(payment.amount)}
+                  </Badge>
                 </div>
-
-                <Badge variant="success">
-                  {formatKes(payment.amount)}
-                </Badge>
               </div>
             ))
           )}

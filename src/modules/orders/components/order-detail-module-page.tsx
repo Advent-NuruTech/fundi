@@ -272,7 +272,7 @@ export function OrderDetailModulePage() {
                     setSmsLoading(true);
                     const businessName = business?.name ?? "Fundi Flow";
                     const customerName = order.customerName || "Customer";
-                    const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup.\n\nThank you for choosing ${businessName}.`;
+                    const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours \n\nThank you for choosing ${businessName}.`;
                     try {
                       const result = await sendSms(order.customerPhone, message);
                       if (result.success) {

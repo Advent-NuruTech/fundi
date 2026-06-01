@@ -335,6 +335,7 @@ export interface Payment {
   amount: number;
   method: PaymentMethod;
   mpesaCode?: string;
+  description?: string;
   recordedAt: Timestamp;
   recordedByUid: string;
   recordedByName: string;
