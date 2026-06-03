@@ -760,19 +760,33 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
     if (destroyed) return;
     const { data } = await supabase
       .from('orders')
-      .select('*')
+      .select('*, order_garments(name, quantity, agreed_price, sort_order)')
       .eq('business_id', businessId)
       .order('updated_at', { ascending: false });
     if (data && !destroyed) {
-      const rows = transformArrayToCamel<Order>(data as Record<string, unknown>[])
-        .sort((a, b) => orderStageSort[a.stage] - orderStageSort[b.stage]);
+      const rows = (data as Record<string, unknown>[]).map((row) => {
+        const garmentRows = (row.order_garments as Record<string, unknown>[] | null) ?? [];
+        const base = transformKeysToCamel<Order>({ ...row, order_garments: undefined } as Record<string, unknown>);
+        return {
+          ...base,
+          garments: garmentRows
+            .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+            .map((g) => ({
+              name: g.name as string,
+              quantity: Number(g.quantity),
+              agreedPrice: Number(g.agreed_price),
+              styleNotes: g.style_notes as string | undefined,
+            })),
+        } as Order;
+      }).sort((a, b) => orderStageSort[a.stage] - orderStageSort[b.stage]);
       callback(rows);
     }
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`orders-${businessId}-${Date.now()}`)
+    .channel(`orders-list-${businessId}-${Date.now()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_garments' }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
 }
@@ -799,26 +813,78 @@ export function listenOrdersAssignedToUser(businessId: string, uid: string, call
   return () => { destroyed = true; supabase.removeChannel(channel); };
 }
 
+async function assembleOrder(orderId: string): Promise<Order | null> {
+  const { data } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', orderId)
+    .maybeSingle();
+  if (!data) return null;
+
+  const [{ data: garments }, { data: materialUsage }, { data: fittingRecords }, { data: directImages }, { data: junctionImageIds }] = await Promise.all([
+    supabase.from('order_garments').select('*').eq('order_id', orderId).order('sort_order', { ascending: true }),
+    supabase.from('order_material_usage').select('*').eq('order_id', orderId).order('recorded_at', { ascending: true }),
+    supabase.from('order_fitting_records').select('*').eq('order_id', orderId).order('created_at', { ascending: true }),
+    supabase.from('images').select('id,url').eq('order_id', orderId),
+    supabase.from('order_images').select('image_id').eq('order_id', orderId),
+  ]);
+
+  // Collect all unique image IDs from both sources
+  const directImageIdSet = new Set((directImages ?? []).map((img: Record<string, unknown>) => img.id as string));
+  const extraImageIds = (junctionImageIds ?? [])
+    .map((row: Record<string, unknown>) => row.image_id as string)
+    .filter((id) => !directImageIdSet.has(id));
+
+  let extraUrls: string[] = [];
+  if (extraImageIds.length > 0) {
+    const { data: extra } = await supabase.from('images').select('url').in('id', extraImageIds);
+    extraUrls = (extra ?? []).map((img: Record<string, unknown>) => img.url as string).filter(Boolean);
+  }
+
+  const allImageIds = [...Array.from(directImageIdSet), ...extraImageIds];
+  const directUrls = (directImages ?? []).map((img: Record<string, unknown>) => img.url as string).filter(Boolean);
+  const imageUrls = [...directUrls, ...extraUrls];
+
+  const base = transformKeysToCamel<Order>(data as Record<string, unknown>);
+  return {
+    ...base,
+    garments: transformArrayToCamel(((garments ?? []) as Record<string, unknown>[])),
+    materialUsage: (materialUsage ?? []).map((r: Record<string, unknown>) => ({
+      materialId: r.material_id as string,
+      materialName: r.material_name as string,
+      quantityUsed: Number(r.quantity_used),
+      unit: r.unit as string,
+      recordedByUid: r.recorded_by_uid as string,
+      recordedByName: r.recorded_by_name as string,
+      recordedAt: r.recorded_at as string,
+    })),
+    fittingRecords: (fittingRecords ?? []).map((r: Record<string, unknown>) => ({
+      notes: r.notes as string,
+      adjustmentSummary: r.adjustment_summary as string | undefined,
+      byUid: r.recorded_by_uid as string,
+      byName: r.recorded_by_name as string,
+      date: r.created_at as string,
+    })),
+    imageIds: allImageIds,
+    imageUrls,
+  } as Order & { imageUrls: string[] };
+}
+
 export function listenOrder(businessId: string, orderId: string, callback: (row: Order | null) => void) {
   let destroyed = false;
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .maybeSingle();
-    if (destroyed) return;
-    if (!data) {
-      callback(null);
-      return;
-    }
-    callback(transformKeysToCamel<Order>(data as Record<string, unknown>));
+    const order = await assembleOrder(orderId);
+    if (!destroyed) callback(order);
   };
   fetchAndCallback();
+  const channelName = `order-full-${orderId}-${Date.now()}`;
   const channel = supabase
-    .channel(`order-${orderId}-${Date.now()}`)
+    .channel(channelName)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_garments', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_material_usage', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_fitting_records', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
 }
@@ -863,6 +929,7 @@ export async function updateOrderSmsFields(
     readyPickupSmsSentAt?: string;
     expectedReadyDate?: string | null;
     delayNotificationSentAt?: string | null;
+    delayReason?: string | null;
   }
 ) {
   const snakePayload = transformKeysToSnake(fields as unknown as Record<string, unknown>);
@@ -878,25 +945,19 @@ export async function addFittingRecord(
   orderId: string,
   payload: { notes: string; adjustmentSummary?: string; byUid: string; byName: string }
 ) {
-  const { data: orderData } = await supabase
-    .from('orders')
-    .select('fitting_records')
-    .eq('id', orderId)
-    .single();
-  if (!orderData) return;
-
-  const currentRecords = (orderData.fitting_records as Record<string, unknown>[]) || [];
-  currentRecords.push({
-    notes: payload.notes,
-    adjustmentSummary: payload.adjustmentSummary,
-    byUid: payload.byUid,
-    byName: payload.byName,
-    date: new Date().toISOString(),
-  });
+  await supabase
+    .from('order_fitting_records')
+    .insert(transformKeysToSnake({
+      orderId,
+      notes: payload.notes,
+      adjustmentSummary: payload.adjustmentSummary ?? null,
+      recordedByUid: payload.byUid,
+      recordedByName: payload.byName,
+    } as Record<string, unknown>));
 
   await supabase
     .from('orders')
-    .update({ fitting_records: currentRecords as any, stage: 'fitting' })
+    .update({ stage: 'fitting', updated_at: new Date().toISOString() })
     .eq('id', orderId)
     .eq('business_id', businessId);
 }
@@ -910,22 +971,9 @@ export async function updateOrderProductionNotes(businessId: string, orderId: st
 }
 
 export async function appendOrderImageId(businessId: string, orderId: string, imageId: string) {
-  const { data: orderData } = await supabase
-    .from('orders')
-    .select('image_ids')
-    .eq('id', orderId)
-    .single();
-  if (!orderData) return;
-
-  const currentIds: string[] = (orderData.image_ids as string[]) || [];
-  if (!currentIds.includes(imageId)) {
-    currentIds.push(imageId);
-    await supabase
-      .from('orders')
-      .update({ image_ids: currentIds as any })
-      .eq('id', orderId)
-      .eq('business_id', businessId);
-  }
+  await supabase
+    .from('order_images')
+    .upsert({ order_id: orderId, image_id: imageId }, { onConflict: 'order_id,image_id', ignoreDuplicates: true });
 }
 
 export async function recordMaterialUsage(
@@ -936,59 +984,66 @@ export async function recordMaterialUsage(
 ) {
   const { data: orderData } = await supabase
     .from('orders')
-    .select('order_number, material_usage')
+    .select('order_number')
     .eq('id', orderId)
     .single();
-  if (!orderData) {
-    throw new Error("Order not found.");
-  }
+  if (!orderData) throw new Error("Order not found.");
 
   const orderNumber = orderData.order_number;
+  const now = new Date().toISOString();
+
   const usageRecords: MaterialUsageRecord[] = items.map((item) => ({
     ...item,
     recordedByUid: actor.uid,
     recordedByName: actor.name,
-    recordedAt: new Date().toISOString() as any,
+    recordedAt: now,
   }));
 
+  // Insert into proper order_material_usage table
+  await supabase.from('order_material_usage').insert(
+    usageRecords.map((record) => transformKeysToSnake({
+      orderId,
+      materialId: record.materialId || null,
+      materialName: record.materialName,
+      quantityUsed: record.quantityUsed,
+      unit: record.unit,
+      recordedByUid: record.recordedByUid || null,
+      recordedByName: record.recordedByName,
+    } as Record<string, unknown>))
+  );
+
+  // Deduct from inventory and log stock movements
   for (const record of usageRecords) {
-    const { data: materialData } = await supabase
-      .from('inventory_materials')
-      .select('quantity')
-      .eq('id', record.materialId)
-      .single();
+    if (record.materialId) {
+      const { data: materialData } = await supabase
+        .from('inventory_materials')
+        .select('quantity')
+        .eq('id', record.materialId)
+        .single();
 
-    const currentQty = Number((materialData as any)?.quantity ?? 0);
-    const newQty = currentQty - Math.abs(record.quantityUsed);
-    await supabase
-      .from('inventory_materials')
-      .update({ quantity: newQty })
-      .eq('id', record.materialId);
+      const currentQty = Number((materialData as any)?.quantity ?? 0);
+      const newQty = Math.max(0, currentQty - Math.abs(record.quantityUsed));
+      await supabase
+        .from('inventory_materials')
+        .update({ quantity: newQty, updated_at: now })
+        .eq('id', record.materialId);
 
-    await supabase
-      .from('stock_movements')
-      .insert(transformKeysToSnake({
-        businessId,
-        movementType: "used in order",
-        materialId: record.materialId,
-        materialName: record.materialName,
-        orderId,
-        quantityChange: -Math.abs(record.quantityUsed),
-        unit: record.unit,
-        reason: `Used in order ${orderNumber}`,
-        createdByUid: actor.uid,
-        createdByName: actor.name,
-      } as unknown as Record<string, unknown>));
+      await supabase
+        .from('stock_movements')
+        .insert(transformKeysToSnake({
+          businessId,
+          movementType: "used in order",
+          materialId: record.materialId,
+          materialName: record.materialName,
+          orderId,
+          quantityChange: -Math.abs(record.quantityUsed),
+          unit: record.unit,
+          reason: `Used in order ${orderNumber}`,
+          createdByUid: actor.uid,
+          createdByName: actor.name,
+        } as unknown as Record<string, unknown>));
+    }
   }
-
-  const existingUsage: MaterialUsageRecord[] = (orderData.material_usage as unknown as MaterialUsageRecord[]) || [];
-  const newUsage = [...existingUsage, ...usageRecords];
-
-  await supabase
-    .from('orders')
-    .update({ material_usage: newUsage as any })
-    .eq('id', orderId)
-    .eq('business_id', businessId);
 
   await supabase
     .from('consumption_reports')

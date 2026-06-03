@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, X, Pencil, Trash2, Upload, ImageIcon } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Upload } from "lucide-react";
 import { createMaterial, updateMaterial, deleteMaterial, createUnit, createCategory, updateCategory, deleteCategory, listenUnits, listenCategories } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
 import { notifyMaterialAdded } from "@/services/notification-catalog";
@@ -525,7 +525,6 @@ export function MaterialsSection({
                       ))}
                     </div>
                   )}
-                  {existingImages.length === 0 && imagePreviews.length === 0 && <ImageIcon className="h-8 w-8 text-slate-300" />}
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
@@ -587,12 +586,8 @@ export function MaterialsSection({
                 <div key={m.id} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm transition hover:border-emerald-200 hover:bg-emerald-50">
                   <Link href={`/inventory/materials/${m.id}`} className="flex-1 min-w-0">
                     <div className="flex items-center gap-3">
-                      {m.imageUrl ? (
-                        <img src={m.imageUrl} alt="" className="h-8 w-8 rounded object-cover" />
-                      ) : (
-                        <div className="h-8 w-8 rounded bg-slate-100 flex items-center justify-center">
-                          <ImageIcon className="h-4 w-4 text-slate-400" />
-                        </div>
+                      {m.imageUrl && (
+                        <img src={m.imageUrl} alt="" className="h-8 w-8 rounded object-contain border border-slate-100" />
                       )}
                       <div>
                         <p className="font-medium text-slate-900">{m.name}</p>

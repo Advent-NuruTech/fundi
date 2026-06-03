@@ -9,6 +9,7 @@ import { formatDateLabel, formatKes } from "@/lib/utils";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { listenCustomer, listenOrders, listenPayments } from "@/services/firestore.service";
 
+
 export function CustomerProfileModulePage() {
   const params = useParams<{ id: string }>();
   const customerId = params.id;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ExternalLink, Package, AlertTriangle, ImageIcon, ShoppingCart } from "lucide-react";
+import { ExternalLink, Package, AlertTriangle, ShoppingCart } from "lucide-react";
 import type { InventoryMaterial, Supplier } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { fetchMaterialById, fetchSupplierById } from "@/services/firestore.service";
@@ -68,7 +68,7 @@ export function MaterialDetailModulePage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {material.imageUrl ? (
-                <img src={material.imageUrl} alt={material.name} className="h-10 w-10 rounded-lg object-cover" />
+                <img src={material.imageUrl} alt={material.name} className="h-10 w-10 rounded-lg object-contain border border-slate-100 bg-slate-50" />
               ) : (
                 <Package className="h-5 w-5 text-emerald-600" />
               )}

@@ -245,6 +245,8 @@ export interface Order {
   readyPickupSmsSentAt?: string;
   expectedReadyDate?: string | null;
   delayNotificationSentAt?: string | null;
+  delayReason?: string | null;
+  imageUrls?: string[];
 }
 
 export interface FabricMeta {
