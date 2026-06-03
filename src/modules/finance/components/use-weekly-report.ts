@@ -35,7 +35,7 @@ export function useWeeklyReport(businessId: string, data: FinanceData | null) {
       data.expenses,
       data.withdrawals,
       data.orders.filter((o) => {
-        const d = o.createdAt?.toDate?.() ?? new Date();
+        const d = o.createdAt ? new Date(o.createdAt) : new Date();
         const weekStart = new Date();
         weekStart.setDate(weekStart.getDate() - weekStart.getDay() + (weekStart.getDay() === 0 ? -6 : 1));
         weekStart.setHours(0, 0, 0, 0);

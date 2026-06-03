@@ -1,7 +1,9 @@
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { updatePassword, type User } from "firebase/auth";
-import { db } from "@/lib/firebase";
-import { membersCollection, usersCollection } from "@/services/collections";
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import { doc, updateDoc } from "firebase/firestore";
+// import { membersCollection, usersCollection } from "@/services/collections";
+
+import { supabase } from "@/lib/supabase";
+import { transformKeysToSnake } from "@/lib/case-utils";
 
 export async function updateProfileInfo(input: {
   uid: string;
@@ -10,18 +12,26 @@ export async function updateProfileInfo(input: {
   bio?: string;
   photoURL?: string;
 }) {
-  const updateData: Record<string, string | null> = {};
+  const updateData: Record<string, unknown> = {};
 
   if (input.displayName !== undefined) updateData.displayName = input.displayName;
   if (input.bio !== undefined) updateData.bio = input.bio;
   if (input.photoURL !== undefined) updateData.photoURL = input.photoURL;
 
-  await updateDoc(doc(usersCollection(), input.uid), updateData);
-  await updateDoc(doc(membersCollection(input.businessId), input.uid), updateData);
+  // 🔴 FIREBASE DISABLED
+  // await updateDoc(doc(usersCollection(), input.uid), updateData);
+  // await updateDoc(doc(membersCollection(input.businessId), input.uid), updateData);
+
+  const snakeData = transformKeysToSnake(updateData, false);
+  await supabase.from("profiles").update(snakeData).eq("id", input.uid);
+  await supabase.from("business_members").update(snakeData).eq("profile_id", input.uid).eq("business_id", input.businessId);
 }
 
-export async function changeUserPassword(user: User, newPassword: string) {
-  await updatePassword(user, newPassword);
+export async function changeUserPassword(newPassword: string) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) {
+    throw error;
+  }
 }
 
 export async function uploadProfileAvatar(

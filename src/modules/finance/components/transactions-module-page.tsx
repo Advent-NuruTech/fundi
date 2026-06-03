@@ -73,7 +73,7 @@ export function TransactionsModulePage() {
           start = new Date(0);
       }
       result = result.filter((t) => {
-        const d = t.createdAt?.toDate?.() ?? new Date();
+        const d = t.createdAt ? new Date(t.createdAt) : new Date();
         return d >= start;
       });
     }
@@ -182,7 +182,7 @@ export function TransactionsModulePage() {
                 {filtered.map((tx) => (
                   <TableRow key={tx.id}>
                     <TableCell className="text-xs text-slate-500">
-                      {tx.createdAt?.toDate?.().toLocaleString() ?? "-"}
+                      {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "-"}
                     </TableCell>
                     <TableCell className="font-medium">{tx.description}</TableCell>
                     <TableCell>

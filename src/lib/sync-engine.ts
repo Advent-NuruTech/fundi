@@ -1,17 +1,44 @@
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { app } from "@/lib/firebase";
-import { getLocalDB, getSyncQueueSize, setAppState, getAppState } from "@/lib/local-db";
-import { getAuth } from "firebase/auth";
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import {
+//   getFirestore,
+//   collection,
+//   addDoc,
+//   updateDoc,
+//   deleteDoc,
+//   doc,
+//   serverTimestamp,
+// } from "firebase/firestore";
+// import { app } from "@/lib/firebase";
 
-const db = getFirestore(app);
+import { supabase } from "@/lib/supabase";
+import { transformKeysToSnake } from "@/lib/case-utils";
+import { getLocalDB, getSyncQueueSize, setAppState } from "@/lib/local-db";
+
+// Collection name mapping: Firebase subcollection → Supabase table
+const COLLECTION_TABLE_MAP: Record<string, string> = {
+  orders: "orders",
+  customers: "customers",
+  inventory_materials: "inventory_materials",
+  stock_movements: "stock_movements",
+  suppliers: "suppliers",
+  purchase_orders: "purchase_orders",
+  payments: "payments",
+  notifications: "notifications",
+  conversations: "conversations",
+  units: "inventory_units",
+  categories: "inventory_categories",
+  consumption_reports: "consumption_reports",
+  sms_logs: "sms_logs",
+  expenses: "expenses",
+  withdrawals: "withdrawals",
+  transactions: "transactions",
+  employees: "employees",
+  members: "business_members",
+  messages: "messages",
+  invitations: "employee_invitations",
+  images: "images",
+  users: "profiles",
+};
 
 type SyncOperation = "create" | "update" | "delete";
 type SyncPriority = "high" | "normal" | "low";
@@ -40,37 +67,51 @@ function getBackoffDelay(retryCount: number): number {
   return Math.min(delay, MAX_DELAY);
 }
 
-function collectionRef(businessId: string, collectionName: string) {
-  return collection(db, "businesses", businessId, collectionName);
+// 🔴 FIREBASE DISABLED
+// function collectionRef(businessId: string, collectionName: string) {
+//   return collection(db, "businesses", businessId, collectionName);
+// }
+
+function resolveTable(collectionName: string): string {
+  return COLLECTION_TABLE_MAP[collectionName] ?? collectionName;
 }
 
 async function executeOperation(entry: SyncEntry): Promise<boolean> {
   const { businessId, collection: collectionName, operation, docId, data } = entry;
-  const colRef = collectionRef(businessId, collectionName);
+  const table = resolveTable(collectionName);
 
   try {
     switch (operation) {
       case "create": {
-        await addDoc(colRef, {
-          ...(data as Record<string, unknown>),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        // 🔴 FIREBASE DISABLED
+        // await addDoc(colRef, {
+        //   ...(data as Record<string, unknown>),
+        //   createdAt: serverTimestamp(),
+        //   updatedAt: serverTimestamp(),
+        // });
+        const payload = transformKeysToSnake(data as Record<string, unknown>);
+        payload.business_id = businessId;
+        const { error } = await supabase.from(table).insert([payload]);
+        if (error) throw error;
         break;
       }
       case "update": {
         if (!docId) throw new Error("docId required for update");
-        const docRef = doc(db, "businesses", businessId, collectionName, docId);
-        await updateDoc(docRef, {
-          ...(data as Record<string, unknown>),
-          updatedAt: serverTimestamp(),
-        });
+        // 🔴 FIREBASE DISABLED
+        // const docRef = doc(db, "businesses", businessId, collectionName, docId);
+        // await updateDoc(docRef, { ...(data as Record<string, unknown>), updatedAt: serverTimestamp() });
+        const payload = transformKeysToSnake(data as Record<string, unknown>, false);
+        const { error } = await supabase.from(table).update(payload).eq("id", docId);
+        if (error) throw error;
         break;
       }
       case "delete": {
         if (!docId) throw new Error("docId required for delete");
-        const deleteRef = doc(db, "businesses", businessId, collectionName, docId);
-        await deleteDoc(deleteRef);
+        // 🔴 FIREBASE DISABLED
+        // const deleteRef = doc(db, "businesses", businessId, collectionName, docId);
+        // await deleteDoc(deleteRef);
+        const { error } = await supabase.from(table).delete().eq("id", docId);
+        if (error) throw error;
         break;
       }
     }

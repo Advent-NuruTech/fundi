@@ -223,7 +223,7 @@ export function WithdrawalsModulePage() {
                     {filtered.map((w) => (
                       <TableRow key={w.id}>
                         <TableCell className="text-xs text-slate-500">
-                          {w.withdrawalDate?.toDate?.().toLocaleDateString() ?? "-"}
+                          {w.withdrawalDate ? new Date(w.withdrawalDate).toLocaleDateString() : "-"}
                         </TableCell>
                         <TableCell className="font-medium">{w.reason}</TableCell>
                         <TableCell>

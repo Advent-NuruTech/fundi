@@ -4,8 +4,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { usePathname, useRouter } from "next/navigation";
 import type { Business, UserProfile } from "@/types/domain";
 import { canAccessRoute } from "@/lib/permissions";
-import { authStateListener, loginWithEmail, logoutUser, registerOwner, resolveProfile } from "@/services/auth.service";
-import { fetchBusinessProfile } from "@/services/firestore.service";
+import {
+  authStateListener,
+  ensureProfileExists,
+  loginWithEmail,
+  loginWithGoogle,
+  logoutUser,
+  registerOwner,
+  resolveProfile,
+} from "@/services/auth.service";
+import { fetchBusinessProfile, fetchUserProfile } from "@/services/firestore.service";
+import { supabase } from "@/lib/supabase";
 import { useSessionStore } from "@/store/session-store";
 
 export type OnboardingStep = "idle" | "authenticating" | "setting_up" | "redirecting" | "complete" | "error";
@@ -17,6 +26,7 @@ interface AuthContextValue {
   onboardingStep: OnboardingStep;
   setOnboardingStep: (step: OnboardingStep) => void;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   registerOwner: (input: {
     email: string;
     password: string;
@@ -40,14 +50,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("idle");
 
   useEffect(() => {
-    const unsub = authStateListener(async (firebaseUser) => {
-      if (!firebaseUser) {
+    const unsub = authStateListener(async (authUser, event) => {
+      if (!authUser) {
         setProfile(null);
         setBusiness(null);
         setLoading(false);
         return;
       }
-      const resolved = await resolveProfile(firebaseUser);
+
+      let resolved = await resolveProfile(authUser);
+
+      // If no profile exists, attempt to create one via the onboard API.
+      // Covers SIGNED_IN (active login) and INITIAL_SESSION (page reload
+      // after email-confirmation or a failed first-time setup), so a user
+      // with a valid Supabase session but missing DB records never gets
+      // stuck in a redirect loop back to login.
+      if (!resolved && (event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
+        const fixed = await ensureProfileExists(authUser);
+        if (fixed) {
+          resolved = await fetchUserProfile(authUser.id);
+        }
+      }
+
       setProfile(resolved);
       if (resolved?.businessId) {
         const businessProfile = await fetchBusinessProfile(resolved.businessId);
@@ -62,11 +86,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setLoading, setProfile]);
 
   const refreshProfile = useCallback(async () => {
-    const { auth } = await import("@/lib/firebase");
-    if (!auth.currentUser) return;
-    const resolved = await resolveProfile(auth.currentUser);
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) return;
+    const resolved = await resolveProfile(data.user);
     if (resolved) {
       setProfile(resolved);
+      if (resolved.businessId) {
+        const businessProfile = await fetchBusinessProfile(resolved.businessId);
+        setBusiness(businessProfile);
+      }
     }
   }, [setProfile]);
 
@@ -85,9 +113,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: async (email, password) => {
         setLoading(true);
         await loginWithEmail(email, password);
+        // loading is cleared by authStateListener after profile resolves
+      },
+      loginWithGoogle: async () => {
+        await loginWithGoogle();
       },
       registerOwner: async (input) => {
-        await registerOwner(input);
+        setLoading(true);
+        try {
+          await registerOwner(input);
+          await refreshProfile();
+        } finally {
+          setLoading(false);
+        }
       },
       logout: async () => {
         await logoutUser();

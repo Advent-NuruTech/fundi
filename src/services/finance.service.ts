@@ -1,29 +1,44 @@
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import {
+//   doc,
+//   getDocs,
+//   onSnapshot,
+//   orderBy,
+//   query,
+//   serverTimestamp,
+//   setDoc,
+//   Timestamp,
+//   where,
+//   writeBatch,
+//   addDoc,
+// } from "firebase/firestore";
+// import { db } from "@/lib/firebase";
+// import {
+//   customersCollection,
+//   expensesCollection,
+//   materialsCollection,
+//   membersCollection,
+//   ordersCollection,
+//   paymentsCollection,
+//   purchaseOrdersCollection,
+//   stockMovementsCollection,
+//   transactionsCollection,
+//   withdrawalsCollection,
+// } from "@/services/collections";
+
 import {
-  doc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  where,
-  writeBatch,
-  addDoc,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import {
-  customersCollection,
-  expensesCollection,
-  materialsCollection,
-  membersCollection,
-  ordersCollection,
-  paymentsCollection,
-  purchaseOrdersCollection,
-  stockMovementsCollection,
-  transactionsCollection,
-  withdrawalsCollection,
-} from "@/services/collections";
+  listenPayments,
+  listenOrders,
+  listenCustomers,
+  listenMembers,
+  listenExpenses,
+  listenWithdrawals,
+  listenMaterials,
+  listenStockMovements,
+  listenPurchaseOrders,
+  listenTransactions as supabaseListenTransactions,
+  recordTransaction as supabaseRecordTransaction,
+} from "@/lib/supabase.service";
 import type {
   Customer,
   Expense,
@@ -110,25 +125,25 @@ function previousPeriodEnd(period: "daily" | "weekly" | "monthly" | "yearly", re
   }
 }
 
-export function filterByDateRange<T extends { createdAt: Timestamp }>(items: T[], start: Date, end: Date): T[] {
+export function filterByDateRange<T extends { createdAt: string }>(items: T[], start: Date, end: Date): T[] {
   return items.filter((item) => {
-    const date = item.createdAt?.toDate ? item.createdAt.toDate() : new Date();
+    const date = item.createdAt ? new Date(item.createdAt) : new Date();
     return date >= start && date <= end;
   });
 }
 
-export function filterByDateField<T extends { expenseDate?: Timestamp }>(items: T[], start: Date, end: Date): T[] {
+export function filterByDateField<T extends { expenseDate?: string }>(items: T[], start: Date, end: Date): T[] {
   return items.filter((item) => {
     if (!item.expenseDate) return false;
-    const date = item.expenseDate.toDate ? item.expenseDate.toDate() : new Date();
+    const date = item.expenseDate ? new Date(item.expenseDate) : new Date();
     return date >= start && date <= end;
   });
 }
 
-export function filterByWithdrawalDate<T extends { withdrawalDate?: Timestamp }>(items: T[], start: Date, end: Date): T[] {
+export function filterByWithdrawalDate<T extends { withdrawalDate?: string }>(items: T[], start: Date, end: Date): T[] {
   return items.filter((item) => {
     if (!item.withdrawalDate) return false;
-    const date = item.withdrawalDate.toDate ? item.withdrawalDate.toDate() : new Date();
+    const date = item.withdrawalDate ? new Date(item.withdrawalDate) : new Date();
     return date >= start && date <= end;
   });
 }
@@ -139,7 +154,7 @@ export function calculateRevenue(payments: Payment[], start?: Date, end?: Date):
   let filtered = payments;
   if (start && end) {
     filtered = payments.filter((p) => {
-      const d = p.recordedAt?.toDate ? p.recordedAt.toDate() : new Date();
+      const d = p.recordedAt ? new Date(p.recordedAt) : new Date();
       return d >= start && d <= end;
     });
   }
@@ -156,7 +171,7 @@ export function calculateExpenses(expenses: Expense[], start?: Date, end?: Date)
   let filtered = expenses;
   if (start && end) {
     filtered = expenses.filter((e) => {
-      const d = e.expenseDate?.toDate ? e.expenseDate.toDate() : new Date();
+      const d = e.expenseDate ? new Date(e.expenseDate) : new Date();
       return d >= start && d <= end;
     });
   }
@@ -167,7 +182,7 @@ export function expensesByCategory(expenses: Expense[], start?: Date, end?: Date
   let filtered = expenses;
   if (start && end) {
     filtered = expenses.filter((e) => {
-      const d = e.expenseDate?.toDate ? e.expenseDate.toDate() : new Date();
+      const d = e.expenseDate ? new Date(e.expenseDate) : new Date();
       return d >= start && d <= end;
     });
   }
@@ -183,7 +198,7 @@ export function calculateWithdrawals(withdrawals: Withdrawal[], start?: Date, en
   let filtered = withdrawals;
   if (start && end) {
     filtered = withdrawals.filter((w) => {
-      const d = w.withdrawalDate?.toDate ? w.withdrawalDate.toDate() : new Date();
+      const d = w.withdrawalDate ? new Date(w.withdrawalDate) : new Date();
       return d >= start && d <= end;
     });
   }
@@ -194,7 +209,7 @@ export function withdrawalsByCategory(withdrawals: Withdrawal[], start?: Date, e
   let filtered = withdrawals;
   if (start && end) {
     filtered = withdrawals.filter((w) => {
-      const d = w.withdrawalDate?.toDate ? w.withdrawalDate.toDate() : new Date();
+      const d = w.withdrawalDate ? new Date(w.withdrawalDate) : new Date();
       return d >= start && d <= end;
     });
   }
@@ -232,7 +247,7 @@ export function calculateCashOut(expenses: Expense[], withdrawals: Withdrawal[],
   const poTotal = purchaseOrders
     .filter((po: any) => {
       if (!start || !end) return true;
-      const d = po.createdAt?.toDate ? po.createdAt.toDate() : new Date();
+      const d = po.createdAt ? new Date(po.createdAt) : new Date();
       return d >= start && d <= end && po.status === "received";
     })
     .reduce((sum: number, po: any) => sum + (po.unitCost ?? 0) * (po.quantity ?? 0), 0);
@@ -270,7 +285,7 @@ export function calculateInventoryCOGS(movements: StockMovement[], start?: Date,
   let filtered = movements.filter((m) => m.movementType === "used in order");
   if (start && end) {
     filtered = filtered.filter((m) => {
-      const d = m.createdAt?.toDate ? m.createdAt.toDate() : new Date();
+      const d = m.createdAt ? new Date(m.createdAt) : new Date();
       return d >= start && d <= end;
     });
   }
@@ -337,12 +352,45 @@ export function comparePeriods(
 
 // ─── TRANSACTION LEDGER ───
 
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// export function listenTransactions(businessId: string, callback: (rows: Transaction[]) => void) {
+//   const q = query(transactionsCollection(businessId), orderBy("createdAt", "desc"));
+//   return onSnapshot(q, (snapshot) => {
+//     callback(snapshot.docs.map((docItem) => ({ ...docItem.data(), id: docItem.id })));
+//   });
+// }
+
 export function listenTransactions(businessId: string, callback: (rows: Transaction[]) => void) {
-  const q = query(transactionsCollection(businessId), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map((docItem) => ({ ...docItem.data(), id: docItem.id })));
-  });
+  return supabaseListenTransactions(businessId, callback);
 }
+
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// export async function recordTransaction(
+//   businessId: string,
+//   payload: {
+//     type: Transaction["type"];
+//     amount: number;
+//     description: string;
+//     referenceId?: string;
+//     referenceType?: string;
+//     referenceLabel?: string;
+//     linkedEntityId?: string;
+//     linkedEntityType?: string;
+//     linkedEntityName?: string;
+//     performedByUid: string;
+//     performedByName: string;
+//     status: Transaction["status"];
+//     notes?: string;
+//   }
+// ) {
+//   const ref = await addDoc(transactionsCollection(businessId), {
+//     businessId,
+//     ...payload,
+//     createdAt: serverTimestamp(),
+//     updatedAt: serverTimestamp(),
+//   });
+//   return ref.id;
+// }
 
 export async function recordTransaction(
   businessId: string,
@@ -362,13 +410,7 @@ export async function recordTransaction(
     notes?: string;
   }
 ) {
-  const ref = await addDoc(transactionsCollection(businessId), {
-    businessId,
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  return ref.id;
+  return supabaseRecordTransaction(businessId, payload);
 }
 
 // ─── REALTIME FINANCE WATCHERS ───
@@ -385,121 +427,86 @@ export interface FinanceData {
   purchaseOrders: any[];
 }
 
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// export function listenAllFinanceData(
+//   businessId: string,
+//   callback: (data: FinanceData) => void,
+//   onError?: (err: Error) => void
+// ) {
+//   const data: Partial<FinanceData> = {};
+//   function checkReady() {
+//     if (
+//       data.payments && data.orders && data.customers && data.members &&
+//       data.expenses && data.withdrawals && data.materials &&
+//       data.movements && data.purchaseOrders
+//     ) {
+//       callback(data as FinanceData);
+//     }
+//   }
+//   const unsub1 = onSnapshot(query(paymentsCollection(businessId), orderBy("recordedAt", "desc")), (snap) => {
+//     data.payments = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Payment[];
+//     checkReady();
+//   }, onError);
+//   const unsub2 = onSnapshot(query(ordersCollection(businessId), orderBy("updatedAt", "desc")), (snap) => {
+//     data.orders = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Order[];
+//     checkReady();
+//   }, onError);
+//   const unsub3 = onSnapshot(query(customersCollection(businessId), orderBy("createdAt", "desc")), (snap) => {
+//     data.customers = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Customer[];
+//     checkReady();
+//   }, onError);
+//   const unsub4 = onSnapshot(query(membersCollection(businessId), orderBy("displayName", "asc")), (snap) => {
+//     data.members = snap.docs.map((d) => ({ ...d.data(), uid: d.id })) as UserProfile[];
+//     checkReady();
+//   }, onError);
+//   const unsub5 = onSnapshot(query(expensesCollection(businessId), orderBy("expenseDate", "desc")), (snap) => {
+//     data.expenses = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Expense[];
+//     checkReady();
+//   }, onError);
+//   const unsub6 = onSnapshot(query(withdrawalsCollection(businessId), orderBy("withdrawalDate", "desc")), (snap) => {
+//     data.withdrawals = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Withdrawal[];
+//     checkReady();
+//   }, onError);
+//   const unsub7 = onSnapshot(query(materialsCollection(businessId), orderBy("updatedAt", "desc")), (snap) => {
+//     data.materials = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as InventoryMaterial[];
+//     checkReady();
+//   }, onError);
+//   const unsub8 = onSnapshot(query(stockMovementsCollection(businessId), orderBy("createdAt", "desc")), (snap) => {
+//     data.movements = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as StockMovement[];
+//     checkReady();
+//   }, onError);
+//   const unsub9 = onSnapshot(query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc")), (snap) => {
+//     data.purchaseOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+//     checkReady();
+//   }, onError);
+//   return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); };
+// }
+
 export function listenAllFinanceData(
   businessId: string,
   callback: (data: FinanceData) => void,
   onError?: (err: Error) => void
 ) {
   const data: Partial<FinanceData> = {};
-
   function checkReady() {
     if (
-      data.payments &&
-      data.orders &&
-      data.customers &&
-      data.members &&
-      data.expenses &&
-      data.withdrawals &&
-      data.materials &&
-      data.movements &&
-      data.purchaseOrders
+      data.payments && data.orders && data.customers && data.members &&
+      data.expenses && data.withdrawals && data.materials &&
+      data.movements && data.purchaseOrders
     ) {
       callback(data as FinanceData);
     }
   }
-
-  const unsub1 = onSnapshot(
-    query(paymentsCollection(businessId), orderBy("recordedAt", "desc")),
-    (snap) => {
-      data.payments = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Payment[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub2 = onSnapshot(
-    query(ordersCollection(businessId), orderBy("updatedAt", "desc")),
-    (snap) => {
-      data.orders = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Order[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub3 = onSnapshot(
-    query(customersCollection(businessId), orderBy("createdAt", "desc")),
-    (snap) => {
-      data.customers = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Customer[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub4 = onSnapshot(
-    query(membersCollection(businessId), orderBy("displayName", "asc")),
-    (snap) => {
-      data.members = snap.docs.map((d) => ({ ...d.data(), uid: d.id })) as UserProfile[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub5 = onSnapshot(
-    query(expensesCollection(businessId), orderBy("expenseDate", "desc")),
-    (snap) => {
-      data.expenses = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Expense[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub6 = onSnapshot(
-    query(withdrawalsCollection(businessId), orderBy("withdrawalDate", "desc")),
-    (snap) => {
-      data.withdrawals = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Withdrawal[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub7 = onSnapshot(
-    query(materialsCollection(businessId), orderBy("updatedAt", "desc")),
-    (snap) => {
-      data.materials = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as InventoryMaterial[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub8 = onSnapshot(
-    query(stockMovementsCollection(businessId), orderBy("createdAt", "desc")),
-    (snap) => {
-      data.movements = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as StockMovement[];
-      checkReady();
-    },
-    onError
-  );
-
-  const unsub9 = onSnapshot(
-    query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc")),
-    (snap) => {
-      data.purchaseOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-      checkReady();
-    },
-    onError
-  );
-
-  return () => {
-    unsub1();
-    unsub2();
-    unsub3();
-    unsub4();
-    unsub5();
-    unsub6();
-    unsub7();
-    unsub8();
-    unsub9();
-  };
+  const unsub1 = listenPayments(businessId, (rows) => { data.payments = rows; checkReady(); });
+  const unsub2 = listenOrders(businessId, (rows) => { data.orders = rows; checkReady(); });
+  const unsub3 = listenCustomers(businessId, (rows) => { data.customers = rows; checkReady(); });
+  const unsub4 = listenMembers(businessId, (rows) => { data.members = rows; checkReady(); });
+  const unsub5 = listenExpenses(businessId, (rows) => { data.expenses = rows; checkReady(); });
+  const unsub6 = listenWithdrawals(businessId, (rows) => { data.withdrawals = rows; checkReady(); });
+  const unsub7 = listenMaterials(businessId, (rows) => { data.materials = rows; checkReady(); });
+  const unsub8 = listenStockMovements(businessId, (rows) => { data.movements = rows; checkReady(); });
+  const unsub9 = listenPurchaseOrders(businessId, (rows) => { data.purchaseOrders = rows; checkReady(); });
+  return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); };
 }
 
 export function calculatePayrollLiability(members: UserProfile[]) {
@@ -677,7 +684,7 @@ export function dailyRevenueBreakdown(payments: Payment[], days: number = 30): A
     breakdown[key] = 0;
   }
   payments.forEach((p) => {
-    const d = p.recordedAt?.toDate ? p.recordedAt.toDate() : new Date();
+    const d = p.recordedAt ? new Date(p.recordedAt) : new Date();
     const key = d.toISOString().slice(0, 10);
     if (breakdown[key] !== undefined) {
       breakdown[key] += p.amount;
@@ -696,7 +703,7 @@ export function dailyExpenseBreakdown(expenses: Expense[], days: number = 30): A
     breakdown[key] = 0;
   }
   expenses.forEach((e) => {
-    const d = e.expenseDate?.toDate ? e.expenseDate.toDate() : new Date();
+    const d = e.expenseDate ? new Date(e.expenseDate) : new Date();
     const key = d.toISOString().slice(0, 10);
     if (breakdown[key] !== undefined) {
       breakdown[key] += e.amount;

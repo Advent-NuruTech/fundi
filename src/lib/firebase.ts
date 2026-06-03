@@ -1,16 +1,9 @@
+// 🔴 FIREBASE DISABLED - FULLY MIGRATED TO SUPABASE
+// Firebase SDK remains installed for rollback safety only.
+// All database operations now use Supabase via @/lib/supabase.service.
+// Auth was migrated in Phase 1; Firestore data migration is now complete.
+
 import { initializeApp, getApps, getApp } from "firebase/app";
-import {
-  initializeAuth,
-  browserLocalPersistence,
-  indexedDBLocalPersistence,
-  getAuth,
-} from "firebase/auth";
-import {
-  getFirestore,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentSingleTabManager,
-} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -28,23 +21,13 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 const isFirstInit = getApps().length === 0;
 const app = isFirstInit ? initializeApp(firebaseConfig) : getApp();
 
-const db = isFirstInit
-  ? initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
-    })
-  : getFirestore(app);
+// 🔴 FIRESTORE DISABLED - All data operations migrated to Supabase PostgreSQL
+// const db = isFirstInit
+//   ? initializeFirestore(app, {
+//       localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+//     })
+//   : getFirestore(app);
 
-const auth =
-  typeof window === "undefined"
-    ? getAuth(app)
-    : (() => {
-        try {
-          return initializeAuth(app, {
-            persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-          });
-        } catch {
-          return getAuth(app);
-        }
-      })();
-
-export { app, db, auth };
+// 🔴 FIREBASE DISABLED - Firestore instance no longer needed
+// export { app, db };
+export { app };

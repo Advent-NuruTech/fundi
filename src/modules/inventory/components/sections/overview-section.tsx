@@ -43,7 +43,7 @@ export function OverviewSection({
   }
 
   const consumptionMap = movements
-    .filter((m) => m.movementType === "used in order")
+    .filter((m) => m.movementType === "consumption")
     .reduce<Record<string, number>>((acc, m) => {
       const key = m.materialName;
       acc[key] = (acc[key] ?? 0) + Math.abs(m.quantityChange);
@@ -74,7 +74,7 @@ export function OverviewSection({
         <Card>
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500">Categories</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{new Set(materials.map((m) => m.categoryId)).size}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{new Set(materials.filter((m) => m.categoryId).map((m) => m.categoryId)).size}</p>
           </CardContent>
         </Card>
       </div>
@@ -100,6 +100,8 @@ export function OverviewSection({
                 )}
               </div>
             )}
+
+            
           </CardContent>
         </Card>
 
@@ -116,8 +118,8 @@ export function OverviewSection({
                       <p className="font-medium">{m.materialName}</p>
                       <p className="text-xs text-slate-500">{m.reason}</p>
                     </div>
-                    <Badge variant={m.movementType === "stock in" ? "success" : m.movementType === "used in order" ? "warning" : "default"}>
-                      {m.movementType === "stock in" ? "+" : ""}{m.quantityChange} {m.unit}
+                    <Badge variant={m.movementType === "stock_in" ? "success" : m.movementType === "consumption" ? "warning" : "default"}>
+                      {m.movementType === "stock_in" ? "+" : ""}{m.quantityChange} {m.unit}
                     </Badge>
                   </div>
                 ))}
@@ -131,12 +133,12 @@ export function OverviewSection({
         <Card>
           <CardContent className="pt-5">
             <p className="mb-3 text-sm font-semibold text-slate-900">Pending Purchase Orders</p>
-            {purchaseOrders.filter((po) => po.status === "pending").length === 0 ? (
+            {purchaseOrders.filter((po) => po.status === "pending" || po.status === "partial").length === 0 ? (
               <p className="text-sm text-slate-500">No pending purchase orders.</p>
             ) : (
               <div className="space-y-2">
                 {purchaseOrders
-                  .filter((po) => po.status === "pending")
+                  .filter((po) => po.status === "pending" || po.status === "partial")
                   .slice(0, 5)
                   .map((po) => (
                     <div key={po.id} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
@@ -144,9 +146,12 @@ export function OverviewSection({
                         <p className="font-medium">{po.materialName}</p>
                         <p className="text-xs text-slate-500">{po.supplierName}</p>
                       </div>
-                      <p className="text-slate-700">
-                        {po.quantity} {po.unit}
-                      </p>
+                      <div className="text-right">
+                        <p className="text-slate-700">{po.quantity} {po.unit}</p>
+                        {po.status === "partial" && (
+                          <p className="text-xs text-amber-600">{po.quantityReceived ?? 0} received</p>
+                        )}
+                      </div>
                     </div>
                   ))}
               </div>
@@ -167,7 +172,7 @@ export function OverviewSection({
                   .map(([name, total]) => (
                     <div key={name} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
                       <span className="font-medium">{name}</span>
-                      <span className="text-slate-700">{total.toFixed(1)} used</span>
+                      <span className="text-slate-700">{total} meters</span>
                     </div>
                   ))}
               </div>

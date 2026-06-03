@@ -76,9 +76,7 @@ export default function ProfilePage() {
     }
     setChangingPassword(true);
     try {
-      const { auth } = await import("@/lib/firebase");
-      if (!auth.currentUser) { toast.error("Session expired"); return; }
-      await changeUserPassword(auth.currentUser, newPassword);
+      await changeUserPassword(newPassword);
       toast.success("Password changed successfully");
       setNewPassword("");
       setConfirmPassword("");
@@ -192,7 +190,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <Label>Member since</Label>
-              <Input value={user.createdAt ? new Date(user.createdAt.seconds * 1000).toLocaleDateString("en-KE", { year: "numeric", month: "long", day: "numeric" }) : "N/A"} disabled className="bg-slate-50" />
+              <Input value={user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-KE", { year: "numeric", month: "long", day: "numeric" }) : "N/A"} disabled className="bg-slate-50" />
             </div>
           </div>
         </CardContent>
@@ -269,9 +267,9 @@ export default function ProfilePage() {
             </div>
             <div>
               <Label htmlFor="businessSmsSenderId" className="flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5 text-slate-400" /> SMS Sender Name</Label>
-              <Input id="businessSmsSenderId" value={businessSmsSenderId} onChange={(e) => setBusinessSmsSenderId(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 11))} placeholder="FundiFlow" maxLength={11} />
+              <Input id="businessSmsSenderId" value={businessSmsSenderId} onChange={(e) => setBusinessSmsSenderId(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 11))} placeholder="ANTS" maxLength={11} />
               <p className="mt-1 text-xs text-slate-400">This name appears on customer phones when SMS notifications are sent. Max 11 characters, letters and numbers only.</p>
-              <p className="mt-0.5 text-xs text-slate-400">Preview: <span className="font-medium text-slate-600">{businessSmsSenderId || "FundiFlow"}</span></p>
+              <p className="mt-0.5 text-xs text-slate-400">Preview: <span className="font-medium text-slate-600">{businessSmsSenderId || "ANTS"}</span></p>
               <p className="mt-0.5 text-xs text-amber-500">Sender IDs may require approval by the SMS provider before appearing on customer devices.</p>
             </div>
             <div className="flex justify-end">

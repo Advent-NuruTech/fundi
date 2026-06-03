@@ -11,6 +11,7 @@ import { Loader2, ArrowRight, Mail } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { loginSchema, type LoginValues } from "@/schemas/auth.schema";
 import { acceptInvitationByToken } from "@/services/firestore.service";
+import { supabase } from "@/lib/supabase";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, refreshProfile } = useAuth();
+  const { login, loginWithGoogle, refreshProfile } = useAuth();
 
   const inviteToken = searchParams.get("invite");
   const [step, setStep] = useState<"idle" | "authenticating" | "setting_up" | "redirecting">("idle");
@@ -50,9 +51,9 @@ function LoginForm() {
       setStep("setting_up");
 
       if (inviteToken) {
-        const { auth } = await import("@/lib/firebase");
-        if (auth.currentUser) {
-          await acceptInvitationByToken(inviteToken, auth.currentUser.uid);
+        const { data } = await supabase.auth.getUser();
+        if (data.user) {
+          await acceptInvitationByToken(inviteToken, data.user.id);
           await refreshProfile();
         }
       }
@@ -66,15 +67,25 @@ function LoginForm() {
     } catch (err) {
       setStep("idle");
       const message = err instanceof Error ? err.message : "";
-      if (message.includes("user-not-found") || message.includes("wrong-password") || message.includes("invalid-credential")) {
+      if (message.toLowerCase().includes("invalid") || message.includes("user-not-found") || message.includes("wrong-password")) {
         setError("Invalid email or password. Please try again.");
-      } else if (message.includes("too-many-requests")) {
+      } else if (message.includes("too-many-requests") || message.toLowerCase().includes("rate limit")) {
         setError("Too many attempts. Please try again later.");
       } else if (message.includes("invitation")) {
         setError(message);
       } else {
         setError("Login failed. Check your email and password.");
       }
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (isBusy) return;
+    try {
+      setError("");
+      await loginWithGoogle();
+    } catch {
+      setError("Google sign-in failed. Please try again.");
     }
   };
 
@@ -153,6 +164,13 @@ function LoginForm() {
               </Button>
             </form>
 
+            {!inviteToken && (
+              <Button className="mt-3 w-full gap-2" type="button" variant="outline" onClick={handleGoogleLogin} disabled={isBusy}>
+                <Mail className="h-4 w-4" />
+                Continue with Google
+              </Button>
+            )}
+
             <div className="mt-6 space-y-3 text-center text-sm">
               <p className="text-slate-600">
                 New tailoring business?{" "}
@@ -160,13 +178,7 @@ function LoginForm() {
                   Create account
                 </Link>
               </p>
-              {!inviteToken && (
-                <p>
-                  <Link href="/forgot-password" className="text-slate-500 hover:text-slate-700">
-                    Forgot password?
-                  </Link>
-                </p>
-              )}
+              {!inviteToken && <p className="text-slate-500">Password resets are handled by your workspace admin.</p>}
             </div>
           </CardContent>
 

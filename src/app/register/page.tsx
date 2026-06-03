@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Loader2, ArrowRight, Building2 } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { registerSchema, type RegisterValues } from "@/schemas/auth.schema";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ export default function RegisterPage() {
   const [step, setStep] = useState<"idle" | "creating" | "redirecting">("idle");
   const [error, setError] = useState("");
 
-  const { register, handleSubmit, formState } = useForm<RegisterValues>({
+  const { register, handleSubmit } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
   });
 
@@ -39,10 +39,21 @@ export default function RegisterPage() {
     } catch (err) {
       setStep("idle");
       const message = err instanceof Error ? err.message : "";
-      if (message.includes("email-already-in-use")) {
-        setError("This email is already registered. Try signing in instead.");
+      const lower = message.toLowerCase();
+
+      if (
+        lower.includes("already registered") ||
+        lower.includes("email-already-in-use") ||
+        lower.includes("already been registered") ||
+        lower.includes("user already exists")
+      ) {
+        setError("This email is already registered. Sign in instead.");
+      } else if (lower.includes("check your email") || lower.includes("confirm your account")) {
+        setError("Account created! Please check your email to confirm, then sign in.");
+      } else if (lower.includes("account setup failed") || lower.includes("onboarding")) {
+        setError("Your account was created but setup failed. Please sign in — we'll complete setup automatically.");
       } else {
-        setError("Registration failed. Please try again.");
+        setError(message || "Registration failed. Please check your details and try again.");
       }
     }
   };
@@ -92,7 +103,12 @@ export default function RegisterPage() {
 
               {error && (
                 <div className="md:col-span-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
-                  {error}
+                  {error}{" "}
+                  {(error.includes("already registered") || error.includes("Sign in")) && (
+                    <Link href="/login" className="font-semibold underline">
+                      Sign in
+                    </Link>
+                  )}
                 </div>
               )}
 

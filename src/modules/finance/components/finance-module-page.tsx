@@ -180,7 +180,7 @@ export function FinanceModulePage() {
     const maxTransactions = 20;
 
     const paymentTx = data.payments.slice(0, 20).map((p) => ({
-      date: p.recordedAt?.toDate?.() ?? new Date(),
+      date: p.recordedAt ? new Date(p.recordedAt) : new Date(),
       description: `Payment from ${p.customerName} - ${p.orderNumber}`,
       amount: p.amount,
       type: "payment_received" as const,
@@ -189,7 +189,7 @@ export function FinanceModulePage() {
     }));
 
     const expenseTx = data.expenses.slice(0, 20).map((e) => ({
-      date: e.expenseDate?.toDate?.() ?? new Date(),
+      date: e.expenseDate ? new Date(e.expenseDate) : new Date(),
       description: e.description,
       amount: -e.amount,
       type: "expense" as const,
@@ -198,7 +198,7 @@ export function FinanceModulePage() {
     }));
 
     const withdrawalTx = data.withdrawals.slice(0, 20).map((w) => ({
-      date: w.withdrawalDate?.toDate?.() ?? new Date(),
+      date: w.withdrawalDate ? new Date(w.withdrawalDate) : new Date(),
       description: w.reason,
       amount: -w.amount,
       type: "withdrawal" as const,

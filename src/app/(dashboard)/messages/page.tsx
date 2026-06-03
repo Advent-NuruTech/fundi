@@ -574,9 +574,7 @@ export default function MessagesPage() {
                     )}
                     <span>
                       {msg.createdAt
-                        ? new Date(
-                            msg.createdAt.seconds * 1000
-                          ).toLocaleTimeString("en-KE", {
+                          ? new Date(msg.createdAt).toLocaleTimeString("en-KE", {
                             hour: "2-digit",
                             minute: "2-digit",
                           })

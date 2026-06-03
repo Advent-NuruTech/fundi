@@ -1,4 +1,6 @@
-import type { Timestamp } from "firebase/firestore";
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import type { Timestamp } from "firebase/firestore";
+// Supabase returns ISO 8601 date strings; `string` replaces `Timestamp` throughout
 
 export type UserRole =
   | "owner"
@@ -47,14 +49,14 @@ export interface DbUnit {
   id: string;
   businessId: string;
   name: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface DbCategory {
   id: string;
   businessId: string;
   name: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface UserProfile {
@@ -75,8 +77,8 @@ export interface UserProfile {
   payRate?: number;
   payPeriod?: "daily" | "weekly" | "monthly";
   nextPayDate?: string;
-  createdAt: Timestamp;
-  lastActiveAt?: Timestamp;
+  createdAt: string;
+  lastActiveAt?: string;
 }
 
 export interface Notification {
@@ -89,7 +91,7 @@ export interface Notification {
   link?: string;
   read: boolean;
   archived: boolean;
-  createdAt: Timestamp;
+  createdAt: string;
   metadata?: Record<string, string>;
 }
 
@@ -107,14 +109,14 @@ export interface Conversation {
     text: string;
     senderUid: string;
     senderName: string;
-    createdAt: Timestamp;
+    createdAt: string;
   };
   type: ConversationType;
   title?: string;
   priority?: AnnouncementPriority;
   pinned?: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MessageAttachment {
@@ -132,11 +134,11 @@ export interface Message {
   text: string;
   attachments?: MessageAttachment[];
   readBy: string[];
-  editedAt?: Timestamp;
-  deletedAt?: Timestamp;
+  editedAt?: string;
+  deletedAt?: string;
   deletedByUid?: string;
   isDeleted?: boolean;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface Business {
@@ -150,7 +152,7 @@ export interface Business {
   orderCounter?: number;
   employeeCounter?: number;
   smsSenderId?: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface MeasurementSet {
@@ -175,9 +177,9 @@ export interface Customer {
   preferences?: string;
   notes?: string;
   outstandingBalance: number;
-  lastOrderAt?: Timestamp;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  lastOrderAt?: string;
+  createdAt: string;
+  updatedAt: string;
   measurements: MeasurementSet;
 }
 
@@ -196,7 +198,7 @@ export interface FabricSelection {
 }
 
 export interface FittingRecord {
-  date: Timestamp;
+  date: string;
   notes: string;
   adjustmentSummary?: string;
   byUid: string;
@@ -210,7 +212,7 @@ export interface MaterialUsageRecord {
   unit: string;
   recordedByUid: string;
   recordedByName: string;
-  recordedAt: Timestamp;
+  recordedAt: string;
 }
 
 export interface Order {
@@ -237,12 +239,12 @@ export interface Order {
   productionNotes?: string;
   materialUsage: MaterialUsageRecord[];
   imageIds: string[];
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string;
+  updatedAt: string;
   readyPickupSmsSent?: boolean;
-  readyPickupSmsSentAt?: Timestamp;
-  expectedReadyDate?: Timestamp | null;
-  delayNotificationSentAt?: Timestamp | null;
+  readyPickupSmsSentAt?: string;
+  expectedReadyDate?: string | null;
+  delayNotificationSentAt?: string | null;
 }
 
 export interface FabricMeta {
@@ -278,8 +280,8 @@ export interface InventoryMaterial {
   imagePublicId?: string;
   images?: MaterialImage[];
   fabricMeta?: FabricMeta;
-  updatedAt: Timestamp;
-  createdAt: Timestamp;
+  updatedAt: string;
+  createdAt: string;
 }
 
 export interface StockMovement {
@@ -294,7 +296,7 @@ export interface StockMovement {
   reason: string;
   createdByUid: string;
   createdByName: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface Supplier {
@@ -304,7 +306,7 @@ export interface Supplier {
   phone: string;
   contactPerson?: string;
   notes?: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface PurchaseOrder {
@@ -322,7 +324,7 @@ export interface PurchaseOrder {
   expectedDate: string;
   imageUrl?: string;
   imagePublicId?: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface Payment {
@@ -336,7 +338,7 @@ export interface Payment {
   method: PaymentMethod;
   mpesaCode?: string;
   description?: string;
-  recordedAt: Timestamp;
+  recordedAt: string;
   recordedByUid: string;
   recordedByName: string;
 }
@@ -352,7 +354,7 @@ export interface ImageMeta {
   height: number;
   format?: string;
   uploadedByUid: string;
-  uploadedAt: Timestamp;
+  uploadedAt: string;
 }
 
 export interface EmployeeInvitation {
@@ -367,9 +369,9 @@ export interface EmployeeInvitation {
   invitedByUid: string;
   invitedByName: string;
   status: "pending" | "accepted" | "revoked";
-  createdAt: Timestamp;
-  expiresAt: Timestamp;
-  acceptedAt?: Timestamp;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt?: string;
 }
 
 export interface TenantScoped {
@@ -387,7 +389,7 @@ export interface ConsumptionReport {
   orderNumber: string;
   items: MaterialUsageRecord[];
   totalItems: number;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 // ─── FINANCE MODULE TYPES ───
@@ -402,11 +404,11 @@ export interface Expense {
   receiptUrl?: string;
   supplierId?: string;
   supplierName?: string;
-  expenseDate: Timestamp;
+  expenseDate: string;
   createdByUid: string;
   createdByName: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Withdrawal {
@@ -417,9 +419,9 @@ export interface Withdrawal {
   category: string;
   withdrawnByUid: string;
   withdrawnByName: string;
-  withdrawalDate: Timestamp;
+  withdrawalDate: string;
   notes?: string;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export type TransactionType = "payment_received" | "expense" | "withdrawal" | "inventory_purchase" | "refund" | "adjustment";
@@ -441,8 +443,8 @@ export interface Transaction {
   performedByName: string;
   status: TransactionStatus;
   notes?: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type FinancePeriod = "daily" | "weekly" | "monthly" | "yearly" | "custom";
@@ -479,7 +481,7 @@ export interface SmsLog {
   type: "ready_for_pickup" | "delay_notification";
   status: "success" | "failed";
   response: unknown;
-  createdAt: Timestamp;
+  createdAt: string;
 }
 
 export interface FinanceAlert {

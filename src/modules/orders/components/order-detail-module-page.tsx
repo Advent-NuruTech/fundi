@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Timestamp } from "firebase/firestore";
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import { Timestamp } from "firebase/firestore";
 import type { Order, InventoryMaterial } from "@/types/domain";
 import {
   listenOrder,
@@ -254,31 +255,62 @@ export function OrderDetailModulePage() {
             {stages.map((stage, i) => (
               <Button
                 key={stage}
-                variant={order.stage === stage ? "default" : i < stageIndex ? "outline" : "outline"}
-                className="w-full justify-start"
+                variant={order.stage === stage ? "default" : "outline"}
+                className={`w-full justify-start ${i < stageIndex ? "opacity-50 line-through" : ""}`}
                 disabled={i < stageIndex || smsLoading}
                 onClick={async () => {
-                  await updateOrderStage(businessId, orderId, stage);
-                  if (user) {
-                    if (stage === "delivered") {
-                      await notifyOrderCompleted(businessId, order.orderNumber, order.customerName, orderId, user.uid);
-                    } else {
-                      await notifyOrderStageChanged(businessId, order.orderNumber, stage, orderId, user.uid);
+                  try {
+                    await updateOrderStage(businessId, orderId, stage);
+                    setOrder((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            stage,
+                            deliveryStatus:
+                              stage === "delivered"
+                                ? "picked"
+                                : stage === "ready_for_pickup"
+                                  ? "ready"
+                                  : "pending",
+                          }
+                        : null
+                    );
+                    if (user) {
+                      if (stage === "delivered") {
+                        await notifyOrderCompleted(businessId, order.orderNumber, order.customerName, orderId, user.uid);
+                      } else {
+                        await notifyOrderStageChanged(businessId, order.orderNumber, stage, orderId, user.uid);
+                      }
                     }
+                    toast.success("Stage updated");
+                  } catch {
+                    toast.error("Could not update stage");
+                    return;
                   }
-                  toast.success("Stage updated");
 
-                  if (stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent) {
+                  if (stage === "ready_for_pickup" && order.customerPhone) {
+                    if (order.readyPickupSmsSent) {
+                      const resend = window.confirm(
+                        `Pickup SMS was already sent to ${order.customerName}. Send again?`
+                      );
+                      if (!resend) return;
+                    } else {
+                      const send = window.confirm(
+                        `Send order-ready SMS notification to ${order.customerName} (${order.customerPhone})?`
+                      );
+                      if (!send) return;
+                    }
+
                     setSmsLoading(true);
-                    const businessName = business?.name ?? "Fundi Flow";
+                    const sender = business?.smsSenderId || "ANTS";
                     const customerName = order.customerName || "Customer";
-                    const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours \n\nThank you for choosing ${businessName}.`;
+                    const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
                     try {
-                      const result = await sendSms(order.customerPhone, message);
+                      const result = await sendSms(order.customerPhone, message, sender);
                       if (result.success) {
                         await updateOrderSmsFields(businessId, orderId, {
                           readyPickupSmsSent: true,
-                          readyPickupSmsSentAt: Timestamp.fromDate(new Date()),
+                          readyPickupSmsSentAt: new Date().toISOString(),
                         });
                         await logSmsEntry(businessId, {
                           orderId,
@@ -298,15 +330,13 @@ export function OrderDetailModulePage() {
                           status: "failed",
                           response: result.error,
                         });
-                        toast.warning("Stage updated but SMS failed");
+                        toast.warning("Stage updated but SMS failed: " + result.error);
                       }
                     } catch {
                       toast.warning("Stage updated but SMS failed");
                     } finally {
                       setSmsLoading(false);
                     }
-                  } else if (stage === "ready_for_pickup" && order.readyPickupSmsSent) {
-                    toast.info("Pickup SMS already sent");
                   }
                 }}
               >
@@ -399,8 +429,8 @@ export function OrderDetailModulePage() {
                   const result = await sendSms(order.customerPhone, message);
                   if (result.success) {
                     await updateOrderSmsFields(businessId, orderId, {
-                      expectedReadyDate: Timestamp.fromDate(new Date(expectedReadyDate)),
-                      delayNotificationSentAt: Timestamp.fromDate(new Date()),
+                      expectedReadyDate: new Date(expectedReadyDate).toISOString(),
+                      delayNotificationSentAt: new Date().toISOString(),
                     });
                     await logSmsEntry(businessId, {
                       orderId,

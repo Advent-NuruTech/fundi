@@ -227,7 +227,7 @@ function withinRange(payments: Payment[], days: number) {
   const now = new Date();
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   return payments.filter((payment) => {
-    const date = payment.recordedAt?.toDate ? payment.recordedAt.toDate() : new Date();
+    const date = payment.recordedAt ? new Date(payment.recordedAt) : new Date();
     return date >= cutoff;
   });
 }

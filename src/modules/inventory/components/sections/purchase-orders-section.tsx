@@ -463,7 +463,9 @@ export function PurchaseOrdersSection({
         actorUid: user.uid,
         actorName: user.displayName,
       });
-      await notifyStockReceived(businessId, po.materialName, qtyToReceive, po.unit, materialId, user.uid);
+      if (materialId) {
+        await notifyStockReceived(businessId, po.materialName, qtyToReceive, po.unit, materialId, user.uid);
+      }
       if ((po.quantityReceived || 0) + qtyToReceive >= po.quantity) {
         await notifyPurchaseOrderReceived(businessId, po.materialName, po.id, user.uid);
       }

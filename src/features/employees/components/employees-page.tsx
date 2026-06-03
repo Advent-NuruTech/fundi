@@ -115,9 +115,9 @@ export function EmployeesPage() {
             <div key={invite.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2">
               <div>
                 {invite.displayName} ({invite.email}) - {invite.status}
-                {invite.status === "pending" && invite.expiresAt?.toDate && (
+                {invite.status === "pending" && invite.expiresAt && (
                   <span className="ml-2 text-xs text-slate-500">
-                    expires {invite.expiresAt.toDate().toLocaleString()}
+                    expires {new Date(invite.expiresAt).toLocaleString()}
                   </span>
                 )}
               </div>

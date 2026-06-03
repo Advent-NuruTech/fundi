@@ -98,12 +98,12 @@ export function ReportsModulePage() {
     const inventoryValue = calculateInventoryValue(data.materials);
 
     const ordersInPeriod = data.orders.filter((o) => {
-      const d = o.createdAt?.toDate?.() ?? new Date();
+      const d = o.createdAt ? new Date(o.createdAt) : new Date();
       return d >= start && d <= end;
     });
 
     const paymentsInPeriod = data.payments.filter((p) => {
-      const d = p.recordedAt?.toDate?.() ?? new Date();
+      const d = p.recordedAt ? new Date(p.recordedAt) : new Date();
       return d >= start && d <= end;
     });
 

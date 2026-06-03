@@ -1,20 +1,30 @@
-import { query, where, getDocs, orderBy, limit } from "firebase/firestore";
-import {
-  materialsCollection,
-  ordersCollection,
-} from "@/services/collections";
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import { query, where, getDocs, orderBy, limit } from "firebase/firestore";
+// import {
+//   materialsCollection,
+//   ordersCollection,
+// } from "@/services/collections";
+
+import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/services/notifications.service";
 import { fetchMembers } from "@/services/firestore.service";
 import type { InventoryMaterial, Order } from "@/types/domain";
 
 export async function checkAndNotifyLowStock(businessId: string) {
-  const allMaterials = await getDocs(
-    query(materialsCollection(businessId), orderBy("quantity", "asc"))
-  );
+  // 🔴 FIREBASE DISABLED
+  // const allMaterials = await getDocs(
+  //   query(materialsCollection(businessId), orderBy("quantity", "asc"))
+  // );
+  const { data: allMaterials } = await supabase
+    .from("inventory_materials")
+    .select("*")
+    .eq("business_id", businessId)
+    .order("quantity", { ascending: true });
 
-  const lowStockItems = allMaterials.docs
-    .map((d) => ({ ...d.data(), id: d.id } as unknown as InventoryMaterial))
-    .filter((m) => m.quantity <= m.reorderLevel)
+  if (!allMaterials || allMaterials.length === 0) return;
+
+  const lowStockItems = allMaterials
+    .filter((m: any) => (m.quantity ?? 0) <= (m.reorder_level ?? 0))
     .slice(0, 10);
 
   if (lowStockItems.length === 0) return;
@@ -29,7 +39,7 @@ export async function checkAndNotifyLowStock(businessId: string) {
         recipientUid: member.uid,
         type: "low_stock",
         title: "Low Stock Alert",
-        message: `${item.name} is running low (${item.quantity} ${item.unitName} remaining). Reorder at ${item.reorderLevel}.`,
+        message: `${item.name} is running low (${item.quantity} ${item.unit_name} remaining). Reorder at ${item.reorder_level}.`,
         link: `/inventory/materials/${item.id}`,
         metadata: { materialId: item.id, materialName: item.name },
       });
@@ -40,19 +50,26 @@ export async function checkAndNotifyLowStock(businessId: string) {
 export async function checkAndNotifyOverdueOrders(businessId: string) {
   const today = new Date().toISOString().slice(0, 10);
 
-  const q = query(
-    ordersCollection(businessId),
-    where("stage", "!=", "delivered"),
-    orderBy("stage"),
-    limit(50)
-  );
-  const snapshot = await getDocs(q);
+  // 🔴 FIREBASE DISABLED
+  // const q = query(
+  //   ordersCollection(businessId),
+  //   where("stage", "!=", "delivered"),
+  //   orderBy("stage"),
+  //   limit(50)
+  // );
+  // const snapshot = await getDocs(q);
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("business_id", businessId)
+    .neq("stage", "delivered")
+    .order("stage", { ascending: true })
+    .limit(50);
 
   const overdue: Order[] = [];
-  snapshot.docs.forEach((d) => {
-    const order = { ...d.data(), id: d.id } as unknown as Order;
-    if (order.dueDate && order.dueDate < today) {
-      overdue.push(order);
+  (orders ?? []).forEach((order: any) => {
+    if (order.due_date && order.due_date < today) {
+      overdue.push({ ...order, id: order.id } as unknown as Order);
     }
   });
 

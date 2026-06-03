@@ -240,7 +240,7 @@ export function ExpensesModulePage() {
                     {filtered.map((expense) => (
                       <TableRow key={expense.id}>
                         <TableCell className="text-xs text-slate-500">
-                          {expense.expenseDate?.toDate?.().toLocaleDateString() ?? "-"}
+                          {expense.expenseDate ? new Date(expense.expenseDate).toLocaleDateString() : "-"}
                         </TableCell>
                         <TableCell className="font-medium">{expense.description}</TableCell>
                         <TableCell>

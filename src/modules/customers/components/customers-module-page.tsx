@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
-import { Timestamp } from "firebase/firestore";
+// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
+// import { Timestamp } from "firebase/firestore";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useForm, type SubmitHandler } from "react-hook-form";
@@ -126,8 +127,8 @@ export function CustomersModulePage() {
       notes: values.notes || "",
       measurements,
       outstandingBalance: 0,
-    createdAt: Timestamp.now(),
-updatedAt: Timestamp.now(),
+    createdAt: new Date().toISOString(),
+updatedAt: new Date().toISOString(),
     };
 
     setSavingCustomer(true);
