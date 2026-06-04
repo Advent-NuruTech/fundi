@@ -14,7 +14,6 @@
     "@tanstack/react-table": "^8.21.3",
     "clsx": "^2.1.1",
     "dexie": "^4.4.3",
-    "firebase": "^12.13.0",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",

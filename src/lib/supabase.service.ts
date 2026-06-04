@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+﻿import { supabase } from "@/lib/supabase";
 import { transformKeysToCamel, transformKeysToSnake, transformArrayToCamel, toDate } from "@/lib/case-utils";
 import { formatKes } from "@/lib/utils";
 import type {
@@ -33,6 +33,9 @@ import type {
   FinanceAlert,
   ConsumptionReport,
   SmsLog,
+  Investment,
+  SavingsGoal,
+  SavingsDeposit,
 } from "@/types/domain";
 
 const orderStageSort: Record<ProductionStage, number> = {
@@ -57,7 +60,7 @@ function roleFromRoles(roles: UserRole[]): UserRole {
   return "cashier";
 }
 
-// ─── LISTENER HELPER ───
+// â”€â”€â”€ LISTENER HELPER â”€â”€â”€
 
 function listenToTable<T>(
   table: string,
@@ -80,7 +83,7 @@ function listenToTable<T>(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`${table}-${businessId}-${Date.now()}`)
+    .channel(`${table}-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table, filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -106,13 +109,13 @@ function listenToTableWithoutBusinessId<T>(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`${table}-${Date.now()}`)
+    .channel(`${table}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
 }
 
-// ─── BUSINESS ───
+// â”€â”€â”€ BUSINESS â”€â”€â”€
 
 export async function bootstrapBusiness(input: {
   uid: string;
@@ -284,7 +287,8 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
     .eq('id', uid)
     .maybeSingle();
   if (!data) return null;
-  return transformKeysToCamel<UserProfile>(data as Record<string, unknown>);
+  const camel = transformKeysToCamel<UserProfile & { id: string }>(data as Record<string, unknown>);
+  return { ...camel, uid: camel.id };
 }
 
 export async function fetchUserProfileByEmail(email: string): Promise<UserProfile | null> {
@@ -294,7 +298,8 @@ export async function fetchUserProfileByEmail(email: string): Promise<UserProfil
     .eq('email', email)
     .maybeSingle();
   if (!data) return null;
-  return transformKeysToCamel<UserProfile>(data as Record<string, unknown>);
+  const camel = transformKeysToCamel<UserProfile & { id: string }>(data as Record<string, unknown>);
+  return { ...camel, uid: camel.id };
 }
 
 export async function fetchBusinessProfile(businessId: string): Promise<Business | null> {
@@ -315,7 +320,7 @@ export async function updateBusinessProfile(businessId: string, data: Partial<Pi
   if (error) throw error;
 }
 
-// ─── CUSTOMERS ───
+// â”€â”€â”€ CUSTOMERS â”€â”€â”€
 
 export async function createCustomer(businessId: string, payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">) {
   const { measurements, ...customerData } = payload as typeof payload & { measurements?: Record<string, unknown> };
@@ -384,13 +389,13 @@ export function listenCustomer(businessId: string, customerId: string, callback:
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`customer-${customerId}-${Date.now()}`)
+    .channel(`customer-${customerId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${customerId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
 }
 
-// ─── MEMBERS ───
+// â”€â”€â”€ MEMBERS â”€â”€â”€
 
 function profileRowsToMembers(rows: Record<string, unknown>[]): UserProfile[] {
   return rows.map(row => {
@@ -419,7 +424,7 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`profiles-members-${businessId}-${Date.now()}`)
+    .channel(`profiles-members-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -452,7 +457,7 @@ export async function updateMemberCompensation(
   await supabase.from('profiles').update(snakePayload).eq('id', memberUid);
 }
 
-// ─── INVITATIONS ───
+// â”€â”€â”€ INVITATIONS â”€â”€â”€
 
 export async function createInvitationRecord(
   businessId: string,
@@ -554,7 +559,7 @@ export function listenInvitations(businessId: string, callback: (rows: EmployeeI
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`invitations-${businessId}-${Date.now()}`)
+    .channel(`invitations-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_invitations', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -586,7 +591,7 @@ export async function acceptInvitationByToken(token: string, uid: string) {
   return businessId;
 }
 
-// ─── DYNAMIC UNITS & CATEGORIES ───
+// â”€â”€â”€ DYNAMIC UNITS & CATEGORIES â”€â”€â”€
 
 export async function createUnit(businessId: string, name: string): Promise<string> {
   const { data, error } = await supabase
@@ -642,7 +647,7 @@ export async function deleteCategory(businessId: string, categoryId: string) {
   await supabase.from('inventory_categories').delete().eq('id', categoryId).eq('business_id', businessId);
 }
 
-// ─── COUNTER HELPERS ───
+// â”€â”€â”€ COUNTER HELPERS â”€â”€â”€
 
 export async function getNextOrderNumber(businessId: string): Promise<string> {
   const { data, error } = await supabase.rpc('get_next_order_number', { biz_id: businessId });
@@ -656,7 +661,7 @@ export async function getNextEmployeeNumber(businessId: string): Promise<string>
   return data as string;
 }
 
-// ─── ORDERS ───
+// â”€â”€â”€ ORDERS â”€â”€â”€
 
 export async function createOrder(
   businessId: string,
@@ -680,7 +685,7 @@ export async function createOrder(
 ) {
   const orderNumber = await getNextOrderNumber(businessId);
 
-  // garments and fabricSelections live in separate tables — strip them before inserting into orders
+  // garments and fabricSelections live in separate tables â€” strip them before inserting into orders
   const { garments, fabricSelections, ...orderFields } = payload as typeof payload & {
     garments?: Array<{ name: string; quantity: number; agreedPrice: number; styleNotes?: string }>;
     fabricSelections?: unknown[];
@@ -784,7 +789,7 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`orders-list-${businessId}-${Date.now()}`)
+    .channel(`orders-list-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_garments' }, fetchAndCallback)
     .subscribe();
@@ -807,7 +812,7 @@ export function listenOrdersAssignedToUser(businessId: string, uid: string, call
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`orders-assigned-${businessId}-${uid}-${Date.now()}`)
+    .channel(`orders-assigned-${businessId}-${uid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -878,7 +883,7 @@ export function listenOrder(businessId: string, orderId: string, callback: (row:
     if (!destroyed) callback(order);
   };
   fetchAndCallback();
-  const channelName = `order-full-${orderId}-${Date.now()}`;
+  const channelName = `order-full-${orderId}-${crypto.randomUUID()}`;
   const channel = supabase
     .channel(channelName)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, fetchAndCallback)
@@ -1028,11 +1033,11 @@ export async function recordMaterialUsage(
         .update({ quantity: newQty, updated_at: now })
         .eq('id', record.materialId);
 
-      await supabase
+      const { error: usageMovementError } = await supabase
         .from('stock_movements')
         .insert(transformKeysToSnake({
           businessId,
-          movementType: "used in order",
+          movementType: "used_in_order",
           materialId: record.materialId,
           materialName: record.materialName,
           orderId,
@@ -1042,6 +1047,7 @@ export async function recordMaterialUsage(
           createdByUid: actor.uid,
           createdByName: actor.name,
         } as unknown as Record<string, unknown>));
+      if (usageMovementError) console.error("Failed to insert usage movement:", usageMovementError);
     }
   }
 
@@ -1058,33 +1064,66 @@ export async function recordMaterialUsage(
   return usageRecords;
 }
 
-// ─── MATERIALS ───
+// â”€â”€â”€ MATERIALS â”€â”€â”€
+
+function assembleMaterialImages(rawRow: Record<string, unknown>): InventoryMaterial {
+  const imgs = (rawRow.inventory_material_images as Array<{ url: string; public_id: string; sort_order: number }> | null ?? [])
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((img) => ({ url: img.url, publicId: img.public_id }));
+  const base = transformKeysToCamel<InventoryMaterial>({ ...rawRow, inventory_material_images: undefined } as Record<string, unknown>);
+  return { ...base, images: imgs.length > 0 ? imgs : undefined };
+}
 
 export function listenMaterials(businessId: string, callback: (rows: InventoryMaterial[]) => void) {
-  return listenToTable<InventoryMaterial>('inventory_materials', businessId, callback, { orderBy: 'updated_at', orderDir: 'desc' });
+  let destroyed = false;
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    const { data } = await supabase
+      .from('inventory_materials')
+      .select('*, inventory_material_images(url, public_id, sort_order)')
+      .eq('business_id', businessId)
+      .order('updated_at', { ascending: false });
+    if (data && !destroyed) {
+      callback((data as Record<string, unknown>[]).map(assembleMaterialImages));
+    }
+  };
+  fetchAndCallback();
+  const channel = supabase
+    .channel(`inventory_materials-${businessId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_materials', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_material_images' }, fetchAndCallback)
+    .subscribe();
+  return () => { destroyed = true; supabase.removeChannel(channel); };
 }
 
 export async function fetchMaterialById(businessId: string, materialId: string) {
   const { data } = await supabase
     .from('inventory_materials')
-    .select('*')
+    .select('*, inventory_material_images(url, public_id, sort_order)')
     .eq('id', materialId)
     .eq('business_id', businessId)
     .maybeSingle();
   if (!data) return null;
-  return transformKeysToCamel<InventoryMaterial>(data as Record<string, unknown>);
+  return assembleMaterialImages(data as Record<string, unknown>);
 }
 
 export async function createMaterial(
   businessId: string,
   payload: Omit<InventoryMaterial, "id" | "createdAt" | "updatedAt">
 ) {
+  const { images, ...rest } = payload as typeof payload & { images?: Array<{ url: string; publicId: string }> };
   const { data, error } = await supabase
     .from('inventory_materials')
-    .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
+    .insert(transformKeysToSnake({ ...rest, businessId } as unknown as Record<string, unknown>))
     .select('id')
     .single();
   if (error || !data) throw error || new Error("Failed to create material");
+
+  if (images && images.length > 0) {
+    await supabase.from('inventory_material_images').insert(
+      images.map((img, i) => ({ material_id: data.id, url: img.url, public_id: img.publicId, sort_order: i }))
+    );
+  }
   return data.id;
 }
 
@@ -1097,11 +1136,22 @@ export async function updateMaterial(
   materialId: string,
   payload: Partial<Omit<InventoryMaterial, "id" | "businessId" | "createdAt" | "updatedAt">>
 ) {
-  await supabase
-    .from('inventory_materials')
-    .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
-    .eq('id', materialId)
-    .eq('business_id', businessId);
+  const { images, ...rest } = payload as typeof payload & { images?: Array<{ url: string; publicId: string }> };
+  if (Object.keys(rest).length > 0) {
+    await supabase
+      .from('inventory_materials')
+      .update(transformKeysToSnake(rest as unknown as Record<string, unknown>))
+      .eq('id', materialId)
+      .eq('business_id', businessId);
+  }
+  if (images !== undefined) {
+    await supabase.from('inventory_material_images').delete().eq('material_id', materialId);
+    if (images.length > 0) {
+      await supabase.from('inventory_material_images').insert(
+        images.map((img, i) => ({ material_id: materialId, url: img.url, public_id: img.publicId, sort_order: i }))
+      );
+    }
+  }
 }
 
 export async function adjustMaterialStock(
@@ -1130,7 +1180,7 @@ export async function adjustMaterialStock(
     .eq('id', payload.materialId)
     .eq('business_id', businessId);
 
-  await supabase
+  const { error: adjMovErr } = await supabase
     .from('stock_movements')
     .insert(transformKeysToSnake({
       businessId,
@@ -1143,9 +1193,10 @@ export async function adjustMaterialStock(
       createdByUid: payload.actorUid,
       createdByName: payload.actorName,
     } as unknown as Record<string, unknown>));
+  if (adjMovErr) console.error("Failed to insert adjustment movement:", adjMovErr);
 }
 
-// ─── SUPPLIERS ───
+// â”€â”€â”€ SUPPLIERS â”€â”€â”€
 
 export async function createSupplier(
   businessId: string,
@@ -1191,13 +1242,13 @@ export async function fetchSupplierById(businessId: string, supplierId: string):
   return transformKeysToCamel<Supplier>(data as Record<string, unknown>);
 }
 
-// ─── STOCK MOVEMENTS ───
+// â”€â”€â”€ STOCK MOVEMENTS â”€â”€â”€
 
 export function listenStockMovements(businessId: string, callback: (rows: StockMovement[]) => void) {
   return listenToTable<StockMovement>('stock_movements', businessId, callback, { orderBy: 'created_at', orderDir: 'desc' });
 }
 
-// ─── PURCHASE ORDERS ───
+// â”€â”€â”€ PURCHASE ORDERS â”€â”€â”€
 
 export async function createPurchaseOrder(
   businessId: string,
@@ -1378,11 +1429,11 @@ export async function receiveStockFromPurchaseOrder(
     } as any)
     .eq('id', materialId);
 
-  await supabase
+  const { error: movementError } = await supabase
     .from('stock_movements')
     .insert(transformKeysToSnake({
       businessId,
-      movementType: "stock in",
+      movementType: "stock_in",
       materialId,
       materialName: payload.materialName,
       quantityChange: payload.quantity,
@@ -1391,11 +1442,12 @@ export async function receiveStockFromPurchaseOrder(
       createdByUid: payload.actorUid,
       createdByName: payload.actorName,
     } as unknown as Record<string, unknown>));
+  if (movementError) console.error("Failed to insert stock movement:", movementError);
 
   return materialId;
 }
 
-// ─── PAYMENTS ───
+// â”€â”€â”€ PAYMENTS â”€â”€â”€
 
 export function listenPayments(businessId: string, callback: (rows: Payment[]) => void) {
   return listenToTable<Payment>('payments', businessId, callback, { orderBy: 'recorded_at', orderDir: 'desc' });
@@ -1471,7 +1523,7 @@ export async function recordPayment(
   }
 }
 
-// ─── EXPENSES ───
+// â”€â”€â”€ EXPENSES â”€â”€â”€
 
 export async function createExpense(
   businessId: string,
@@ -1497,7 +1549,7 @@ export async function createExpense(
       description: payload.description,
       notes: payload.notes ?? "",
       receiptUrl: payload.receiptUrl ?? "",
-      supplierId: payload.supplierId ?? "",
+      supplierId: payload.supplierId ?? null,
       supplierName: payload.supplierName ?? "",
       expenseDate: payload.expenseDate.toISOString(),
       createdByUid: payload.actorUid,
@@ -1517,7 +1569,7 @@ export async function createExpense(
       referenceId: expenseData.id,
       referenceType: "expense",
       referenceLabel: payload.category,
-      linkedEntityId: payload.supplierId ?? "",
+      linkedEntityId: payload.supplierId ?? null,
       linkedEntityType: payload.supplierId ? "supplier" : "",
       linkedEntityName: payload.supplierName ?? "",
       performedByUid: payload.actorUid,
@@ -1534,9 +1586,15 @@ export async function updateExpense(
   expenseId: string,
   payload: Partial<Omit<Expense, "id" | "businessId" | "createdAt" | "createdByUid" | "createdByName">>
 ) {
+  const rawDate = (payload as any).expenseDate;
+  const expenseDate = rawDate instanceof Date
+    ? rawDate.toISOString()
+    : typeof rawDate === "string" && rawDate
+    ? new Date(rawDate).toISOString()
+    : undefined;
   const snakePayload = transformKeysToSnake({
     ...payload,
-    expenseDate: (payload as any).expenseDate?.toISOString?.(),
+    expenseDate,
   } as unknown as Record<string, unknown>);
 
   await supabase
@@ -1559,7 +1617,7 @@ export async function updateExpense(
           amount: payload.amount !== undefined ? -Math.abs(payload.amount) : (tx as any).amount,
           description: payload.description ? `Expense: ${payload.description}` : (tx as any).description,
           reference_label: payload.category ?? (tx as any).reference_label,
-          linked_entity_id: payload.supplierId ?? (tx as any).linked_entity_id ?? "",
+          linked_entity_id: payload.supplierId ?? (tx as any).linked_entity_id ?? null,
           linked_entity_name: payload.supplierName ?? (tx as any).linked_entity_name ?? "",
           notes: payload.notes ?? (tx as any).notes ?? "",
         } as any)
@@ -1611,7 +1669,7 @@ export function listenExpensesByCategory(businessId: string, category: ExpenseCa
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`expenses-cat-${businessId}-${category}-${Date.now()}`)
+    .channel(`expenses-cat-${businessId}-${category}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -1628,7 +1686,7 @@ export async function fetchExpensesInRange(businessId: string, startDate: Date, 
   return transformArrayToCamel<Expense>((data as Record<string, unknown>[]) || []);
 }
 
-// ─── WITHDRAWALS ───
+// â”€â”€â”€ WITHDRAWALS â”€â”€â”€
 
 export async function createWithdrawal(
   businessId: string,
@@ -1682,11 +1740,17 @@ export async function updateWithdrawal(
   withdrawalId: string,
   payload: Partial<Omit<Withdrawal, "id" | "businessId" | "createdAt" | "withdrawnByUid" | "withdrawnByName">>
 ) {
+  const rawWdDate = (payload as any).withdrawalDate;
+  const withdrawalDate = rawWdDate instanceof Date
+    ? rawWdDate.toISOString()
+    : typeof rawWdDate === "string" && rawWdDate
+    ? new Date(rawWdDate).toISOString()
+    : undefined;
   await supabase
     .from('withdrawals')
     .update(transformKeysToSnake({
       ...payload,
-      withdrawalDate: (payload as any).withdrawalDate?.toISOString?.(),
+      withdrawalDate,
     } as unknown as Record<string, unknown>))
     .eq('id', withdrawalId)
     .eq('business_id', businessId);
@@ -1755,7 +1819,7 @@ export function listenWithdrawalsByCategory(businessId: string, category: Withdr
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`withdrawals-cat-${businessId}-${category}-${Date.now()}`)
+    .channel(`withdrawals-cat-${businessId}-${category}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -1772,7 +1836,189 @@ export async function fetchWithdrawalsInRange(businessId: string, startDate: Dat
   return transformArrayToCamel<Withdrawal>((data as Record<string, unknown>[]) || []);
 }
 
-// ─── TRANSACTIONS ───
+// â”€â”€â”€ INVESTMENTS â”€â”€â”€
+
+export async function createInvestment(
+  businessId: string,
+  payload: {
+    type: string;
+    amount: number;
+    description: string;
+    notes?: string;
+    investmentDate: Date;
+    returnExpected?: number;
+    actorUid: string;
+    actorName: string;
+  }
+) {
+  const { data, error } = await supabase
+    .from('investments')
+    .insert(transformKeysToSnake({
+      businessId,
+      type: payload.type,
+      amount: payload.amount,
+      description: payload.description,
+      notes: payload.notes ?? "",
+      investmentDate: payload.investmentDate.toISOString(),
+      returnExpected: payload.returnExpected ?? 0,
+      returnActual: 0,
+      status: "active",
+      createdByUid: payload.actorUid,
+      createdByName: payload.actorName,
+    } as unknown as Record<string, unknown>))
+    .select('id')
+    .single();
+  if (error || !data) throw error || new Error("Failed to create investment");
+  return data.id;
+}
+
+export async function updateInvestment(
+  businessId: string,
+  investmentId: string,
+  payload: Partial<Omit<Investment, "id" | "businessId" | "createdAt" | "createdByUid" | "createdByName">>
+) {
+  await supabase
+    .from('investments')
+    .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
+    .eq('id', investmentId)
+    .eq('business_id', businessId);
+}
+
+export async function deleteInvestment(businessId: string, investmentId: string) {
+  await supabase.from('investments').delete().eq('id', investmentId).eq('business_id', businessId);
+}
+
+export function listenInvestments(businessId: string, callback: (rows: Investment[]) => void) {
+  return listenToTable<Investment>('investments', businessId, callback, { orderBy: 'investment_date', orderDir: 'desc' });
+}
+
+// â”€â”€â”€ SAVINGS â”€â”€â”€
+
+export async function createSavingsGoal(
+  businessId: string,
+  payload: {
+    name: string;
+    targetAmount: number;
+    deadline?: string;
+    description?: string;
+    color?: string;
+    actorUid: string;
+    actorName: string;
+  }
+) {
+  const { data, error } = await supabase
+    .from('savings_goals')
+    .insert(transformKeysToSnake({
+      businessId,
+      name: payload.name,
+      targetAmount: payload.targetAmount,
+      currentAmount: 0,
+      deadline: payload.deadline ?? null,
+      description: payload.description ?? "",
+      color: payload.color ?? "#059669",
+      status: "active",
+      createdByUid: payload.actorUid,
+      createdByName: payload.actorName,
+    } as unknown as Record<string, unknown>))
+    .select('id')
+    .single();
+  if (error || !data) throw error || new Error("Failed to create savings goal");
+  return data.id;
+}
+
+export async function updateSavingsGoal(
+  businessId: string,
+  goalId: string,
+  payload: Partial<Omit<SavingsGoal, "id" | "businessId" | "createdAt" | "createdByUid" | "createdByName">>
+) {
+  await supabase
+    .from('savings_goals')
+    .update(transformKeysToSnake({ ...payload, updatedAt: new Date().toISOString() } as unknown as Record<string, unknown>))
+    .eq('id', goalId)
+    .eq('business_id', businessId);
+}
+
+export async function deleteSavingsGoal(businessId: string, goalId: string) {
+  await supabase.from('savings_goals').delete().eq('id', goalId).eq('business_id', businessId);
+}
+
+export function listenSavingsGoals(businessId: string, callback: (rows: SavingsGoal[]) => void) {
+  return listenToTable<SavingsGoal>('savings_goals', businessId, callback, { orderBy: 'created_at', orderDir: 'desc' });
+}
+
+export async function createSavingsDeposit(
+  businessId: string,
+  payload: {
+    goalId: string;
+    amount: number;
+    notes?: string;
+    depositDate: Date;
+    actorUid: string;
+    actorName: string;
+  }
+) {
+  const { data, error } = await supabase
+    .from('savings_deposits')
+    .insert(transformKeysToSnake({
+      businessId,
+      goalId: payload.goalId,
+      amount: payload.amount,
+      notes: payload.notes ?? "",
+      depositDate: payload.depositDate.toISOString(),
+      createdByUid: payload.actorUid,
+      createdByName: payload.actorName,
+    } as unknown as Record<string, unknown>))
+    .select('id')
+    .single();
+  if (error || !data) throw error || new Error("Failed to record deposit");
+
+  const { data: goal } = await supabase
+    .from('savings_goals')
+    .select('current_amount, target_amount')
+    .eq('id', payload.goalId)
+    .single();
+  if (goal) {
+    const newAmount = Number((goal as any).current_amount ?? 0) + payload.amount;
+    const isComplete = newAmount >= Number((goal as any).target_amount ?? 0);
+    await supabase
+      .from('savings_goals')
+      .update({ current_amount: newAmount, status: isComplete ? 'completed' : 'active', updated_at: new Date().toISOString() } as any)
+      .eq('id', payload.goalId);
+  }
+
+  return data.id;
+}
+
+export async function deleteSavingsDeposit(businessId: string, depositId: string, goalId: string, amount: number) {
+  await supabase.from('savings_deposits').delete().eq('id', depositId).eq('business_id', businessId);
+  const { data: goal } = await supabase.from('savings_goals').select('current_amount').eq('id', goalId).single();
+  if (goal) {
+    const newAmount = Math.max(0, Number((goal as any).current_amount ?? 0) - amount);
+    await supabase.from('savings_goals').update({ current_amount: newAmount, status: 'active', updated_at: new Date().toISOString() } as any).eq('id', goalId);
+  }
+}
+
+export function listenSavingsDeposits(businessId: string, goalId: string, callback: (rows: SavingsDeposit[]) => void) {
+  let destroyed = false;
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    const { data } = await supabase
+      .from('savings_deposits')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('goal_id', goalId)
+      .order('deposit_date', { ascending: false });
+    if (data && !destroyed) callback(transformArrayToCamel<SavingsDeposit>(data as Record<string, unknown>[]));
+  };
+  fetchAndCallback();
+  const channel = supabase
+    .channel(`savings-deposits-${businessId}-${goalId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_deposits', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .subscribe();
+  return () => { destroyed = true; supabase.removeChannel(channel); };
+}
+
+// â”€â”€â”€ TRANSACTIONS â”€â”€â”€
 
 export function listenTransactions(businessId: string, callback: (rows: Transaction[]) => void) {
   return listenToTable<Transaction>('transactions', businessId, callback, { orderBy: 'created_at', orderDir: 'desc' });
@@ -1808,7 +2054,7 @@ export async function recordTransaction(
   return data.id;
 }
 
-// ─── NOTIFICATIONS ───
+// â”€â”€â”€ NOTIFICATIONS â”€â”€â”€
 
 export async function createNotification(input: {
   businessId: string;
@@ -1905,7 +2151,7 @@ export function listenNotifications(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`notifications-${businessId}-${recipientUid}-${Date.now()}`)
+    .channel(`notifications-${businessId}-${recipientUid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -1930,7 +2176,7 @@ export function listenUnreadCount(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`unread-count-${businessId}-${recipientUid}-${Date.now()}`)
+    .channel(`unread-count-${businessId}-${recipientUid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -2010,7 +2256,7 @@ export async function cleanupOldNotifications() {
   }
 }
 
-// ─── CONVERSATIONS ───
+// â”€â”€â”€ CONVERSATIONS â”€â”€â”€
 
 export async function createConversation(input: {
   businessId: string;
@@ -2066,7 +2312,7 @@ export function listenConversations(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`conversations-${businessId}-${uid}-${Date.now()}`)
+    .channel(`conversations-${businessId}-${uid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -2099,7 +2345,7 @@ export function listenUnreadMessageCount(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`unread-msg-${businessId}-${uid}-${Date.now()}`)
+    .channel(`unread-msg-${businessId}-${uid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -2152,7 +2398,7 @@ export async function markConversationRead(
   }
 }
 
-// ─── MESSAGES ───
+// â”€â”€â”€ MESSAGES â”€â”€â”€
 
 export async function sendMessage(input: {
   businessId: string;
@@ -2340,13 +2586,13 @@ export function listenMessages(
   };
   fetchAndCallback();
   const channel = supabase
-    .channel(`messages-${conversationId}-${Date.now()}`)
+    .channel(`messages-${conversationId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; supabase.removeChannel(channel); };
 }
 
-// ─── WEEKLY REPORTS ───
+// â”€â”€â”€ WEEKLY REPORTS â”€â”€â”€
 
 export function shouldGenerateWeeklyReport(): boolean {
   const now = new Date();
@@ -2479,7 +2725,7 @@ export async function storeWeeklyReportNotification(
     } as unknown as Record<string, unknown>));
 }
 
-// ─── PROFILE SERVICE ───
+// â”€â”€â”€ PROFILE SERVICE â”€â”€â”€
 
 export async function updateProfileInfo(input: {
   uid: string;
@@ -2549,7 +2795,7 @@ export async function uploadProfileAvatar(
   return photoURL;
 }
 
-// ─── FINANCE DATA LISTENER ───
+// â”€â”€â”€ FINANCE DATA LISTENER â”€â”€â”€
 
 export interface FinanceData {
   payments: Payment[];
@@ -2611,7 +2857,7 @@ export function listenAllFinanceData(
     };
     fetchAndCallback();
     const channel = supabase
-      .channel(`finance-${table}-${businessId}-${Date.now()}-${key}`)
+      .channel(`finance-${table}-${businessId}-${crypto.randomUUID()}-${key}`)
       .on('postgres_changes', { event: '*', schema: 'public', table, filter: `business_id=eq.${businessId}` }, fetchAndCallback)
       .subscribe();
     return () => { destroyed = true; supabase.removeChannel(channel); };
@@ -2640,7 +2886,7 @@ export function listenAllFinanceData(
   };
 }
 
-// ─── HELPERS ───
+// â”€â”€â”€ HELPERS â”€â”€â”€
 
 export async function paginatedQuery<T>(
   table: string,
@@ -2682,7 +2928,7 @@ export function lowStockMaterials(materials: InventoryMaterial[]) {
 
 export function materialConsumptionFromMovements(movements: StockMovement[]) {
   return movements
-    .filter((movement) => movement.movementType === "used in order")
+    .filter((movement) => movement.movementType === "used_in_order")
     .reduce<Record<string, number>>((acc, movement) => {
       const key = movement.materialName;
       acc[key] = (acc[key] ?? 0) + Math.abs(movement.quantityChange);
@@ -2723,3 +2969,4 @@ export function dueTodayOrders(orders: Order[]) {
   const now = new Date().toISOString().slice(0, 10);
   return orders.filter((order) => order.dueDate <= now && order.stage !== "delivered");
 }
+

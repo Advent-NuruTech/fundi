@@ -1,20 +1,9 @@
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import { query, where, getDocs, orderBy, limit } from "firebase/firestore";
-// import {
-//   materialsCollection,
-//   ordersCollection,
-// } from "@/services/collections";
-
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/services/notifications.service";
 import { fetchMembers } from "@/services/firestore.service";
 import type { InventoryMaterial, Order } from "@/types/domain";
 
 export async function checkAndNotifyLowStock(businessId: string) {
-  // 🔴 FIREBASE DISABLED
-  // const allMaterials = await getDocs(
-  //   query(materialsCollection(businessId), orderBy("quantity", "asc"))
-  // );
   const { data: allMaterials } = await supabase
     .from("inventory_materials")
     .select("*")
@@ -50,14 +39,6 @@ export async function checkAndNotifyLowStock(businessId: string) {
 export async function checkAndNotifyOverdueOrders(businessId: string) {
   const today = new Date().toISOString().slice(0, 10);
 
-  // 🔴 FIREBASE DISABLED
-  // const q = query(
-  //   ordersCollection(businessId),
-  //   where("stage", "!=", "delivered"),
-  //   orderBy("stage"),
-  //   limit(50)
-  // );
-  // const snapshot = await getDocs(q);
   const { data: orders } = await supabase
     .from("orders")
     .select("*")

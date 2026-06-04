@@ -13,7 +13,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export function transformKeysToCamel<T>(obj: Record<string, unknown>): T {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    result[snakeToCamel(key)] = isObject(value) ? transformKeysToCamel(value as Record<string, unknown>) : value;
+    const camelKey = snakeToCamel(key);
+    if (isObject(value)) {
+      result[camelKey] = transformKeysToCamel(value as Record<string, unknown>);
+    } else if (Array.isArray(value)) {
+      result[camelKey] = value.map((item) =>
+        isObject(item) ? transformKeysToCamel(item as Record<string, unknown>) : item
+      );
+    } else {
+      result[camelKey] = value;
+    }
   }
   return result as T;
 }

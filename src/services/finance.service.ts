@@ -1,31 +1,3 @@
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import {
-//   doc,
-//   getDocs,
-//   onSnapshot,
-//   orderBy,
-//   query,
-//   serverTimestamp,
-//   setDoc,
-//   Timestamp,
-//   where,
-//   writeBatch,
-//   addDoc,
-// } from "firebase/firestore";
-// import { db } from "@/lib/firebase";
-// import {
-//   customersCollection,
-//   expensesCollection,
-//   materialsCollection,
-//   membersCollection,
-//   ordersCollection,
-//   paymentsCollection,
-//   purchaseOrdersCollection,
-//   stockMovementsCollection,
-//   transactionsCollection,
-//   withdrawalsCollection,
-// } from "@/services/collections";
-
 import {
   listenPayments,
   listenOrders,
@@ -352,45 +324,9 @@ export function comparePeriods(
 
 // ─── TRANSACTION LEDGER ───
 
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// export function listenTransactions(businessId: string, callback: (rows: Transaction[]) => void) {
-//   const q = query(transactionsCollection(businessId), orderBy("createdAt", "desc"));
-//   return onSnapshot(q, (snapshot) => {
-//     callback(snapshot.docs.map((docItem) => ({ ...docItem.data(), id: docItem.id })));
-//   });
-// }
-
 export function listenTransactions(businessId: string, callback: (rows: Transaction[]) => void) {
   return supabaseListenTransactions(businessId, callback);
 }
-
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// export async function recordTransaction(
-//   businessId: string,
-//   payload: {
-//     type: Transaction["type"];
-//     amount: number;
-//     description: string;
-//     referenceId?: string;
-//     referenceType?: string;
-//     referenceLabel?: string;
-//     linkedEntityId?: string;
-//     linkedEntityType?: string;
-//     linkedEntityName?: string;
-//     performedByUid: string;
-//     performedByName: string;
-//     status: Transaction["status"];
-//     notes?: string;
-//   }
-// ) {
-//   const ref = await addDoc(transactionsCollection(businessId), {
-//     businessId,
-//     ...payload,
-//     createdAt: serverTimestamp(),
-//     updatedAt: serverTimestamp(),
-//   });
-//   return ref.id;
-// }
 
 export async function recordTransaction(
   businessId: string,
@@ -426,61 +362,6 @@ export interface FinanceData {
   movements: StockMovement[];
   purchaseOrders: any[];
 }
-
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// export function listenAllFinanceData(
-//   businessId: string,
-//   callback: (data: FinanceData) => void,
-//   onError?: (err: Error) => void
-// ) {
-//   const data: Partial<FinanceData> = {};
-//   function checkReady() {
-//     if (
-//       data.payments && data.orders && data.customers && data.members &&
-//       data.expenses && data.withdrawals && data.materials &&
-//       data.movements && data.purchaseOrders
-//     ) {
-//       callback(data as FinanceData);
-//     }
-//   }
-//   const unsub1 = onSnapshot(query(paymentsCollection(businessId), orderBy("recordedAt", "desc")), (snap) => {
-//     data.payments = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Payment[];
-//     checkReady();
-//   }, onError);
-//   const unsub2 = onSnapshot(query(ordersCollection(businessId), orderBy("updatedAt", "desc")), (snap) => {
-//     data.orders = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Order[];
-//     checkReady();
-//   }, onError);
-//   const unsub3 = onSnapshot(query(customersCollection(businessId), orderBy("createdAt", "desc")), (snap) => {
-//     data.customers = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Customer[];
-//     checkReady();
-//   }, onError);
-//   const unsub4 = onSnapshot(query(membersCollection(businessId), orderBy("displayName", "asc")), (snap) => {
-//     data.members = snap.docs.map((d) => ({ ...d.data(), uid: d.id })) as UserProfile[];
-//     checkReady();
-//   }, onError);
-//   const unsub5 = onSnapshot(query(expensesCollection(businessId), orderBy("expenseDate", "desc")), (snap) => {
-//     data.expenses = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Expense[];
-//     checkReady();
-//   }, onError);
-//   const unsub6 = onSnapshot(query(withdrawalsCollection(businessId), orderBy("withdrawalDate", "desc")), (snap) => {
-//     data.withdrawals = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Withdrawal[];
-//     checkReady();
-//   }, onError);
-//   const unsub7 = onSnapshot(query(materialsCollection(businessId), orderBy("updatedAt", "desc")), (snap) => {
-//     data.materials = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as InventoryMaterial[];
-//     checkReady();
-//   }, onError);
-//   const unsub8 = onSnapshot(query(stockMovementsCollection(businessId), orderBy("createdAt", "desc")), (snap) => {
-//     data.movements = snap.docs.map((d) => ({ ...d.data(), id: d.id })) as StockMovement[];
-//     checkReady();
-//   }, onError);
-//   const unsub9 = onSnapshot(query(purchaseOrdersCollection(businessId), orderBy("createdAt", "desc")), (snap) => {
-//     data.purchaseOrders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-//     checkReady();
-//   }, onError);
-//   return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); };
-// }
 
 export function listenAllFinanceData(
   businessId: string,

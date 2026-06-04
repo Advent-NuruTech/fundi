@@ -13,7 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
 import { formatKes } from "@/lib/utils";
 import type { PurchaseOrder, Supplier, InventoryMaterial } from "@/types/domain";
-import { Plus, X, ChevronRight, Package, Calendar, Truck, DollarSign, CheckCircle, Clock, Search, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, X, ChevronRight, Package, Calendar, Truck, DollarSign, CheckCircle, Clock, Search, Pencil, Trash2, AlertTriangle, ChevronLeft } from "lucide-react";
+
+const PO_PAGE_SIZE = 10;
 
 interface PoForm {
   supplierId: string;
@@ -200,6 +202,9 @@ export function PurchaseOrdersSection({
   const [materials, setMaterials] = useState(initialMaterials);
   const [units, setUnits] = useState(initialUnits);
 
+  const [pendingPage, setPendingPage] = useState(0);
+  const [receivedPage, setReceivedPage] = useState(0);
+
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [showAddMaterial, setShowAddMaterial] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
@@ -225,13 +230,13 @@ export function PurchaseOrdersSection({
   const formUnitCost = Number(watch("unitCost") || 0);
   const formUnit = watch("unit") || selectedMaterial?.unitName || "";
 
-  // Handle reorder params from URL
+  // Handle reorder params from URL (from low-stock "Create PO" button or material detail page)
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    const reorderMaterialId = searchParams.get("reorderMaterialId");
+    const reorderMaterialId = searchParams.get("reorderMaterialId") || searchParams.get("materialId");
     const reorderSupplierId = searchParams.get("reorderSupplierId");
     const reorderQuantity = searchParams.get("reorderQuantity");
-    const reorderUnit = searchParams.get("reorderUnit");
+    const reorderUnit = searchParams.get("reorderUnit") || searchParams.get("unit");
     const reorderUnitCost = searchParams.get("reorderUnitCost");
 
     if (reorderMaterialId) {
@@ -486,6 +491,11 @@ export function PurchaseOrdersSection({
   const pendingPOs = filteredPurchaseOrders.filter((po) => po.status === "pending" || po.status === "partial");
   const receivedPOs = filteredPurchaseOrders.filter((po) => po.status === "received");
 
+  const pendingPageCount = Math.ceil(pendingPOs.length / PO_PAGE_SIZE);
+  const receivedPageCount = Math.ceil(receivedPOs.length / PO_PAGE_SIZE);
+  const pagedPendingPOs = pendingPOs.slice(pendingPage * PO_PAGE_SIZE, (pendingPage + 1) * PO_PAGE_SIZE);
+  const pagedReceivedPOs = receivedPOs.slice(receivedPage * PO_PAGE_SIZE, (receivedPage + 1) * PO_PAGE_SIZE);
+
   return (
     <div className="space-y-4">
       {selectedOrder && (
@@ -685,7 +695,7 @@ export function PurchaseOrdersSection({
             <p className="text-sm text-gray-500">No Pending Purchase Orders.</p>
           ) : (
             <div className="space-y-2">
-              {pendingPOs.map((po) => {
+              {pagedPendingPOs.map((po) => {
                 const remaining = po.quantity - (po.quantityReceived || 0);
                 const materialForPo = materials.find((material) => material.id === po.materialId);
                 const nextReceiveQuantity = receiveQuantities[po.id] ?? remaining;
@@ -752,6 +762,29 @@ export function PurchaseOrdersSection({
               })}
             </div>
           )}
+          {pendingPageCount > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t mt-4">
+              <p className="text-xs text-slate-500">
+                Showing {pendingPage * PO_PAGE_SIZE + 1}–{Math.min((pendingPage + 1) * PO_PAGE_SIZE, pendingPOs.length)} of {pendingPOs.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button className="h-7 w-7 rounded border flex items-center justify-center disabled:opacity-40" disabled={pendingPage === 0} onClick={() => setPendingPage((p) => p - 1)}>
+                  <ChevronLeft className="h-3 w-3" />
+                </button>
+                {Array.from({ length: Math.min(pendingPageCount, 5) }, (_, i) => {
+                  const p = pendingPageCount <= 5 ? i : Math.max(0, Math.min(pendingPage - 2, pendingPageCount - 5)) + i;
+                  return (
+                    <button key={p} className={`h-7 w-7 rounded border text-xs ${p === pendingPage ? "bg-slate-900 text-white" : ""}`} onClick={() => setPendingPage(p)}>
+                      {p + 1}
+                    </button>
+                  );
+                })}
+                <button className="h-7 w-7 rounded border flex items-center justify-center disabled:opacity-40" disabled={pendingPage >= pendingPageCount - 1} onClick={() => setPendingPage((p) => p + 1)}>
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -762,7 +795,7 @@ export function PurchaseOrdersSection({
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {receivedPOs.map((po) => (
+              {pagedReceivedPOs.map((po) => (
                 <div 
                   key={po.id} 
                   className="flex items-center justify-between border rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-blue-300"
@@ -783,6 +816,29 @@ export function PurchaseOrdersSection({
                 </div>
               ))}
             </div>
+            {receivedPageCount > 1 && (
+              <div className="flex items-center justify-between pt-4 border-t mt-4">
+                <p className="text-xs text-slate-500">
+                  Showing {receivedPage * PO_PAGE_SIZE + 1}–{Math.min((receivedPage + 1) * PO_PAGE_SIZE, receivedPOs.length)} of {receivedPOs.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button className="h-7 w-7 rounded border flex items-center justify-center disabled:opacity-40" disabled={receivedPage === 0} onClick={() => setReceivedPage((p) => p - 1)}>
+                    <ChevronLeft className="h-3 w-3" />
+                  </button>
+                  {Array.from({ length: Math.min(receivedPageCount, 5) }, (_, i) => {
+                    const p = receivedPageCount <= 5 ? i : Math.max(0, Math.min(receivedPage - 2, receivedPageCount - 5)) + i;
+                    return (
+                      <button key={p} className={`h-7 w-7 rounded border text-xs ${p === receivedPage ? "bg-slate-900 text-white" : ""}`} onClick={() => setReceivedPage(p)}>
+                        {p + 1}
+                      </button>
+                    );
+                  })}
+                  <button className="h-7 w-7 rounded border flex items-center justify-center disabled:opacity-40" disabled={receivedPage >= receivedPageCount - 1} onClick={() => setReceivedPage((p) => p + 1)}>
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

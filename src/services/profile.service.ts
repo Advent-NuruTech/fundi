@@ -1,7 +1,3 @@
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import { doc, updateDoc } from "firebase/firestore";
-// import { membersCollection, usersCollection } from "@/services/collections";
-
 import { supabase } from "@/lib/supabase";
 import { transformKeysToSnake } from "@/lib/case-utils";
 
@@ -17,10 +13,6 @@ export async function updateProfileInfo(input: {
   if (input.displayName !== undefined) updateData.displayName = input.displayName;
   if (input.bio !== undefined) updateData.bio = input.bio;
   if (input.photoURL !== undefined) updateData.photoURL = input.photoURL;
-
-  // 🔴 FIREBASE DISABLED
-  // await updateDoc(doc(usersCollection(), input.uid), updateData);
-  // await updateDoc(doc(membersCollection(input.businessId), input.uid), updateData);
 
   const snakeData = transformKeysToSnake(updateData, false);
   await supabase.from("profiles").update(snakeData).eq("id", input.uid);

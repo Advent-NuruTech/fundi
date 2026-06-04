@@ -4,8 +4,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, X, Pencil, Trash2, Upload } from "lucide-react";
-import { createMaterial, updateMaterial, deleteMaterial, createUnit, createCategory, updateCategory, deleteCategory, listenUnits, listenCategories } from "@/services/firestore.service";
+import { Plus, X, Pencil, Trash2, Upload, SlidersHorizontal, ChevronLeft, ChevronRight, MinusCircle, PlusCircle } from "lucide-react";
+import {
+  createMaterial, updateMaterial, deleteMaterial,
+  createUnit, createCategory, updateCategory, deleteCategory,
+  listenUnits, listenCategories, adjustMaterialStock,
+} from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
 import { notifyMaterialAdded } from "@/services/notification-catalog";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
@@ -15,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
 import type { InventoryMaterial, Supplier, DbUnit, DbCategory, FabricMeta, MaterialImage } from "@/types/domain";
+
+const PAGE_SIZE = 10;
 
 interface MaterialForm {
   name: string;
@@ -29,6 +35,11 @@ interface MaterialForm {
   rollLength: string;
   pattern: string;
   composition: string;
+}
+
+interface AdjustForm {
+  adjustment: number;
+  reason: string;
 }
 
 export function MaterialsSection({
@@ -56,6 +67,15 @@ export function MaterialsSection({
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
 
+  // Search + pagination
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0);
+
+  // Inline stock adjustment
+  const [adjustingMaterial, setAdjustingMaterial] = useState<InventoryMaterial | null>(null);
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
+  const adjustForm = useForm<AdjustForm>({ defaultValues: { adjustment: 0, reason: "" } });
+
   useEffect(() => {
     const unsubUnits = listenUnits(businessId, setUnits);
     const unsubCats = listenCategories(businessId, setCategories);
@@ -82,8 +102,6 @@ export function MaterialsSection({
   const unitId = watch("unitId");
   const supplierId = watch("supplierId");
 
-  const selectedCategory = categories.find((c) => c.id === categoryId);
-
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const m of materials) {
@@ -93,9 +111,26 @@ export function MaterialsSection({
   }, [materials]);
 
   const filteredMaterials = useMemo(() => {
-    if (!selectedCategoryId) return materials;
-    return materials.filter((m) => m.categoryId === selectedCategoryId);
-  }, [materials, selectedCategoryId]);
+    let result = selectedCategoryId
+      ? materials.filter((m) => m.categoryId === selectedCategoryId)
+      : materials;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (m) =>
+          m.name?.toLowerCase().includes(q) ||
+          m.categoryName?.toLowerCase().includes(q) ||
+          m.unitName?.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [materials, selectedCategoryId, searchQuery]);
+
+  const pageCount = Math.ceil(filteredMaterials.length / PAGE_SIZE);
+  const pagedMaterials = filteredMaterials.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // Reset page when filter/search changes
+  useEffect(() => { setPage(0); }, [selectedCategoryId, searchQuery]);
 
   const unitOptions: SearchableOption[] = units.map((u) => ({ value: u.id, label: u.name }));
   const categoryOptions: SearchableOption[] = categories.map((c) => ({ value: c.id, label: c.name }));
@@ -156,14 +191,10 @@ export function MaterialsSection({
 
   const handleImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const total = imageFiles.length + existingImages.length + files.length;
-    if (total > 10) {
-      toast.error(`Maximum 10 images allowed (${existingImages.length + imageFiles.length} already selected)`);
-      return;
-    }
     setImageFiles((prev) => [...prev, ...files]);
     const newPreviews = files.map((f) => URL.createObjectURL(f));
     setImagePreviews((prev) => [...prev, ...newPreviews]);
+    e.target.value = "";
   };
 
   const removeNewImage = (index: number) => {
@@ -204,8 +235,9 @@ export function MaterialsSection({
           try {
             const uploaded = await uploadImage({ file, businessId, uploadedByUid: user.uid });
             allImages.push({ url: uploaded.url, publicId: uploaded.publicId });
-          } catch {
-            toast.error(`Failed to upload image "${file.name}"`);
+          } catch (err) {
+            console.error("Image upload failed:", err);
+            toast.error(`Failed to upload "${file.name}" — skipping`);
           }
         }
       }
@@ -213,19 +245,20 @@ export function MaterialsSection({
       const imageUrl = allImages[0]?.url || "";
       const imagePublicId = allImages[0]?.publicId || "";
 
-      const fabricMeta: FabricMeta | undefined = values.color || values.gsm || values.rollLength || values.pattern || values.composition || customFields.length > 0
-        ? {
-            color: values.color || undefined,
-            gsm: values.gsm ? Number(values.gsm) : undefined,
-            rollLength: values.rollLength ? Number(values.rollLength) : undefined,
-            pattern: values.pattern || undefined,
-            composition: values.composition || undefined,
-            customFields: customFields.filter((f) => f.key.trim()).map((f) => ({
-              key: f.key,
-              value: isNaN(Number(f.value)) ? f.value : Number(f.value),
-            })),
-          }
-        : undefined;
+      const fabricMeta: FabricMeta | undefined =
+        values.color || values.gsm || values.rollLength || values.pattern || values.composition || customFields.length > 0
+          ? {
+              color: values.color || undefined,
+              gsm: values.gsm ? Number(values.gsm) : undefined,
+              rollLength: values.rollLength ? Number(values.rollLength) : undefined,
+              pattern: values.pattern || undefined,
+              composition: values.composition || undefined,
+              customFields: customFields.filter((f) => f.key.trim()).map((f) => ({
+                key: f.key,
+                value: isNaN(Number(f.value)) ? f.value : Number(f.value),
+              })),
+            }
+          : undefined;
 
       if (editingMaterial) {
         await updateMaterial(businessId, editingMaterial.id, {
@@ -330,22 +363,56 @@ export function MaterialsSection({
     }
   };
 
-  const addCustomField = () => {
-    setCustomFields((prev) => [...prev, { key: "", value: "" }]);
+  const addCustomField = () => setCustomFields((prev) => [...prev, { key: "", value: "" }]);
+  const removeCustomField = (i: number) => setCustomFields((prev) => prev.filter((_, idx) => idx !== i));
+  const updateCustomField = (i: number, field: "key" | "value", val: string) =>
+    setCustomFields((prev) => prev.map((f, idx) => (idx === i ? { ...f, [field]: val } : f)));
+
+  const openAdjust = (mat: InventoryMaterial) => {
+    if (adjustingMaterial?.id === mat.id) {
+      setAdjustingMaterial(null);
+      return;
+    }
+    adjustForm.reset({ adjustment: 0, reason: "" });
+    setAdjustingMaterial(mat);
   };
 
-  const removeCustomField = (index: number) => {
-    setCustomFields((prev) => prev.filter((_, i) => i !== index));
-  };
+  const submitAdjustment = adjustForm.handleSubmit(async (values) => {
+    if (!adjustingMaterial || !user) return;
+    if (values.adjustment === 0) { toast.error("Enter a non-zero adjustment amount"); return; }
+    if (!values.reason.trim()) { toast.error("Enter a reason for the adjustment"); return; }
+    setAdjustSubmitting(true);
+    try {
+      await adjustMaterialStock(businessId, {
+        materialId: adjustingMaterial.id,
+        materialName: adjustingMaterial.name,
+        adjustment: values.adjustment,
+        unit: adjustingMaterial.unitName,
+        reason: values.reason.trim(),
+        actorUid: user.uid,
+        actorName: (user as any).displayName || "Staff",
+      });
+      toast.success(
+        `Stock ${values.adjustment > 0 ? "increased" : "decreased"} by ${Math.abs(values.adjustment)} ${adjustingMaterial.unitName}`
+      );
+      setAdjustingMaterial(null);
+    } catch {
+      toast.error("Could not record stock adjustment");
+    } finally {
+      setAdjustSubmitting(false);
+    }
+  });
 
-  const updateCustomField = (index: number, field: "key" | "value", val: string) => {
-    setCustomFields((prev) => prev.map((f, i) => (i === index ? { ...f, [field]: val } : f)));
+  const firstImageUrl = (mat: InventoryMaterial): string | undefined => {
+    if (mat.images && mat.images.length > 0) return mat.images[0].url;
+    if (mat.imageUrl) return mat.imageUrl;
+    return undefined;
   };
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <CardTitle>Materials</CardTitle>
             <Badge variant="default" className="rounded-full">{materials.length} total</Badge>
@@ -356,6 +423,7 @@ export function MaterialsSection({
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {/* Category filter tabs */}
           <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
             <Button
               variant={selectedCategoryId === "" ? "default" : "outline"}
@@ -375,37 +443,25 @@ export function MaterialsSection({
               </Button>
             ))}
             <Button variant="ghost" size="sm" onClick={() => setCatManageOpen(!catManageOpen)} className="ml-auto">
-              Manage Categories
+              <SlidersHorizontal className="h-3 w-3 mr-1" /> Manage Categories
             </Button>
           </div>
 
           {catManageOpen && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Search categories..."
-                  value={catSearch}
-                  onChange={(e) => setCatSearch(e.target.value)}
-                  className="flex-1"
-                />
+                <Input placeholder="Search categories..." value={catSearch} onChange={(e) => setCatSearch(e.target.value)} className="flex-1" />
                 <Button size="sm" onClick={() => { setShowNewCategoryInput(!showNewCategoryInput); setNewCategoryName(""); setEditingCategory(null); }}>
                   <Plus className="h-4 w-4 mr-1" /> New
                 </Button>
               </div>
               {showNewCategoryInput && (
                 <div className="flex items-center gap-2">
-                  <Input
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="New category name"
-                    className="flex-1"
-                    autoFocus
-                  />
+                  <Input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="New category name" className="flex-1" autoFocus />
                   <Button size="sm" onClick={async () => {
                     if (!newCategoryName.trim()) return;
                     await handleCreateCategory(newCategoryName.trim());
-                    setNewCategoryName("");
-                    setShowNewCategoryInput(false);
+                    setNewCategoryName(""); setShowNewCategoryInput(false);
                   }}>Create</Button>
                   <Button size="sm" variant="ghost" onClick={() => { setShowNewCategoryInput(false); setNewCategoryName(""); }}>
                     <X className="h-4 w-4" />
@@ -414,17 +470,9 @@ export function MaterialsSection({
               )}
               {editingCategory && (
                 <div className="flex items-center gap-2">
-                  <Input
-                    value={catEditName}
-                    onChange={(e) => setCatEditName(e.target.value)}
-                    placeholder="Category name"
-                    className="flex-1"
-                    autoFocus
-                  />
+                  <Input value={catEditName} onChange={(e) => setCatEditName(e.target.value)} placeholder="Category name" className="flex-1" autoFocus />
                   <Button size="sm" onClick={handleSaveCategoryEdit}>Save</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingCategory(null)}>
-                    <X className="h-4 w-4" />
-                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingCategory(null)}><X className="h-4 w-4" /></Button>
                 </div>
               )}
               <div className="max-h-40 overflow-y-auto space-y-1">
@@ -432,20 +480,10 @@ export function MaterialsSection({
                   <div key={cat.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm">
                     <span>{cat.name} <span className="text-xs text-slate-400">({categoryCounts[cat.id] || 0})</span></span>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={() => { setEditingCategory(cat); setCatEditName(cat.name); }}
-                      >
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditingCategory(cat); setCatEditName(cat.name); }}>
                         <Pencil className="h-3 w-3" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-500"
-                        onClick={() => handleDeleteCategory(cat)}
-                      >
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => handleDeleteCategory(cat)}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
@@ -461,45 +499,28 @@ export function MaterialsSection({
                 <Input placeholder="Material name *" {...register("name", { required: true })} />
                 <div>
                   <p className="mb-1 text-xs text-slate-500">Category</p>
-                  <SearchableSelect
-                    options={categoryOptions}
-                    value={categoryId}
-                    onChange={(v) => setValue("categoryId", v)}
-                    placeholder="Select or create category"
-                    onCreate={handleCreateCategory}
-                  />
+                  <SearchableSelect options={categoryOptions} value={categoryId} onChange={(v) => setValue("categoryId", v)} placeholder="Select or create category" onCreate={handleCreateCategory} />
                 </div>
                 <div>
                   <p className="mb-1 text-xs text-slate-500">Unit</p>
                   <SearchableSelect
-                    options={unitOptions}
-                    value={unitId}
-                    onChange={(v) => setValue("unitId", v)}
+                    options={unitOptions} value={unitId} onChange={(v) => setValue("unitId", v)}
                     placeholder="Select or create unit"
-                    onCreate={async (label) => {
-                      const id = await createUnit(businessId, label);
-                      setValue("unitId", id);
-                      toast.success(`Unit "${label}" created`);
-                    }}
+                    onCreate={async (label) => { const id = await createUnit(businessId, label); setValue("unitId", id); toast.success(`Unit "${label}" created`); }}
                   />
                 </div>
                 <div>
                   <p className="mb-1 text-xs text-slate-500">Supplier (optional)</p>
-                  <SearchableSelect
-                    options={supplierOptions}
-                    value={supplierId}
-                    onChange={(v) => setValue("supplierId", v)}
-                    placeholder="Select supplier"
-                  />
+                  <SearchableSelect options={supplierOptions} value={supplierId} onChange={(v) => setValue("supplierId", v)} placeholder="Select supplier" />
                 </div>
                 <Input type="number" placeholder="Quantity" {...register("quantity", { valueAsNumber: true })} />
                 <Input type="number" placeholder="Reorder level" {...register("reorderLevel", { valueAsNumber: true })} />
-                <Input type="number" step="0.01" placeholder="Price per item" {...register("averageUnitCost", { valueAsNumber: true })} />
+                <Input type="number" step="0.01" placeholder="Price per item (KES)" {...register("averageUnitCost", { valueAsNumber: true })} />
               </div>
 
               <div className="space-y-3">
                 <div>
-                  <p className="mb-1 text-xs text-slate-500">Images (optional, max 10)</p>
+                  <p className="mb-1 text-xs text-slate-500">Images (optional) — first image shown in listing as cover</p>
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 w-fit">
                     <Upload className="h-4 w-4" />
                     Add Images
@@ -510,6 +531,7 @@ export function MaterialsSection({
                       {existingImages.map((img, i) => (
                         <div key={`e${i}`} className="relative shrink-0">
                           <img src={img.url} alt="" className="h-16 w-16 rounded-lg object-contain border" />
+                          {i === 0 && <span className="absolute bottom-0 left-0 right-0 text-center text-[9px] bg-emerald-600 text-white rounded-b-lg">Cover</span>}
                           <button type="button" onClick={() => removeExistingImage(i)} className="absolute -right-1 -top-1 rounded-full bg-red-500 text-white p-0.5">
                             <X className="h-3 w-3" />
                           </button>
@@ -518,6 +540,7 @@ export function MaterialsSection({
                       {imagePreviews.map((preview, i) => (
                         <div key={`n${i}`} className="relative shrink-0">
                           <img src={preview} alt="" className="h-16 w-16 rounded-lg object-contain border" />
+                          {existingImages.length === 0 && i === 0 && <span className="absolute bottom-0 left-0 right-0 text-center text-[9px] bg-emerald-600 text-white rounded-b-lg">Cover</span>}
                           <button type="button" onClick={() => removeNewImage(i)} className="absolute -right-1 -top-1 rounded-full bg-red-500 text-white p-0.5">
                             <X className="h-3 w-3" />
                           </button>
@@ -528,12 +551,12 @@ export function MaterialsSection({
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Category Fields</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Fabric Details</p>
                   <Input placeholder="Color" {...register("color")} />
                   <Input type="number" placeholder="GSM" {...register("gsm", { valueAsNumber: true })} />
-                  <Input type="number" step="0.1" placeholder="Roll length" {...register("rollLength", { valueAsNumber: true })} />
+                  <Input type="number" step="0.1" placeholder="Roll length (m)" {...register("rollLength", { valueAsNumber: true })} />
                   <Input placeholder="Pattern" {...register("pattern")} />
-                  <Input placeholder="Composition" {...register("composition")} />
+                  <Input placeholder="Composition (e.g. 100% Cotton)" {...register("composition")} />
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
@@ -545,18 +568,8 @@ export function MaterialsSection({
                   </div>
                   {customFields.map((field, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <Input
-                        placeholder="Field name"
-                        value={field.key}
-                        onChange={(e) => updateCustomField(i, "key", e.target.value)}
-                        className="flex-1"
-                      />
-                      <Input
-                        placeholder="Value"
-                        value={field.value}
-                        onChange={(e) => updateCustomField(i, "value", e.target.value)}
-                        className="flex-1"
-                      />
+                      <Input placeholder="Field name" value={field.key} onChange={(e) => updateCustomField(i, "key", e.target.value)} className="flex-1" />
+                      <Input placeholder="Value" value={field.value} onChange={(e) => updateCustomField(i, "value", e.target.value)} className="flex-1" />
                       <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => removeCustomField(i)}>
                         <X className="h-3 w-3" />
                       </Button>
@@ -573,42 +586,151 @@ export function MaterialsSection({
         </CardContent>
       </Card>
 
+      {/* Materials list */}
       <Card>
-        <CardHeader>
-          <CardTitle>{selectedCategoryId ? categories.find((c) => c.id === selectedCategoryId)?.name || "Materials" : "All Materials"} ({filteredMaterials.length})</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-3">
+          <CardTitle>
+            {selectedCategoryId ? categories.find((c) => c.id === selectedCategoryId)?.name || "Materials" : "All Materials"}{" "}
+            <span className="text-slate-400 font-normal text-base">({filteredMaterials.length})</span>
+          </CardTitle>
+          <Input
+            placeholder="Search by name, category, unit..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full sm:w-[260px]"
+          />
         </CardHeader>
-        <CardContent>
-          {filteredMaterials.length === 0 ? (
-            <p className="text-sm text-slate-500">No materials found.</p>
+        <CardContent className="space-y-2">
+          {pagedMaterials.length === 0 ? (
+            <p className="text-sm text-slate-500 py-6 text-center">
+              {searchQuery ? "No materials match your search." : "No materials found."}
+            </p>
           ) : (
-            <div className="space-y-2">
-              {filteredMaterials.map((m) => (
-                <div key={m.id} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm transition hover:border-emerald-200 hover:bg-emerald-50">
-                  <Link href={`/inventory/materials/${m.id}`} className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3">
-                      {m.imageUrl && (
-                        <img src={m.imageUrl} alt="" className="h-8 w-8 rounded object-contain border border-slate-100" />
-                      )}
-                      <div>
-                        <p className="font-medium text-slate-900">{m.name}</p>
-                        <p className="text-xs text-slate-500">{m.categoryName}</p>
+            <>
+              {pagedMaterials.map((m) => (
+                <div key={m.id}>
+                  <div className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm transition hover:border-emerald-200 hover:bg-emerald-50">
+                    <Link href={`/inventory/materials/${m.id}`} className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        {firstImageUrl(m) ? (
+                          <img src={firstImageUrl(m)} alt="" className="h-10 w-10 rounded-lg object-cover border border-slate-100 shrink-0" />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-slate-100 shrink-0 flex items-center justify-center">
+                            <span className="text-xs text-slate-400">{m.name.charAt(0).toUpperCase()}</span>
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 truncate">{m.name}</p>
+                          <p className="text-xs text-slate-500">{m.categoryName} · KES {m.averageUnitCost.toFixed(2)}/{m.unitName}</p>
+                        </div>
                       </div>
+                    </Link>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <Badge variant={m.quantity <= 0 ? "danger" : m.quantity <= m.reorderLevel ? "warning" : "success"}>
+                        {m.quantity} {m.unitName}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                        title="Adjust stock"
+                        onClick={(e) => { e.preventDefault(); openAdjust(m); }}
+                      >
+                        <SlidersHorizontal className="h-3 w-3 mr-1" />
+                        Adjust
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.preventDefault(); populateForm(m); }}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={(e) => { e.preventDefault(); handleDelete(m); }}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                     </div>
-                  </Link>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <Badge variant={m.quantity <= m.reorderLevel ? "warning" : "success"}>
-                      {m.quantity} {m.unitName}
-                    </Badge>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.preventDefault(); populateForm(m); }}>
-                      <Pencil className="h-3 w-3" />
+                  </div>
+
+                  {/* Inline stock adjustment panel */}
+                  {adjustingMaterial?.id === m.id && (
+                    <div className="mx-1 rounded-b-xl border border-t-0 border-emerald-200 bg-emerald-50 px-4 py-3">
+                      <p className="text-xs font-semibold text-emerald-800 mb-2">
+                        Adjust Stock — {m.name} (Current: {m.quantity} {m.unitName})
+                      </p>
+                      <form className="flex flex-wrap items-end gap-3" onSubmit={submitAdjustment}>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">Quantity Change</label>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              className="rounded border border-slate-200 bg-white p-1 hover:bg-slate-50"
+                              onClick={() => adjustForm.setValue("adjustment", (adjustForm.getValues("adjustment") || 0) - 1)}
+                            >
+                              <MinusCircle className="h-4 w-4 text-red-500" />
+                            </button>
+                            <Input
+                              type="number"
+                              step="any"
+                              className="w-24 text-center"
+                              placeholder="e.g. +5 or -3"
+                              {...adjustForm.register("adjustment", { valueAsNumber: true, required: true })}
+                            />
+                            <button
+                              type="button"
+                              className="rounded border border-slate-200 bg-white p-1 hover:bg-slate-50"
+                              onClick={() => adjustForm.setValue("adjustment", (adjustForm.getValues("adjustment") || 0) + 1)}
+                            >
+                              <PlusCircle className="h-4 w-4 text-emerald-500" />
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Positive = add stock, negative = remove</p>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+                          <label className="text-xs text-slate-500">Reason *</label>
+                          <Input placeholder="e.g. Stock count correction, damage..." {...adjustForm.register("reason", { required: true })} />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button type="submit" size="sm" disabled={adjustSubmitting}>
+                            {adjustSubmitting ? "Saving..." : "Record"}
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setAdjustingMaterial(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Pagination */}
+              {pageCount > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <p className="text-xs text-slate-500">
+                    Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredMaterials.length)} of {filteredMaterials.length}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                      <ChevronLeft className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={(e) => { e.preventDefault(); handleDelete(m); }}>
-                      <Trash2 className="h-3 w-3" />
+                    {Array.from({ length: Math.min(pageCount, 5) }, (_, i) => {
+                      const p = pageCount <= 5 ? i : Math.max(0, Math.min(page - 2, pageCount - 5)) + i;
+                      return (
+                        <Button
+                          key={p}
+                          variant={p === page ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 w-7 p-0 text-xs"
+                          onClick={() => setPage(p)}
+                        >
+                          {p + 1}
+                        </Button>
+                      );
+                    })}
+                    <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page >= pageCount - 1} onClick={() => setPage((p) => p + 1)}>
+                      <ChevronRight className="h-3 w-3" />
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

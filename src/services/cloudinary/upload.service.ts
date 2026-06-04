@@ -1,6 +1,3 @@
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import { addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
-// import { imagesCollection } from "@/services/collections";
 import { supabase } from "@/lib/supabase";
 import { transformKeysToSnake, transformKeysToCamel } from "@/lib/case-utils";
 import type { ImageMeta } from "@/types/domain";
@@ -63,15 +60,30 @@ export async function uploadImage(input: {
     uploadedAt: new Date().toISOString(),
   });
 
-  const { data: inserted, error } = await supabase
-    .from("images")
-    .insert(transformKeysToSnake(metadata as Record<string, unknown>))
-    .select()
-    .single();
+  try {
+    const { data: inserted, error } = await supabase
+      .from("images")
+      .insert(transformKeysToSnake(metadata as Record<string, unknown>))
+      .select()
+      .single();
 
-  if (error || !inserted) throw error || new Error("Failed to save image metadata");
+    if (error || !inserted) throw error || new Error("Failed to save image metadata");
 
-  return transformKeysToCamel<ImageMeta>(inserted as Record<string, unknown>);
+    return transformKeysToCamel<ImageMeta>(inserted as Record<string, unknown>);
+  } catch {
+    // DB metadata save failed but Cloudinary upload succeeded — return URL directly
+    return {
+      id: "",
+      businessId: input.businessId,
+      url: data.secure_url,
+      publicId: data.public_id,
+      width: data.width,
+      height: data.height,
+      format: data.format ?? "",
+      uploadedByUid: input.uploadedByUid,
+      uploadedAt: new Date().toISOString(),
+    } as ImageMeta;
+  }
 }
 
 function cleanUploadMetadata<T extends Record<string, unknown>>(value: T) {
@@ -94,8 +106,6 @@ export async function deleteImageFromCloudinary(publicId: string) {
 }
 
 export async function deleteImageMetadata(businessId: string, imageId: string) {
-  // 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-  // await deleteDoc(doc(imagesCollection(businessId), imageId));
   const { error } = await supabase.from("images").delete().eq("id", imageId).eq("business_id", businessId);
   if (error) throw error;
 }

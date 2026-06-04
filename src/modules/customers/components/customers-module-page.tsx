@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import { Timestamp } from "firebase/firestore";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useForm, type SubmitHandler } from "react-hook-form";

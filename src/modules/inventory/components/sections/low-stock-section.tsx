@@ -280,15 +280,21 @@ export function LowStockSection({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-between gap-2">
                         <Link
-                          href={`/inventory/materials/${material.id}`}
+                          href={`/inventory/purchase-orders?section=purchase-orders&materialId=${material.id}&materialName=${encodeURIComponent(material.name)}&unit=${encodeURIComponent(material.unitName)}`}
                         >
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant={isOut ? "default" : "outline"}
+                            className={isOut ? "bg-rose-600 hover:bg-rose-700 text-white" : ""}
                           >
-                            View Material
+                            Create PO
+                          </Button>
+                        </Link>
+                        <Link href={`/inventory/materials/${material.id}`}>
+                          <Button size="sm" variant="outline">
+                            View
                           </Button>
                         </Link>
                       </div>

@@ -16,8 +16,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { Supplier } from "@/types/domain";
+
+const PAGE_SIZE = 12;
 
 interface SupplierForm {
   name: string;
@@ -46,8 +49,8 @@ export function SuppliersSection({
   );
 
   const [showForm, setShowForm] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     if (!editingSupplierId) {
@@ -62,18 +65,17 @@ export function SuppliersSection({
 
   const filteredSuppliers = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-
     if (!query) return suppliers;
-
-    return suppliers.filter((supplier) => {
-      return (
-        supplier.name?.toLowerCase().includes(query) ||
-        supplier.phone?.toLowerCase().includes(query) ||
-        supplier.contactPerson?.toLowerCase().includes(query) ||
-        supplier.notes?.toLowerCase().includes(query)
-      );
-    });
+    return suppliers.filter((supplier) =>
+      supplier.name?.toLowerCase().includes(query) ||
+      supplier.phone?.toLowerCase().includes(query) ||
+      supplier.contactPerson?.toLowerCase().includes(query) ||
+      supplier.notes?.toLowerCase().includes(query)
+    );
   }, [suppliers, searchQuery]);
+
+  const pageCount = Math.ceil(filteredSuppliers.length / PAGE_SIZE);
+  const pagedSuppliers = filteredSuppliers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const startEdit = (supplier: Supplier) => {
     setEditingSupplierId(supplier.id);
@@ -247,14 +249,13 @@ export function SuppliersSection({
         {filteredSuppliers.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center">
             <p className="text-sm text-slate-500">
-              {searchQuery
-                ? "No suppliers found."
-                : "No suppliers yet."}
+              {searchQuery ? "No suppliers found." : "No suppliers yet."}
             </p>
           </div>
         ) : (
+          <>
           <div className="grid gap-4 lg:grid-cols-2">
-            {filteredSuppliers.map((supplier) => (
+            {pagedSuppliers.map((supplier) => (
               <div
                 key={supplier.id}
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-slate-300"
@@ -314,6 +315,31 @@ export function SuppliersSection({
               </div>
             ))}
           </div>
+
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t">
+              <p className="text-xs text-slate-500">
+                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredSuppliers.length)} of {filteredSuppliers.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+                {Array.from({ length: Math.min(pageCount, 5) }, (_, i) => {
+                  const p = pageCount <= 5 ? i : Math.max(0, Math.min(page - 2, pageCount - 5)) + i;
+                  return (
+                    <Button key={p} variant={p === page ? "default" : "outline"} size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setPage(p)}>
+                      {p + 1}
+                    </Button>
+                  );
+                })}
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page >= pageCount - 1} onClick={() => setPage((p) => p + 1)}>
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </CardContent>
     </Card>

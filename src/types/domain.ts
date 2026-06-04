@@ -1,7 +1,3 @@
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import type { Timestamp } from "firebase/firestore";
-// Supabase returns ISO 8601 date strings; `string` replaces `Timestamp` throughout
-
 export type UserRole =
   | "owner"
   | "admin_manager"
@@ -492,4 +488,51 @@ export interface FinanceAlert {
   message: string;
   metric?: string;
   value?: number;
+}
+
+export type InvestmentStatus = "active" | "completed" | "cancelled";
+
+export interface Investment {
+  id: string;
+  businessId: string;
+  type: string;
+  amount: number;
+  description: string;
+  notes?: string;
+  investmentDate: string;
+  returnExpected?: number;
+  returnActual?: number;
+  status: InvestmentStatus;
+  createdByUid: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavingsGoal {
+  id: string;
+  businessId: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline?: string;
+  description?: string;
+  color: string;
+  status: "active" | "completed" | "cancelled";
+  createdByUid: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavingsDeposit {
+  id: string;
+  businessId: string;
+  goalId?: string;
+  amount: number;
+  notes?: string;
+  depositDate: string;
+  createdByUid: string;
+  createdByName: string;
+  createdAt: string;
 }

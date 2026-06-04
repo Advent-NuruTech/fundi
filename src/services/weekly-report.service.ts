@@ -1,8 +1,3 @@
-// 🔴 FIREBASE DISABLED - MIGRATED TO SUPABASE
-// import { Timestamp } from "firebase/firestore";
-// import { notificationsCollection } from "@/services/collections";
-// import { addDoc, serverTimestamp } from "firebase/firestore";
-
 import { createNotification } from "@/services/notifications.service";
 import { calculateRevenue, calculateExpenses, calculateWithdrawals, calculateNetProfit } from "@/services/finance.service";
 import type { Payment, Expense, Withdrawal } from "@/types/domain";
@@ -72,7 +67,6 @@ export function generateWeeklyReportData(
 
   const expenseCategories: Record<string, number> = {};
   expenses.forEach((e) => {
-    // 🔴 FIREBASE DISABLED: e.expenseDate?.toDate?.() ?? new Date()
     const d = e.expenseDate ? new Date(e.expenseDate) : new Date();
     if (d >= weekStart && d <= weekEnd) {
       expenseCategories[e.category] = (expenseCategories[e.category] ?? 0) + e.amount;
@@ -101,20 +95,6 @@ export async function storeWeeklyReportNotification(
   actorUid: string
 ) {
   const profitLabel = report.netProfit >= 0 ? "profit" : "loss";
-
-  // 🔴 FIREBASE DISABLED
-  // await addDoc(notificationsCollection(businessId), {
-  //   businessId,
-  //   recipientUid: actorUid,
-  //   type: "system",
-  //   title: `Weekly Financial Report - ${report.weekStart}`,
-  //   message: `Week ending ${report.weekEnd}: Revenue ${report.revenue.toFixed(0)} KES, ${profitLabel} of ${Math.abs(report.netProfit).toFixed(0)} KES. Margin: ${report.profitMargin.toFixed(1)}%.`,
-  //   link: "/finance/reports",
-  //   read: false,
-  //   archived: false,
-  //   createdAt: serverTimestamp(),
-  //   metadata: { ... },
-  // });
 
   await createNotification({
     businessId,
