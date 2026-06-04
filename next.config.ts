@@ -4,7 +4,6 @@ const withPWA = require("@ducanh2912/next-pwa").default({
   register: true,
   skipWaiting: true,
   cacheOnFrontEndNav: true,
-  aggressiveFrontEndNavCaching: true,
   reloadOnOnline: false,
   disable: process.env.NODE_ENV === "development",
   workboxOptions: {
@@ -57,6 +56,7 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 });
 
 const nextConfig: NextConfig = {
+  turbopack: {},   // ← this silences the webpack config conflict
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "res.cloudinary.com" },
