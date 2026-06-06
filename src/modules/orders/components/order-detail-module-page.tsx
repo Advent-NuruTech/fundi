@@ -163,7 +163,7 @@ export function OrderDetailModulePage() {
 
       // Auto-send pickup SMS when order reaches ready_for_pickup
       if (stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent) {
-        const sender = business?.smsSenderId || "ANTS";
+        const sender = business?.smsSenderId || undefined;
         const customerName = order.customerName || "Customer";
         const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
         try {
