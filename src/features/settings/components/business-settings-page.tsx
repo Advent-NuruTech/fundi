@@ -14,6 +14,7 @@ import { useAuth } from "@/features/auth/components/auth-context";
 import { canAccessSettings } from "@/lib/db";
 import { listenMembers } from "@/services/firestore.service";
 import type { UserProfile } from "@/types/domain";
+import { FinanceAccessSettings } from "./finance-access-settings";
 
 export function BusinessSettingsPage() {
   const { user, business } = useAuth();
@@ -132,6 +133,18 @@ export function BusinessSettingsPage() {
             )}
           </button>
         </div>
+      </div>
+
+      {/* Finance Access Settings — shown to everyone but only functional for owners */}
+      <div className="rounded-3xl border bg-white p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Shield className="h-6 w-6 text-emerald-600" />
+          <div>
+            <h2 className="font-bold">Finance Access Settings</h2>
+            <p className="text-sm text-gray-500">Control financial data visibility for your team</p>
+          </div>
+        </div>
+        <FinanceAccessSettings />
       </div>
 
       <div className="rounded-3xl border bg-white p-6">

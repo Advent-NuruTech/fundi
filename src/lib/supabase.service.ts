@@ -320,6 +320,14 @@ export async function updateBusinessProfile(businessId: string, data: Partial<Pi
   if (error) throw error;
 }
 
+export async function updateFinanceAccess(businessId: string, settings: import("@/types/domain").FinanceAccessSettings) {
+  const { error } = await supabase
+    .from('businesses')
+    .update({ finance_access: settings })
+    .eq('id', businessId);
+  if (error) throw error;
+}
+
 // â”€â”€â”€ CUSTOMERS â”€â”€â”€
 
 export async function createCustomer(businessId: string, payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">) {

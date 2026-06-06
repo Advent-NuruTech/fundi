@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useAuth } from "@/features/auth/components/auth-context";
+import { isFinanceOwner } from "@/lib/permissions";
+import { DEFAULT_FINANCE_ACCESS } from "@/types/domain";
 import { listenAllFinanceData, type FinanceData } from "@/services/finance.service";
 import { useWeeklyReport } from "./use-weekly-report";
 import {
@@ -310,8 +313,18 @@ function YearCalendar({ data, year }: { data: FinanceData; year: number }) {
 // ─── MAIN COMPONENT ───
 export function FinanceModulePage() {
   const { businessId, ready } = useBusinessContext();
+  const { user, business } = useAuth();
   const [data, setData] = useState<FinanceData | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "week" | "month" | "year">("overview");
+
+  // ─── OWNER VISIBILITY ───
+  const fa = business?.financeAccess ?? DEFAULT_FINANCE_ACCESS;
+  const canViewAsOwner = isFinanceOwner(user, business?.financeAccess);
+  const isManager = user?.role === "admin_manager";
+  const canSeeWeekHistory = canViewAsOwner || (isManager && fa.managerCanSeeWeekHistory);
+  const canSeeMonthHistory = canViewAsOwner || (isManager && fa.managerCanSeeMonthHistory);
+  const canSeeYearHistory = canViewAsOwner || (isManager && fa.managerCanSeeYearHistory);
+  const canSeeOwnerKpis = canViewAsOwner || (isManager && fa.managerCanSeeOwnerKpis);
 
   // Calendar navigation state
   const [calWeekStart, setCalWeekStart] = useState(() => startOfWeek(new Date()));
@@ -481,24 +494,45 @@ export function FinanceModulePage() {
         ))}
       </div>
 
-      {/* Sub-tabs: Overview / Week / Month / Year */}
+      {/* Sub-tabs: Overview / Week / Month / Year — history tabs hidden unless permitted */}
       <div className="flex gap-1 rounded-xl bg-slate-100 p-1 w-full sm:w-auto sm:inline-flex">
-        {([["overview", "Overview"], ["week", "This Week"], ["month", "This Month"], ["year", "This Year"]] as const).map(([tab, label]) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 sm:flex-none rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${activeTab === tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-          >
-            {label}
-          </button>
-        ))}
+        {(
+          [
+            ["overview", "Overview", true],
+            ["week", "This Week", canSeeWeekHistory],
+            ["month", "This Month", canSeeMonthHistory],
+            ["year", "This Year", canSeeYearHistory],
+          ] as const
+        )
+          .filter(([, , allowed]) => allowed)
+          .map(([tab, label]) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 sm:flex-none rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${activeTab === tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              {label}
+            </button>
+          ))}
       </div>
+
+      {/* Access restriction notice for non-owners */}
+      {!canViewAsOwner && (
+        <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+          <p>
+            You are viewing <strong>today&apos;s finance data</strong> only. Full financial history,
+            net profit and business insights are visible to the business owner.
+            {!canSeeWeekHistory && !canSeeMonthHistory && !canSeeYearHistory && " Your owner can unlock additional periods for you in Settings."}
+          </p>
+        </div>
+      )}
 
       {/* ─── OVERVIEW TAB ─── */}
       {activeTab === "overview" && (
         <div className="space-y-6">
-          {/* Alerts */}
-          {metrics.alerts.length > 0 && (
+          {/* Alerts — owner-only (include payroll & business insights) */}
+          {canSeeOwnerKpis && metrics.alerts.length > 0 && (
             <div className="space-y-2">
               {metrics.alerts.slice(0, 3).map((alert, i) => (
                 <motion.div
@@ -523,33 +557,45 @@ export function FinanceModulePage() {
             </div>
           )}
 
-          {/* Revenue cards — 2 cols on mobile */}
+          {/* Revenue cards — history periods only shown if permitted */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatsCard title="Today's Earnings" value={formatKes(metrics.todayRevenue)} variant="success" icon={<DollarSign className="h-4 w-4" />} />
-            <StatsCard title="This Week" value={formatKes(metrics.weekRevenue)} variant="success" icon={<TrendingUp className="h-4 w-4" />} />
-            <StatsCard title="This Month" value={formatKes(metrics.monthRevenue)} trend={metrics.trends.revenueTrend} variant="success" icon={<Calendar className="h-4 w-4" />} />
-            <StatsCard title="This Year" value={formatKes(metrics.yearRevenue)} variant="success" icon={<TrendingUp className="h-4 w-4" />} />
+            {canSeeWeekHistory && (
+              <StatsCard title="This Week" value={formatKes(metrics.weekRevenue)} variant="success" icon={<TrendingUp className="h-4 w-4" />} />
+            )}
+            {canSeeMonthHistory && (
+              <StatsCard title="This Month" value={formatKes(metrics.monthRevenue)} trend={metrics.trends.revenueTrend} variant="success" icon={<Calendar className="h-4 w-4" />} />
+            )}
+            {canSeeYearHistory && (
+              <StatsCard title="This Year" value={formatKes(metrics.yearRevenue)} variant="success" icon={<TrendingUp className="h-4 w-4" />} />
+            )}
           </div>
 
-          {/* Profit & spending — 2 cols on mobile */}
+          {/* Profit & spending — Net Profit is owner-only KPI */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCard
-              title="Net Profit"
-              value={formatKes(metrics.netProfit)}
-              trend={metrics.trends.profitTrend}
-              trendLabel="vs last month"
-              variant={metrics.netProfit >= 0 ? "success" : "danger"}
-              icon={metrics.netProfit >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-            />
-            <StatsCard title="Month Expenses" value={formatKes(metrics.monthExpenses)} trend={metrics.trends.expenseTrend} trendLabel="vs last month" variant="danger" icon={<ArrowDownRight className="h-4 w-4" />} />
+            {canSeeOwnerKpis && (
+              <StatsCard
+                title="Net Profit"
+                value={formatKes(metrics.netProfit)}
+                trend={metrics.trends.profitTrend}
+                trendLabel="vs last month"
+                variant={metrics.netProfit >= 0 ? "success" : "danger"}
+                icon={metrics.netProfit >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+              />
+            )}
+            <StatsCard title="Today's Expenses" value={formatKes(metrics.monthExpenses)} trend={metrics.trends.expenseTrend} trendLabel="vs last month" variant="danger" icon={<ArrowDownRight className="h-4 w-4" />} />
             <StatsCard title="Pending Payments" value={formatKes(metrics.outstandingBalances)} variant="warning" icon={<CreditCard className="h-4 w-4" />} />
-            <StatsCard title="Month Withdrawals" value={formatKes(metrics.monthWithdrawals)} trend={metrics.trends.withdrawalTrend} trendLabel="vs last month" variant="warning" icon={<Wallet className="h-4 w-4" />} />
+            <StatsCard title="Withdrawals" value={formatKes(metrics.monthWithdrawals)} trend={metrics.trends.withdrawalTrend} trendLabel="vs last month" variant="warning" icon={<Wallet className="h-4 w-4" />} />
           </div>
 
-          {/* Secondary stats — 2 cols on mobile */}
+          {/* Secondary stats — Payroll Due and Inventory Value are owner-only KPIs */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCard title="Payroll Due" value={formatKes(metrics.payrollLiability)} variant="warning" icon={<Users className="h-4 w-4" />} />
-            <StatsCard title="Inventory Value" value={formatKes(metrics.inventoryValue)} variant="info" icon={<Package className="h-4 w-4" />} />
+            {canSeeOwnerKpis && (
+              <StatsCard title="Payroll Due" value={formatKes(metrics.payrollLiability)} variant="warning" icon={<Users className="h-4 w-4" />} />
+            )}
+            {canSeeOwnerKpis && (
+              <StatsCard title="Inventory Value" value={formatKes(metrics.inventoryValue)} variant="info" icon={<Package className="h-4 w-4" />} />
+            )}
             <StatsCard title="Total Cash In" value={formatKes(metrics.cashIn)} variant="success" icon={<ArrowUpRight className="h-4 w-4" />} />
             <StatsCard title="Total Cash Out" value={formatKes(metrics.cashOut)} variant="danger" icon={<ArrowDownRight className="h-4 w-4" />} />
           </div>
@@ -579,8 +625,8 @@ export function FinanceModulePage() {
               <FinancePieChart data={expenseCategoryData} height={260} />
             </ChartCard>
 
-            {/* P&L Summary */}
-            <Card>
+            {/* P&L Summary — owner-only section */}
+            {canSeeOwnerKpis && <Card>
               <CardHeader>
                 <CardTitle>Profit & Loss (This Month)</CardTitle>
               </CardHeader>
@@ -634,7 +680,7 @@ export function FinanceModulePage() {
                   <p className="text-xs text-slate-400 mt-1">{metrics.health.score}/100 — {metrics.health.score >= 80 ? "Your business is doing great!" : metrics.health.score >= 60 ? "Things are going well, keep it up." : metrics.health.score >= 40 ? "Some areas need attention." : "Your business needs urgent attention."}</p>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* Recent Activity */}
             <Card>

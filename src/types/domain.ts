@@ -137,6 +137,26 @@ export interface Message {
   createdAt: string;
 }
 
+// Controls which financial sections are visible to non-owner roles
+export interface FinanceAccessSettings {
+  // Co-owners share the same full-access view as the primary owner
+  coOwnerUids: string[];
+  // Granular permission toggles for admin_manager role
+  managerCanSeeWeekHistory: boolean;
+  managerCanSeeMonthHistory: boolean;
+  managerCanSeeYearHistory: boolean;
+  // Whether manager can see the owner-insight KPIs (net profit, inventory value, payroll)
+  managerCanSeeOwnerKpis: boolean;
+}
+
+export const DEFAULT_FINANCE_ACCESS: FinanceAccessSettings = {
+  coOwnerUids: [],
+  managerCanSeeWeekHistory: false,
+  managerCanSeeMonthHistory: false,
+  managerCanSeeYearHistory: false,
+  managerCanSeeOwnerKpis: false,
+};
+
 export interface Business {
   id: string;
   name: string;
@@ -149,6 +169,7 @@ export interface Business {
   employeeCounter?: number;
   smsSenderId?: string;
   createdAt: string;
+  financeAccess?: FinanceAccessSettings;
 }
 
 export interface MeasurementSet {

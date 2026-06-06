@@ -1,4 +1,4 @@
-import type { UserProfile, UserRole } from "@/types/domain";
+import type { UserProfile, UserRole, FinanceAccessSettings } from "@/types/domain";
 
 export type AppCapability =
   | "workshop.manage"
@@ -17,7 +17,11 @@ export type AppCapability =
   | "payments.write"
   | "analytics.read"
   | "finance.read"
-  | "finance.write";
+  | "finance.write"
+  // Owner-exclusive: full earnings history, net profit, inventory value, payroll, AI insights
+  | "finance.owner_insights"
+  // Owner can manage co-owners and toggle manager finance access
+  | "finance.access_control";
 
 const roleCapabilities: Record<UserRole, AppCapability[]> = {
   owner: [
@@ -37,6 +41,8 @@ const roleCapabilities: Record<UserRole, AppCapability[]> = {
     "analytics.read",
     "finance.read",
     "finance.write",
+    "finance.owner_insights",
+    "finance.access_control",
   ],
   admin_manager: [
     "team.manage",
@@ -53,6 +59,8 @@ const roleCapabilities: Record<UserRole, AppCapability[]> = {
     "analytics.read",
     "finance.read",
     "finance.write",
+    // finance.owner_insights and finance.access_control intentionally excluded —
+    // granted dynamically via Business.financeAccess settings
   ],
   tailor: ["orders.read", "orders.assigned_only", "production.read", "production.write"],
   receptionist: ["customers.read", "customers.write", "orders.read", "orders.write", "payments.read", "payments.write"],
@@ -73,6 +81,16 @@ export function getUserRoles(profile: UserProfile | null | undefined): UserRole[
 export function hasCapability(profile: UserProfile | null | undefined, capability: AppCapability): boolean {
   const roles = getUserRoles(profile);
   return roles.some((role) => roleCapabilities[role]?.includes(capability));
+}
+
+/** Returns true when the user has owner-level finance visibility (owner role or listed as co-owner) */
+export function isFinanceOwner(
+  profile: UserProfile | null | undefined,
+  financeAccess: FinanceAccessSettings | undefined
+): boolean {
+  if (!profile) return false;
+  if (profile.role === "owner") return true;
+  return financeAccess?.coOwnerUids?.includes(profile.uid) ?? false;
 }
 
 export function canAccessRoute(profile: UserProfile | null | undefined, pathname: string): boolean {
