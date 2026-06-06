@@ -67,6 +67,10 @@ async function executeOperation(entry: SyncEntry): Promise<boolean> {
       case "create": {
         const payload = transformKeysToSnake(data as Record<string, unknown>);
         payload.business_id = businessId;
+        // Preserve client-generated UUID so the local cache ID matches the server ID
+        if (docId) payload.id = docId;
+        // Strip the local-only marker before sending to Supabase
+        delete payload._local_only;
         const { error } = await supabase.from(table).insert([payload]);
         if (error) throw error;
         break;

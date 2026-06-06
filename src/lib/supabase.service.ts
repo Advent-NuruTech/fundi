@@ -1,6 +1,13 @@
 ﻿import { supabase } from "@/lib/supabase";
 import { transformKeysToCamel, transformKeysToSnake, transformArrayToCamel, toDate } from "@/lib/case-utils";
 import { formatKes } from "@/lib/utils";
+import {
+  getCachedCollection,
+  cacheCollection,
+  cacheLocalRecord,
+  enqueueSyncOperation,
+  generateId,
+} from "@/lib/local-db";
 import type {
   Customer,
   EmployeeInvitation,
@@ -71,6 +78,14 @@ function listenToTable<T>(
   let destroyed = false;
   const fetchAndCallback = async () => {
     if (destroyed) return;
+
+    // ── Offline path: serve from Dexie cache ──────────────────────────────
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cached = await getCachedCollection<T>(table, businessId).catch(() => []);
+      if (!destroyed && cached.length > 0) callback(cached);
+      return;
+    }
+
     let query = supabase.from(table).select('*').eq('business_id', businessId);
     if (options?.orderBy) {
       query = query.order(options.orderBy, { ascending: options.orderDir === 'asc' });
@@ -78,8 +93,17 @@ function listenToTable<T>(
     if (options?.limit) {
       query = query.limit(options.limit);
     }
-    const { data } = await query;
-    if (data && !destroyed) callback(transformArrayToCamel<T>(data as Record<string, unknown>[]));
+    const { data, error } = await query;
+    if (data && !destroyed) {
+      const rows = transformArrayToCamel<T>(data as Record<string, unknown>[]);
+      callback(rows);
+      // Cache for offline use (fire-and-forget)
+      cacheCollection(table, businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+    } else if (!destroyed && error) {
+      // Network/Supabase error — fall back to cache
+      const cached = await getCachedCollection<T>(table, businessId).catch(() => []);
+      if (cached.length > 0) callback(cached);
+    }
   };
   fetchAndCallback();
   const channel = supabase
@@ -333,6 +357,22 @@ export async function updateFinanceAccess(businessId: string, settings: import("
 export async function createCustomer(businessId: string, payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">) {
   const { measurements, ...customerData } = payload as typeof payload & { measurements?: Record<string, unknown> };
 
+  // ── Offline path ─────────────────────────────────────────────────────────
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const localId = generateId();
+    const now = new Date().toISOString();
+    const record = {
+      id: localId,
+      ...customerData,
+      measurements: measurements ?? {},
+      outstandingBalance: 0,
+      createdAt: now, updatedAt: now, _localOnly: true,
+    };
+    await cacheLocalRecord('customers', localId, businessId, record as unknown as Record<string, unknown>).catch(() => {});
+    await enqueueSyncOperation(businessId, 'customers', 'create', record, localId, 'normal').catch(() => {});
+    return localId;
+  }
+
   const { data: phoneExisting } = await supabase
     .from('customers')
     .select('id')
@@ -424,11 +464,31 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
   let destroyed = false;
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+
+    // ── Offline path ───────────────────────────────────────────────────────
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cached = await getCachedCollection<UserProfile>('members', businessId).catch(() => []);
+      if (!destroyed && cached.length > 0) callback(cached);
+      return;
+    }
+
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('business_id', businessId);
-    if (data && !destroyed) callback(profileRowsToMembers(data as Record<string, unknown>[]));
+    if (data && !destroyed) {
+      const members = profileRowsToMembers(data as Record<string, unknown>[]);
+      callback(members);
+      // Cache with uid-as-id so Dexie can index by docId
+      cacheCollection(
+        'members',
+        businessId,
+        members.map((m) => ({ ...m, id: m.uid })) as unknown as Array<Record<string, unknown>>
+      ).catch(() => {});
+    } else if (!destroyed && error) {
+      const cached = await getCachedCollection<UserProfile>('members', businessId).catch(() => []);
+      if (cached.length > 0) callback(cached);
+    }
   };
   fetchAndCallback();
   const channel = supabase
@@ -771,7 +831,15 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
   let destroyed = false;
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+
+    // ── Offline path ───────────────────────────────────────────────────────
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const cached = await getCachedCollection<Order>('orders', businessId).catch(() => []);
+      if (!destroyed && cached.length > 0) callback(cached);
+      return;
+    }
+
+    const { data, error } = await supabase
       .from('orders')
       .select('*, order_garments(name, quantity, agreed_price, sort_order)')
       .eq('business_id', businessId)
@@ -793,6 +861,10 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
         } as Order;
       }).sort((a, b) => orderStageSort[a.stage] - orderStageSort[b.stage]);
       callback(rows);
+      cacheCollection('orders', businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+    } else if (!destroyed && error) {
+      const cached = await getCachedCollection<Order>('orders', businessId).catch(() => []);
+      if (cached.length > 0) callback(cached);
     }
   };
   fetchAndCallback();
@@ -1476,6 +1548,27 @@ export async function recordPayment(
     actorName: string;
   }
 ) {
+  // ── Offline path ─────────────────────────────────────────────────────────
+  // Queue the payment row. Balance fields on orders/customers will reconcile
+  // once the user reconnects and the sync engine replays.
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const localId = generateId();
+    const now = new Date().toISOString();
+    const record = {
+      id: localId, businessId,
+      customerId: payload.customerId, customerName: payload.customerName,
+      orderId: payload.orderId, orderNumber: payload.orderNumber,
+      amount: payload.amount, method: payload.method,
+      mpesaCode: payload.mpesaCode ?? null,
+      description: payload.description ?? "",
+      recordedByUid: payload.actorUid, recordedByName: payload.actorName,
+      recordedAt: now, _localOnly: true,
+    };
+    await cacheLocalRecord('payments', localId, businessId, record).catch(() => {});
+    await enqueueSyncOperation(businessId, 'payments', 'create', record, localId, 'high').catch(() => {});
+    return;
+  }
+
   const { data: orderData } = await supabase
     .from('orders')
     .select('amount_paid, subtotal_amount')
@@ -1548,6 +1641,25 @@ export async function createExpense(
     actorName: string;
   }
 ) {
+  // ── Offline path ─────────────────────────────────────────────────────────
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const localId = generateId();
+    const now = new Date().toISOString();
+    const record = {
+      id: localId, businessId,
+      category: payload.category, amount: payload.amount,
+      description: payload.description, notes: payload.notes ?? "",
+      receiptUrl: payload.receiptUrl ?? "",
+      supplierId: payload.supplierId ?? null, supplierName: payload.supplierName ?? "",
+      expenseDate: payload.expenseDate.toISOString(),
+      createdByUid: payload.actorUid, createdByName: payload.actorName,
+      createdAt: now, updatedAt: now, _localOnly: true,
+    };
+    await cacheLocalRecord('expenses', localId, businessId, record).catch(() => {});
+    await enqueueSyncOperation(businessId, 'expenses', 'create', record, localId, 'normal').catch(() => {});
+    return localId;
+  }
+
   const { data: expenseData, error: expenseError } = await supabase
     .from('expenses')
     .insert(transformKeysToSnake({
@@ -1708,6 +1820,22 @@ export async function createWithdrawal(
     actorName: string;
   }
 ) {
+  // ── Offline path ─────────────────────────────────────────────────────────
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const localId = generateId();
+    const now = new Date().toISOString();
+    const record = {
+      id: localId, businessId,
+      amount: payload.amount, reason: payload.reason, category: payload.category,
+      withdrawnByUid: payload.actorUid, withdrawnByName: payload.actorName,
+      withdrawalDate: payload.withdrawalDate.toISOString(),
+      notes: payload.notes ?? "", createdAt: now, _localOnly: true,
+    };
+    await cacheLocalRecord('withdrawals', localId, businessId, record).catch(() => {});
+    await enqueueSyncOperation(businessId, 'withdrawals', 'create', record, localId, 'normal').catch(() => {});
+    return localId;
+  }
+
   const { data: withdrawalData, error: withdrawalError } = await supabase
     .from('withdrawals')
     .insert(transformKeysToSnake({

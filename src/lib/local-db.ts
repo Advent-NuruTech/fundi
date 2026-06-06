@@ -274,5 +274,78 @@ export async function getSyncQueueSize(): Promise<number> {
   return db.syncQueue.count();
 }
 
+// Bulk-upsert a whole collection snapshot into the cache.
+// items should already be in camelCase with an `id` field.
+export async function cacheCollection(
+  collection: string,
+  businessId: string,
+  items: Array<Record<string, unknown>>
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = getLocalDB();
+  const deviceId = getDeviceId();
+  const now = new Date().toISOString();
+  await db.transaction("rw", db.records, async () => {
+    for (const item of items) {
+      const docId = (item.id ?? item.uid) as string | undefined;
+      if (!docId) continue;
+      const existing = await db.records
+        .where("[collection+docId]")
+        .equals([collection, docId])
+        .first();
+      if (existing) {
+        // Never overwrite a local-only (unsynced) record with stale server data
+        if (!existing.synced && existing.data && (existing.data as Record<string, unknown>)._localOnly) continue;
+        await db.records.update(existing.id!, {
+          data: item,
+          synced: true,
+          version: (existing.version || 0) + 1,
+          updatedAt: now,
+          deleted: false,
+        });
+      } else {
+        await db.records.add({
+          collection,
+          docId,
+          businessId,
+          data: item,
+          synced: true,
+          version: 1,
+          deviceId,
+          createdAt: now,
+          updatedAt: now,
+          deleted: false,
+        });
+      }
+    }
+  });
+}
+
+// Save a single locally-created record that hasn't synced yet.
+export async function cacheLocalRecord(
+  collection: string,
+  docId: string,
+  businessId: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = getLocalDB();
+  const deviceId = getDeviceId();
+  const now = new Date().toISOString();
+  const existing = await db.records
+    .where("[collection+docId]")
+    .equals([collection, docId])
+    .first();
+  if (existing) {
+    await db.records.update(existing.id!, { data, synced: false, updatedAt: now, deleted: false });
+  } else {
+    await db.records.add({
+      collection, docId, businessId, data,
+      synced: false, version: 1, deviceId,
+      createdAt: now, updatedAt: now, deleted: false,
+    });
+  }
+}
+
 export { getDeviceId, generateId };
 export default FundiFlowDB;
