@@ -459,12 +459,29 @@ function profileRowsToMembers(rows: Record<string, unknown>[]): UserProfile[] {
   });
 }
 
+// Fetch roles from business_members and overlay onto profiles rows.
+// The RLS on `profiles` blocks owners from updating other users' rows, so
+// role/roles changes are only reliably persisted in business_members.
+async function fetchProfilesWithRoles(businessId: string) {
+  const [{ data: profilesData, error }, { data: membersData }] = await Promise.all([
+    supabase.from('profiles').select('*').eq('business_id', businessId),
+    supabase.from('business_members').select('profile_id, role, roles').eq('business_id', businessId),
+  ]);
+  if (!profilesData) return { data: null, error };
+  const rolesMap = new Map(
+    (membersData ?? []).map((m) => [m.profile_id as string, { role: m.role, roles: m.roles }])
+  );
+  const merged = profilesData.map((p) => {
+    const r = p as Record<string, unknown>;
+    const overrides = rolesMap.get(r.id as string);
+    return overrides ? { ...r, ...overrides } : r;
+  });
+  return { data: merged as Record<string, unknown>[], error: null };
+}
+
 export async function fetchMembers(businessId: string): Promise<UserProfile[]> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('business_id', businessId);
-  return profileRowsToMembers((data as Record<string, unknown>[]) || []);
+  const { data } = await fetchProfilesWithRoles(businessId);
+  return profileRowsToMembers(data || []);
 }
 
 export function listenMembers(businessId: string, callback: (rows: UserProfile[]) => void): () => void {
@@ -479,12 +496,9 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
       return;
     }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('business_id', businessId);
+    const { data, error } = await fetchProfilesWithRoles(businessId);
     if (data && !destroyed) {
-      const members = profileRowsToMembers(data as Record<string, unknown>[]);
+      const members = profileRowsToMembers(data);
       callback(members);
       // Cache with uid-as-id so Dexie can index by docId
       cacheCollection(
@@ -498,11 +512,21 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
     }
   };
   fetchAndCallback();
-  const channel = supabase
-    .channel(`profiles-members-${businessId}-${crypto.randomUUID()}`)
+  const uuid = crypto.randomUUID();
+  // Subscribe to both tables: profiles for identity changes, business_members for role changes
+  const profilesChannel = supabase
+    .channel(`profiles-members-${businessId}-${uuid}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  const bMembersChannel = supabase
+    .channel(`bm-roles-${businessId}-${uuid}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'business_members', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .subscribe();
+  return () => {
+    destroyed = true;
+    supabase.removeChannel(profilesChannel);
+    supabase.removeChannel(bMembersChannel);
+  };
 }
 
 export async function deactivateMember(businessId: string, memberUid: string, active: boolean) {
