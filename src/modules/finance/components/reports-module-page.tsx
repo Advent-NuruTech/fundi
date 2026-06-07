@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Download, FileText, Calendar, TrendingUp, TrendingDown, Printer } from "lucide-react";
+import { Download, FileText, Calendar, TrendingUp, TrendingDown, Printer, Lock } from "lucide-react";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
 import { listenAllFinanceData, type FinanceData } from "@/services/finance.service";
 import {
   calculateRevenue,
@@ -30,7 +31,20 @@ type ReportPeriod = "daily" | "weekly" | "monthly" | "yearly";
 
 export function ReportsModulePage() {
   const { businessId, ready } = useBusinessContext();
+  const finPerms = useFinancePermissions();
   const [data, setData] = useState<FinanceData | null>(null);
+
+  if (!finPerms.hasOwnerAccess && !finPerms.canSeeFinancialReports) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 py-20 text-center">
+        <Lock className="mb-4 h-12 w-12 text-slate-300" />
+        <p className="text-lg font-semibold text-slate-600">Access Restricted</p>
+        <p className="mt-2 text-sm text-slate-400">
+          Financial reports are visible to the business owner only. Contact your owner to request access.
+        </p>
+      </div>
+    );
+  }
   const [period, setPeriod] = useState<ReportPeriod>("monthly");
   const [dateRange, setDateRange] = useState<"current" | "previous">("current");
   const [exporting, setExporting] = useState(false);

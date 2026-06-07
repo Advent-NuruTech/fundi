@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Plus, Pencil, Trash2, TrendingUp, Search, X, CheckCircle, Clock, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
+import { Lock } from "lucide-react";
 import {
   listenInvestments,
   createInvestment,
@@ -55,6 +57,19 @@ const NAV_LINKS = [
 export function InvestmentsModulePage() {
   const { businessId, ready } = useBusinessContext();
   const { user } = useAuth();
+  const finPerms = useFinancePermissions();
+
+  if (!finPerms.hasOwnerAccess && !finPerms.canSeeInvestments) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 py-20 text-center">
+        <Lock className="mb-4 h-12 w-12 text-slate-300" />
+        <p className="text-lg font-semibold text-slate-600">Access Restricted</p>
+        <p className="mt-2 text-sm text-slate-400">
+          Investments are visible to the business owner only. Contact your owner to request access.
+        </p>
+      </div>
+    );
+  }
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Investment | null>(null);

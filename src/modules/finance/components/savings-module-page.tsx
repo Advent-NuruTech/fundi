@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, Pencil, Trash2, PiggyBank, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Pencil, Trash2, PiggyBank, ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
 import {
   listenSavingsGoals,
   listenSavingsDeposits,
@@ -161,6 +162,19 @@ function GoalCard({
 export function SavingsModulePage() {
   const { businessId, ready } = useBusinessContext();
   const { user } = useAuth();
+  const finPerms = useFinancePermissions();
+
+  if (!finPerms.hasOwnerAccess && !finPerms.canSeeSavings) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 py-20 text-center">
+        <Lock className="mb-4 h-12 w-12 text-slate-300" />
+        <p className="text-lg font-semibold text-slate-600">Access Restricted</p>
+        <p className="mt-2 text-sm text-slate-400">
+          Savings goals are visible to the business owner only. Contact your owner to request access.
+        </p>
+      </div>
+    );
+  }
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
 
   // Goal form

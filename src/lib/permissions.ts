@@ -1,4 +1,5 @@
-import type { UserProfile, UserRole, FinanceAccessSettings } from "@/types/domain";
+import type { UserProfile, UserRole, FinanceAccessSettings, ManagerPermissions } from "@/types/domain";
+import { DEFAULT_MANAGER_PERMISSIONS } from "@/types/domain";
 
 export type AppCapability =
   | "workshop.manage"
@@ -91,6 +92,63 @@ export function isFinanceOwner(
   if (!profile) return false;
   if (profile.role === "owner") return true;
   return financeAccess?.coOwnerUids?.includes(profile.uid) ?? false;
+}
+
+/**
+ * Resolves the effective ManagerPermissions for an admin_manager.
+ * Per-manager settings override legacy global toggles.
+ * If hasFullDashboardAccess is true, all permissions are granted.
+ */
+export function getManagerPermissions(
+  profile: UserProfile | null | undefined,
+  financeAccess: FinanceAccessSettings | undefined
+): ManagerPermissions {
+  if (!profile) return { ...DEFAULT_MANAGER_PERMISSIONS };
+
+  // Owner / co-owner: synthesize full access
+  if (isFinanceOwner(profile, financeAccess)) {
+    return Object.fromEntries(
+      Object.keys(DEFAULT_MANAGER_PERMISSIONS).map((k) => [k, true])
+    ) as unknown as ManagerPermissions;
+  }
+
+  if (profile.role !== "admin_manager") return { ...DEFAULT_MANAGER_PERMISSIONS };
+
+  const perManager = financeAccess?.managerPermissions?.[profile.uid];
+
+  // Full dashboard access grants everything
+  if (perManager?.hasFullDashboardAccess) {
+    return Object.fromEntries(
+      Object.keys(DEFAULT_MANAGER_PERMISSIONS).map((k) => [k, true])
+    ) as unknown as ManagerPermissions;
+  }
+
+  // Legacy global toggles as fallback base
+  const legacyBase: Partial<ManagerPermissions> = {
+    canSeeWeekEarnings: financeAccess?.managerCanSeeWeekHistory ?? false,
+    canSeeMonthEarnings: financeAccess?.managerCanSeeMonthHistory ?? false,
+    canSeeYearEarnings: financeAccess?.managerCanSeeYearHistory ?? false,
+    canSeeProfitMargins: financeAccess?.managerCanSeeOwnerKpis ?? false,
+    canSeeTotalRevenue: financeAccess?.managerCanSeeOwnerKpis ?? false,
+    canSeeInventoryValue: financeAccess?.managerCanSeeOwnerKpis ?? false,
+  };
+
+  return {
+    ...DEFAULT_MANAGER_PERMISSIONS,
+    ...legacyBase,
+    ...(perManager ?? {}),
+  };
+}
+
+/** Check a single named permission for the current user */
+export function hasManagerPermission(
+  profile: UserProfile | null | undefined,
+  financeAccess: FinanceAccessSettings | undefined,
+  permission: keyof ManagerPermissions
+): boolean {
+  if (!profile) return false;
+  if (isFinanceOwner(profile, financeAccess)) return true;
+  return getManagerPermissions(profile, financeAccess)[permission] === true;
 }
 
 export function canAccessRoute(profile: UserProfile | null | undefined, pathname: string): boolean {

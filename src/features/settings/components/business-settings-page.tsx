@@ -9,7 +9,9 @@ import {
   Copy,
   Check,
   Shield,
+  ChevronRight,
 } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { canAccessSettings } from "@/lib/db";
 import { listenMembers } from "@/services/firestore.service";
@@ -135,17 +137,40 @@ export function BusinessSettingsPage() {
         </div>
       </div>
 
-      {/* Finance Access Settings — shown to everyone but only functional for owners */}
+      {/* Finance Access Settings */}
       <div className="rounded-3xl border bg-white p-6">
         <div className="flex items-center gap-3 mb-6">
           <Shield className="h-6 w-6 text-emerald-600" />
           <div>
             <h2 className="font-bold">Finance Access Settings</h2>
-            <p className="text-sm text-gray-500">Control financial data visibility for your team</p>
+            <p className="text-sm text-gray-500">Global finance visibility defaults for your team</p>
           </div>
         </div>
         <FinanceAccessSettings />
       </div>
+
+      {/* Role Permissions — owner-only quick-access card */}
+      {user?.role === "owner" && (
+        <Link
+          href="/settings/role-permissions"
+          className="block rounded-3xl border bg-white p-6 transition hover:border-emerald-300 hover:bg-emerald-50 group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 group-hover:bg-emerald-200 transition">
+                <Shield className="h-5 w-5 text-emerald-700" />
+              </div>
+              <div>
+                <h2 className="font-bold text-slate-900">Role Permissions</h2>
+                <p className="text-sm text-slate-500">
+                  Configure individual permissions for each Admin Manager — weekly earnings, revenue analytics, inventory value, reports, and more.
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-600 transition shrink-0 ml-4" />
+          </div>
+        </Link>
+      )}
 
       <div className="rounded-3xl border bg-white p-6">
         <div className="flex items-center gap-3">

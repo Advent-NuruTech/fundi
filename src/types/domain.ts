@@ -137,16 +137,48 @@ export interface Message {
   createdAt: string;
 }
 
+// Per-manager granular permission set (keyed by manager uid in FinanceAccessSettings)
+export interface ManagerPermissions {
+  canSeeWeekEarnings: boolean;
+  canSeeMonthEarnings: boolean;
+  canSeeYearEarnings: boolean;
+  canSeeTotalRevenue: boolean;
+  canSeeInvestments: boolean;
+  canSeeSavings: boolean;
+  canSeeFinancialReports: boolean;
+  canSeeMonthlyRevenueAnalytics: boolean;
+  canSeeInventoryValue: boolean;
+  canSeeProfitMargins: boolean;
+  canManageFinance: boolean;
+  hasFullDashboardAccess: boolean;
+}
+
+export const DEFAULT_MANAGER_PERMISSIONS: ManagerPermissions = {
+  canSeeWeekEarnings: false,
+  canSeeMonthEarnings: false,
+  canSeeYearEarnings: false,
+  canSeeTotalRevenue: false,
+  canSeeInvestments: false,
+  canSeeSavings: false,
+  canSeeFinancialReports: false,
+  canSeeMonthlyRevenueAnalytics: false,
+  canSeeInventoryValue: false,
+  canSeeProfitMargins: false,
+  canManageFinance: false,
+  hasFullDashboardAccess: false,
+};
+
 // Controls which financial sections are visible to non-owner roles
 export interface FinanceAccessSettings {
   // Co-owners share the same full-access view as the primary owner
   coOwnerUids: string[];
-  // Granular permission toggles for admin_manager role
+  // Legacy global toggles for admin_manager role (kept for backwards compat)
   managerCanSeeWeekHistory: boolean;
   managerCanSeeMonthHistory: boolean;
   managerCanSeeYearHistory: boolean;
-  // Whether manager can see the owner-insight KPIs (net profit, inventory value, payroll)
   managerCanSeeOwnerKpis: boolean;
+  // Per-manager individual permission sets (keyed by uid, overrides global toggles)
+  managerPermissions: Record<string, ManagerPermissions>;
 }
 
 export const DEFAULT_FINANCE_ACCESS: FinanceAccessSettings = {
@@ -155,6 +187,7 @@ export const DEFAULT_FINANCE_ACCESS: FinanceAccessSettings = {
   managerCanSeeMonthHistory: false,
   managerCanSeeYearHistory: false,
   managerCanSeeOwnerKpis: false,
+  managerPermissions: {},
 };
 
 export interface Business {

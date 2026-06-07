@@ -20,9 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
-import { useAuth } from "@/features/auth/components/auth-context";
-import { isFinanceOwner } from "@/lib/permissions";
-import { DEFAULT_FINANCE_ACCESS } from "@/types/domain";
+import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
 import { listenAllFinanceData, type FinanceData } from "@/services/finance.service";
 import { useWeeklyReport } from "./use-weekly-report";
 import {
@@ -54,15 +52,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatKes } from "@/lib/utils";
 
-// ─── NAV LINKS ───
-const NAV_LINKS = [
-  { href: "/finance", label: "Overview" },
-  { href: "/finance/expenses", label: "Expenses" },
-  { href: "/finance/withdrawals", label: "Withdrawals" },
-  { href: "/finance/investments", label: "Investments" },
-  { href: "/finance/savings", label: "Savings" },
-  { href: "/finance/transactions", label: "Transactions" },
-  { href: "/finance/reports", label: "Reports" },
+// ─── NAV LINKS (access gates applied per-render via useFinancePermissions) ───
+const ALL_NAV_LINKS = [
+  { href: "/finance", label: "Overview", ownerOnly: false },
+  { href: "/finance/expenses", label: "Expenses", ownerOnly: false },
+  { href: "/finance/withdrawals", label: "Withdrawals", ownerOnly: false },
+  { href: "/finance/investments", label: "Investments", ownerOnly: true, permKey: "canSeeInvestments" as const },
+  { href: "/finance/savings", label: "Savings", ownerOnly: true, permKey: "canSeeSavings" as const },
+  { href: "/finance/transactions", label: "Transactions", ownerOnly: false },
+  { href: "/finance/reports", label: "Reports", ownerOnly: true, permKey: "canSeeFinancialReports" as const },
 ];
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -313,18 +311,25 @@ function YearCalendar({ data, year }: { data: FinanceData; year: number }) {
 // ─── MAIN COMPONENT ───
 export function FinanceModulePage() {
   const { businessId, ready } = useBusinessContext();
-  const { user, business } = useAuth();
+  const finPerms = useFinancePermissions();
   const [data, setData] = useState<FinanceData | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "week" | "month" | "year">("overview");
 
-  // ─── OWNER VISIBILITY ───
-  const fa = business?.financeAccess ?? DEFAULT_FINANCE_ACCESS;
-  const canViewAsOwner = isFinanceOwner(user, business?.financeAccess);
-  const isManager = user?.role === "admin_manager";
-  const canSeeWeekHistory = canViewAsOwner || (isManager && fa.managerCanSeeWeekHistory);
-  const canSeeMonthHistory = canViewAsOwner || (isManager && fa.managerCanSeeMonthHistory);
-  const canSeeYearHistory = canViewAsOwner || (isManager && fa.managerCanSeeYearHistory);
-  const canSeeOwnerKpis = canViewAsOwner || (isManager && fa.managerCanSeeOwnerKpis);
+  // ─── RESOLVED VISIBILITY FLAGS ───
+  const canViewAsOwner = finPerms.hasOwnerAccess;
+  const canSeeWeekHistory = canViewAsOwner || finPerms.canSeeWeekEarnings;
+  const canSeeMonthHistory = canViewAsOwner || finPerms.canSeeMonthEarnings;
+  const canSeeYearHistory = canViewAsOwner || finPerms.canSeeYearEarnings;
+  const canSeeOwnerKpis = canViewAsOwner || finPerms.canSeeProfitMargins;
+  const canSeeTotalRevenue = canViewAsOwner || finPerms.canSeeTotalRevenue;
+
+  // Filter nav links based on permissions
+  const NAV_LINKS = ALL_NAV_LINKS.filter((link) => {
+    if (!link.ownerOnly) return true;
+    if (canViewAsOwner) return true;
+    if (link.permKey) return finPerms[link.permKey] === true;
+    return false;
+  });
 
   // Calendar navigation state
   const [calWeekStart, setCalWeekStart] = useState(() => startOfWeek(new Date()));
@@ -557,7 +562,7 @@ export function FinanceModulePage() {
             </div>
           )}
 
-          {/* Revenue cards — history periods only shown if permitted */}
+          {/* Revenue cards — history periods and total revenue gated by permission */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatsCard title="Today's Earnings" value={formatKes(metrics.todayRevenue)} variant="success" icon={<DollarSign className="h-4 w-4" />} />
             {canSeeWeekHistory && (
@@ -568,6 +573,9 @@ export function FinanceModulePage() {
             )}
             {canSeeYearHistory && (
               <StatsCard title="This Year" value={formatKes(metrics.yearRevenue)} variant="success" icon={<TrendingUp className="h-4 w-4" />} />
+            )}
+            {canSeeTotalRevenue && (
+              <StatsCard title="Total Revenue" value={formatKes(metrics.cashIn)} variant="success" icon={<ArrowUpRight className="h-4 w-4" />} />
             )}
           </div>
 

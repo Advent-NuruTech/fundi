@@ -1,10 +1,12 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatKes } from "@/lib/utils";
 import type { InventoryMaterial, Supplier, StockMovement, PurchaseOrder } from "@/types/domain";
+import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
 
 interface OverviewSectionProps {
   materials: InventoryMaterial[];
@@ -25,6 +27,8 @@ export function OverviewSection({
   stockValue,
   loading,
 }: OverviewSectionProps) {
+  const finPerms = useFinancePermissions();
+  const canSeeStockValue = finPerms.hasOwnerAccess || finPerms.canSeeInventoryValue;
   if (loading) {
     return (
       <div className="space-y-4">
@@ -62,7 +66,14 @@ export function OverviewSection({
         <Card>
           <CardContent className="pt-5">
             <p className="text-xs text-slate-500">Stock Value</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{formatKes(stockValue)}</p>
+            {canSeeStockValue ? (
+              <p className="mt-1 text-2xl font-semibold text-slate-900">{formatKes(stockValue)}</p>
+            ) : (
+              <div className="mt-2 flex items-center gap-1.5 text-slate-400">
+                <Lock className="h-4 w-4" />
+                <span className="text-sm font-medium">Owner only</span>
+              </div>
+            )}
           </CardContent>
         </Card>
         <Card>

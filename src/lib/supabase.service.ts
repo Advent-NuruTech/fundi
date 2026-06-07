@@ -3163,3 +3163,87 @@ export function dueTodayOrders(orders: Order[]) {
   return orders.filter((order) => order.dueDate <= now && order.stage !== "delivered");
 }
 
+// ─── MANAGER PERMISSIONS ───
+
+export async function saveManagerPermissions(
+  businessId: string,
+  managerUid: string,
+  permissions: import("@/types/domain").ManagerPermissions,
+  actorUid: string,
+  actorName: string,
+  previousPermissions?: import("@/types/domain").ManagerPermissions
+) {
+  const { data: bizData } = await supabase
+    .from("businesses")
+    .select("finance_access")
+    .eq("id", businessId)
+    .maybeSingle();
+
+  const currentAccess = (bizData?.finance_access as import("@/types/domain").FinanceAccessSettings) ?? {
+    coOwnerUids: [],
+    managerCanSeeWeekHistory: false,
+    managerCanSeeMonthHistory: false,
+    managerCanSeeYearHistory: false,
+    managerCanSeeOwnerKpis: false,
+    managerPermissions: {},
+  };
+
+  const updatedAccess = {
+    ...currentAccess,
+    managerPermissions: {
+      ...((currentAccess.managerPermissions as Record<string, unknown>) ?? {}),
+      [managerUid]: permissions,
+    },
+  };
+
+  const { error } = await supabase
+    .from("businesses")
+    .update({ finance_access: updatedAccess })
+    .eq("id", businessId);
+
+  if (error) throw error;
+
+  // Log the permission change to audit_logs
+  await supabase.from("audit_logs").insert({
+    business_id: businessId,
+    actor_uid: actorUid,
+    actor_name: actorName,
+    action: "update_manager_permissions",
+    target_uid: managerUid,
+    previous_value: previousPermissions ? JSON.stringify(previousPermissions) : null,
+    new_value: JSON.stringify(permissions),
+    created_at: new Date().toISOString(),
+  });
+}
+
+export async function fetchPermissionAuditLogs(businessId: string): Promise<Array<{
+  id: string;
+  actorName: string;
+  actorUid: string;
+  targetUid: string;
+  action: string;
+  previousValue: string | null;
+  newValue: string | null;
+  createdAt: string;
+}>> {
+  const { data } = await supabase
+    .from("audit_logs")
+    .select("*")
+    .eq("business_id", businessId)
+    .eq("action", "update_manager_permissions")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (!data) return [];
+  return (data as Record<string, unknown>[]).map((row) => ({
+    id: row.id as string,
+    actorName: (row.actor_name ?? "") as string,
+    actorUid: (row.actor_uid ?? "") as string,
+    targetUid: (row.target_uid ?? "") as string,
+    action: (row.action ?? "") as string,
+    previousValue: row.previous_value as string | null,
+    newValue: row.new_value as string | null,
+    createdAt: (row.created_at ?? "") as string,
+  }));
+}
+
