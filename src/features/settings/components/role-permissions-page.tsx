@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -415,17 +415,9 @@ export function RolePermissionsPage() {
         <div>
           <p className="font-semibold">Permissions only the business owner can access and modify this page.</p>
           <p className="mt-0.5 opacity-80">
-      
-
-
-
-Only the business owner can access and make changes on this page. 
-
-When a permission is turned off, the feature can only be used by owner
-
-Users can only see the information they have been allowed to access. 
-
-Private financial records and reports are protected and cannot be viewed by unauthorized users. </div>
+            Only the business owner can access and make changes on this page. When a permission is turned off, the feature can only be used by the owner. Users can only see the information they have been allowed to access. Private financial records and reports are protected and cannot be viewed by unauthorized users.
+          </p>
+        </div>
       </div>
 
       {/* Manager list */}
