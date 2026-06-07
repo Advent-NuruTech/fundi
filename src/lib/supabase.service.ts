@@ -504,6 +504,12 @@ export async function deactivateMember(businessId: string, memberUid: string, ac
   await supabase.from('profiles').update(payload).eq('id', memberUid);
 }
 
+export async function removeMemberFromBusiness(businessId: string, memberUid: string) {
+  await supabase.from('business_members').delete().eq('business_id', businessId).eq('profile_id', memberUid);
+  const payload = transformKeysToSnake({ active: false, lastActiveAt: new Date().toISOString() } as Record<string, unknown>);
+  await supabase.from('profiles').update(payload).eq('id', memberUid);
+}
+
 export async function updateMemberRoles(businessId: string, memberUid: string, roles: UserRole[]) {
   const cleanRoles = normalizedRoles(roles);
   const payload = transformKeysToSnake({ roles: cleanRoles, role: roleFromRoles(cleanRoles) } as Record<string, unknown>);
