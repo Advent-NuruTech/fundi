@@ -311,8 +311,8 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
     .eq('id', uid)
     .maybeSingle();
   if (!data) return null;
-  const camel = transformKeysToCamel<UserProfile & { id: string }>(data as Record<string, unknown>);
-  return { ...camel, uid: camel.id };
+  const camel = transformKeysToCamel<UserProfile & { id: string; photoUrl?: string }>(data as Record<string, unknown>);
+  return normalizeProfilePhoto({ ...camel, uid: camel.id });
 }
 
 export async function fetchUserProfileByEmail(email: string): Promise<UserProfile | null> {
@@ -322,8 +322,8 @@ export async function fetchUserProfileByEmail(email: string): Promise<UserProfil
     .eq('email', email)
     .maybeSingle();
   if (!data) return null;
-  const camel = transformKeysToCamel<UserProfile & { id: string }>(data as Record<string, unknown>);
-  return { ...camel, uid: camel.id };
+  const camel = transformKeysToCamel<UserProfile & { id: string; photoUrl?: string }>(data as Record<string, unknown>);
+  return normalizeProfilePhoto({ ...camel, uid: camel.id });
 }
 
 export async function fetchBusinessProfile(businessId: string): Promise<Business | null> {
@@ -445,10 +445,17 @@ export function listenCustomer(businessId: string, customerId: string, callback:
 
 // â”€â”€â”€ MEMBERS â”€â”€â”€
 
+function normalizeProfilePhoto<T extends { photoURL?: string }>(profile: T & { photoUrl?: string }): T {
+  if (!profile.photoURL && profile.photoUrl) {
+    (profile as Record<string, unknown>).photoURL = profile.photoUrl;
+  }
+  return profile;
+}
+
 function profileRowsToMembers(rows: Record<string, unknown>[]): UserProfile[] {
   return rows.map(row => {
-    const camel = transformKeysToCamel<UserProfile & { id: string }>(row);
-    return { ...camel, uid: camel.id };
+    const camel = transformKeysToCamel<UserProfile & { id: string; photoUrl?: string }>(row);
+    return normalizeProfilePhoto({ ...camel, uid: camel.id });
   });
 }
 

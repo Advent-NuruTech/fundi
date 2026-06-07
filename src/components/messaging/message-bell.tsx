@@ -3,19 +3,52 @@
 import { useEffect, useState } from "react";
 import { MessageSquare } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
-import { listenUnreadMessageCount } from "@/services/messaging.service";
+import { listenConversations } from "@/services/messaging.service";
 import { useRouter } from "next/navigation";
+import type { Conversation } from "@/types/domain";
+
+const READ_KEY = "fundiflow_conv_read";
+
+function loadReadMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(READ_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function isConvUnread(conv: Conversation, uid: string, readMap: Record<string, string>): boolean {
+  if (!conv.lastMessage) return false;
+  if (conv.lastMessage.senderUid === uid) return false;
+  const lastRead = readMap[conv.id];
+  if (!lastRead) return true;
+  return new Date(conv.updatedAt) > new Date(lastRead);
+}
 
 export function MessageBell() {
   const { user } = useAuth();
   const router = useRouter();
-  const [count, setCount] = useState(0);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [readMap, setReadMap] = useState<Record<string, string>>(loadReadMap);
 
   useEffect(() => {
     if (!user?.businessId || !user?.uid) return;
-    const unsub = listenUnreadMessageCount(user.businessId, user.uid, setCount);
-    return unsub;
+    return listenConversations(user.businessId, user.uid, setConversations);
   }, [user?.businessId, user?.uid]);
+
+  // Sync readMap when the messages page marks a conversation read
+  useEffect(() => {
+    const sync = () => setReadMap(loadReadMap());
+    window.addEventListener("fundiflow-conv-read", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      window.removeEventListener("fundiflow-conv-read", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, []);
+
+  const count = conversations.filter((c) => isConvUnread(c, user?.uid ?? "", readMap)).length;
 
   return (
     <button

@@ -186,14 +186,11 @@ export default function MessagesPage() {
   const [editingText, setEditingText] = useState("");
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [readMap, setReadMap] = useState<Record<string, string>>({});
+  // Lazy-init from localStorage so unread state is correct on first render
+  const [readMap, setReadMap] = useState<Record<string, string>>(loadReadMap);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setReadMap(loadReadMap());
-  }, []);
 
   useEffect(() => {
     if (!user?.businessId || !user?.uid) return;
@@ -221,7 +218,10 @@ export default function MessagesPage() {
       setShowNewChat(false);
       setEditingId(null);
       saveRead(convId);
-      setReadMap(loadReadMap());
+      const nextMap = loadReadMap();
+      setReadMap(nextMap);
+      // Notify the navbar bell so it updates its unread count immediately
+      window.dispatchEvent(new Event("fundiflow-conv-read"));
       if (user?.businessId && user?.uid) {
         markConversationRead(user.businessId, convId, user.uid).catch(() => {});
       }
@@ -395,7 +395,16 @@ export default function MessagesPage() {
   const otherParticipants =
     selectedConv?.participantProfiles.filter((p) => p.uid !== user?.uid) ?? [];
 
-  const totalUnread = conversations.filter((c) =>
+  // Deduplicate: for direct conversations keep only the most recent per participant pair
+  const deduplicatedConversations = conversations.filter((conv, idx, arr) => {
+    if (conv.type !== "direct") return true;
+    const key = [...conv.participants].sort().join(",");
+    return arr.findIndex(
+      (c) => c.type === "direct" && [...c.participants].sort().join(",") === key
+    ) === idx;
+  });
+
+  const totalUnread = deduplicatedConversations.filter((c) =>
     isConvUnread(c, user?.uid ?? "", readMap)
   ).length;
 
@@ -510,7 +519,7 @@ export default function MessagesPage() {
           </div>
         ) : (
           <div>
-            {conversations.length === 0 && (
+            {deduplicatedConversations.length === 0 && (
               <div className="p-8">
                 <EmptyState
                   icon={<MessageSquare className="h-8 w-8" />}
@@ -519,7 +528,7 @@ export default function MessagesPage() {
                 />
               </div>
             )}
-            {conversations
+            {deduplicatedConversations
               .filter((c) =>
                 memberSearch
                   ? (c.title ?? "")
