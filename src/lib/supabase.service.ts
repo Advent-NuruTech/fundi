@@ -1055,6 +1055,50 @@ export async function updateOrderProductionNotes(businessId: string, orderId: st
     .eq('business_id', businessId);
 }
 
+export async function updateOrderDetails(
+  businessId: string,
+  orderId: string,
+  fields: Partial<Pick<Order, "dueDate" | "designNotes" | "assignedTailorId" | "assignedTailorName" | "customerPhone">>
+) {
+  const now = new Date().toISOString();
+  await supabase
+    .from('orders')
+    .update({ ...transformKeysToSnake(fields as Record<string, unknown>), updated_at: now })
+    .eq('id', orderId)
+    .eq('business_id', businessId);
+}
+
+export async function updateOrderGarments(
+  businessId: string,
+  orderId: string,
+  garments: import("@/types/domain").OrderGarmentItem[]
+) {
+  const now = new Date().toISOString();
+  await supabase.from('order_garments').delete().eq('order_id', orderId);
+  if (garments.length > 0) {
+    await supabase.from('order_garments').insert(
+      garments.map((g, index) => transformKeysToSnake({
+        orderId, name: g.name, quantity: g.quantity,
+        agreedPrice: g.agreedPrice, styleNotes: g.styleNotes ?? "", sortOrder: index,
+      } as Record<string, unknown>))
+    );
+  }
+  const subtotal = garments.reduce((s, g) => s + g.agreedPrice * g.quantity, 0);
+  await supabase
+    .from('orders')
+    .update({ subtotal_amount: subtotal, updated_at: now })
+    .eq('id', orderId)
+    .eq('business_id', businessId);
+}
+
+export async function deleteFittingRecord(businessId: string, orderId: string, recordedAt: string) {
+  await supabase
+    .from('order_fitting_records')
+    .delete()
+    .eq('order_id', orderId)
+    .eq('created_at', recordedAt);
+}
+
 export async function appendOrderImageId(businessId: string, orderId: string, imageId: string) {
   await supabase
     .from('order_images')

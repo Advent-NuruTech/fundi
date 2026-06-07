@@ -1,52 +1,181 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import type { Order, InventoryMaterial } from "@/types/domain";
 import {
-  listenOrder,
-  updateOrderStage,
-  addFittingRecord,
-  updateOrderProductionNotes,
-  recordMaterialUsage,
-  listenMaterials,
-  updateOrderSmsFields,
-  logSmsEntry,
+  ChevronDown, ChevronUp, Edit2, Save, X, Plus, Trash2,
+  ImageIcon, Package, Scissors, User, FileText, Layers,
+  CheckCircle2, Circle, Clock, ArrowLeft, Phone, Mail,
+  ClipboardList, Shirt, AlertTriangle,
+} from "lucide-react";
+import type { Order, Customer, InventoryMaterial, OrderGarmentItem } from "@/types/domain";
+import {
+  listenOrder, listenCustomer, updateOrderStage,
+  addFittingRecord, updateOrderProductionNotes, recordMaterialUsage,
+  listenMaterials, updateOrderSmsFields, logSmsEntry,
+  updateOrderDetails, updateOrderGarments,
 } from "@/services/firestore.service";
 import { notifyOrderStageChanged, notifyOrderCompleted, notifyMaterialsConsumed } from "@/services/notification-catalog";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { sendSms } from "@/lib/sms/sendSms";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
-import { formatKes } from "@/lib/utils";
+import { formatKes, cn } from "@/lib/utils";
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function timeGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
   return "Good evening";
 }
 
 function orderLabel(order: Order): string {
-  const firstGarment = order.garments?.[0]?.name;
-  return firstGarment ? `${firstGarment} - ${order.orderNumber}` : order.orderNumber;
+  const first = order.garments?.[0]?.name;
+  return first ? `${first} - ${order.orderNumber}` : order.orderNumber;
 }
 
-const stages: Order["stage"][] = [
-  "cutting",
-  "stitching",
-  "fitting",
-  "finishing",
-  "ready_for_pickup",
-  "delivered",
+const STAGES: Array<{ key: Order["stage"]; label: string }> = [
+  { key: "cutting",          label: "Cutting" },
+  { key: "stitching",        label: "Stitching" },
+  { key: "fitting",          label: "Fitting" },
+  { key: "finishing",        label: "Finishing" },
+  { key: "ready_for_pickup", label: "Ready for Pickup" },
+  { key: "delivered",        label: "Delivered" },
 ];
+
+function stageColor(key: string) {
+  const map: Record<string, string> = {
+    cutting:          "bg-slate-500",
+    stitching:        "bg-blue-500",
+    fitting:          "bg-indigo-500",
+    finishing:        "bg-violet-500",
+    ready_for_pickup: "bg-emerald-500",
+    delivered:        "bg-green-600",
+  };
+  return map[key] ?? "bg-slate-400";
+}
+
+// ─── collapsible section ───────────────────────────────────────────────────────
+
+interface SectionProps {
+  title: string;
+  icon: React.ReactNode;
+  count?: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}
+
+function Section({ title, icon, count, defaultOpen = true, children, action }: SectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between px-4 py-3.5 sm:px-5">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex flex-1 items-center gap-2.5 text-left min-w-0"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+            {icon}
+          </span>
+          <span className="font-semibold text-slate-800 text-sm sm:text-base truncate">{title}</span>
+          {count != null && (
+            <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 shrink-0">
+              {count}
+            </span>
+          )}
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {action}
+          <button
+            onClick={() => setOpen((o) => !o)}
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          >
+            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── image lightbox ────────────────────────────────────────────────────────────
+
+function ImageLightbox({
+  images, index, onClose, onNavigate,
+}: {
+  images: string[];
+  index: number;
+  onClose: () => void;
+  onNavigate: (i: number) => void;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") onNavigate((index - 1 + images.length) % images.length);
+      if (e.key === "ArrowRight") onNavigate((index + 1) % images.length);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [index, images.length, onClose, onNavigate]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col items-center max-w-3xl w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute -top-10 right-0 rounded-full bg-white/10 p-1.5 text-white hover:bg-white/20 transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
+        <img
+          src={images[index]}
+          alt={`Reference image ${index + 1}`}
+          className="max-h-[75vh] w-auto rounded-xl object-contain"
+        />
+        {images.length > 1 && (
+          <div className="mt-4 flex items-center gap-4">
+            <button
+              onClick={() => onNavigate((index - 1 + images.length) % images.length)}
+              className="rounded-lg bg-white/15 px-4 py-2 text-white hover:bg-white/25 transition-colors"
+            >
+              ←
+            </button>
+            <span className="text-white/80 text-sm tabular-nums">
+              {index + 1} / {images.length}
+            </span>
+            <button
+              onClick={() => onNavigate((index + 1) % images.length)}
+              className="rounded-lg bg-white/15 px-4 py-2 text-white hover:bg-white/25 transition-colors"
+            >
+              →
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── usage row type ────────────────────────────────────────────────────────────
 
 interface UsageRow {
   materialId: string;
@@ -55,24 +184,54 @@ interface UsageRow {
   unit: string;
 }
 
+// ─── main component ────────────────────────────────────────────────────────────
+
 export function OrderDetailModulePage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const { businessId, user, ready } = useBusinessContext();
   const { business } = useAuth();
+
+  // Data
   const [order, setOrder] = useState<Order | null>(null);
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [materials, setMaterials] = useState<InventoryMaterial[]>([]);
+
+  // Lightbox
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Order edit mode
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [editGarments, setEditGarments] = useState<OrderGarmentItem[]>([]);
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editDesignNotes, setEditDesignNotes] = useState("");
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  // Fitting
+  const [showFittingForm, setShowFittingForm] = useState(false);
   const [fittingNote, setFittingNote] = useState("");
-  const [productionNotes, setProductionNotes] = useState("");
-  const [usageRows, setUsageRows] = useState<UsageRow[]>([{ materialId: "", materialName: "", quantityUsed: 0, unit: "" }]);
-  const [recordingUsage, setRecordingUsage] = useState(false);
   const [savingFitting, setSavingFitting] = useState(false);
+
+  // Production notes
+  const [productionNotes, setProductionNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+
+  // Material usage form
+  const [showUsageForm, setShowUsageForm] = useState(false);
+  const [usageRows, setUsageRows] = useState<UsageRow[]>([
+    { materialId: "", materialName: "", quantityUsed: 0, unit: "" },
+  ]);
+  const [recordingUsage, setRecordingUsage] = useState(false);
+
+  // Stage
   const [stageLoading, setStageLoading] = useState<string | null>(null);
+
+  // Delay SMS
   const [delaySmsLoading, setDelaySmsLoading] = useState(false);
   const [expectedReadyDate, setExpectedReadyDate] = useState("");
   const [delayReason, setDelayReason] = useState("");
 
+  // Subscriptions
   useEffect(() => {
     if (!ready || !orderId) return;
     const unsub = listenOrder(businessId, orderId, setOrder);
@@ -81,74 +240,62 @@ export function OrderDetailModulePage() {
   }, [businessId, orderId, ready]);
 
   useEffect(() => {
-    if (order?.productionNotes) setProductionNotes(order.productionNotes);
+    if (!ready || !order?.customerId || !businessId) return;
+    const unsub = listenCustomer(businessId, order.customerId, setCustomer);
+    return () => unsub();
+  }, [businessId, order?.customerId, ready]);
+
+  // Sync production notes from order
+  useEffect(() => {
+    if (order?.productionNotes != null) setProductionNotes(order.productionNotes);
   }, [order?.productionNotes]);
 
-  if (!order) {
-    return <div className="text-sm text-slate-500">Order not found.</div>;
-  }
+  // Enter edit mode – prime state from current order
+  const startEditing = useCallback(() => {
+    if (!order) return;
+    setEditGarments(order.garments.map((g) => ({ ...g })));
+    setEditDueDate(order.dueDate);
+    setEditDesignNotes(order.designNotes ?? "");
+    setEditingDetails(true);
+  }, [order]);
 
-  const materialOptions: SearchableOption[] = materials.map((m) => ({
-    value: m.id,
-    label: `${m.name} (${m.quantity} ${m.unitName} available)`,
-  }));
+  // ── handlers ────────────────────────────────────────────────────────────────
 
-  const updateUsageRow = (index: number, field: keyof UsageRow, value: string | number) => {
-    const updated = [...usageRows];
-    if (field === "materialId") {
-      const mat = materials.find((m) => m.id === value);
-      updated[index].materialId = value as string;
-      updated[index].materialName = mat?.name ?? "";
-      updated[index].unit = mat?.unitName ?? "";
-    } else if (field === "quantityUsed") {
-      updated[index].quantityUsed = value as number;
-    }
-    setUsageRows(updated);
-  };
-
-  const addUsageRow = () => {
-    setUsageRows([...usageRows, { materialId: "", materialName: "", quantityUsed: 0, unit: "" }]);
-  };
-
-  const removeUsageRow = (index: number) => {
-    if (usageRows.length === 1) return;
-    setUsageRows(usageRows.filter((_, i) => i !== index));
-  };
-
-  const handleRecordUsage = async () => {
-    if (!user || recordingUsage) return;
-    const validRows = usageRows.filter((r) => r.materialId && r.quantityUsed > 0);
-    if (validRows.length === 0) {
-      toast.error("Add at least one material with quantity");
+  const handleSaveDetails = async () => {
+    if (!order || savingDetails) return;
+    const validGarments = editGarments.filter((g) => g.name.trim());
+    if (validGarments.length === 0) {
+      toast.error("At least one garment is required");
       return;
     }
-    setRecordingUsage(true);
+    setSavingDetails(true);
     try {
-      await recordMaterialUsage(
-        businessId,
-        orderId,
-        validRows.map((r) => ({
-          materialId: r.materialId,
-          materialName: r.materialName,
-          quantityUsed: r.quantityUsed,
-          unit: r.unit,
-          recordedByUid: user.uid,
-          recordedByName: user.displayName,
-        })),
-        { uid: user.uid, name: user.displayName }
-      );
-      await notifyMaterialsConsumed(businessId, order.orderNumber, orderId, user.uid);
-      setUsageRows([{ materialId: "", materialName: "", quantityUsed: 0, unit: "" }]);
-      toast.success("Material usage recorded");
+      await updateOrderGarments(businessId, orderId, validGarments);
+      await updateOrderDetails(businessId, orderId, {
+        dueDate: editDueDate || order.dueDate,
+        designNotes: editDesignNotes,
+      });
+      toast.success("Order details updated");
+      setEditingDetails(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not record material usage");
+      toast.error(err instanceof Error ? err.message : "Could not save changes");
     } finally {
-      setRecordingUsage(false);
+      setSavingDetails(false);
     }
+  };
+
+  const updateGarmentField = (
+    index: number,
+    field: keyof OrderGarmentItem,
+    value: string | number
+  ) => {
+    const updated = [...editGarments];
+    updated[index] = { ...updated[index], [field]: value };
+    setEditGarments(updated);
   };
 
   const handleStageChange = async (stage: Order["stage"]) => {
-    if (stageLoading) return;
+    if (!order || stageLoading) return;
     setStageLoading(stage);
     try {
       await updateOrderStage(businessId, orderId, stage);
@@ -161,33 +308,31 @@ export function OrderDetailModulePage() {
       }
       toast.success("Stage updated");
 
-      // Auto-send pickup SMS when order reaches ready_for_pickup
+      // Send pickup SMS — no sender param (same as delay SMS which works)
       if (stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent) {
-        const sender = business?.smsSenderId || undefined;
-        const customerName = order.customerName || "Customer";
-        const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
+        const name = order.customerName || "Customer";
+        const message = `${timeGreeting()} ${name},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
         try {
-          const result = await sendSms(order.customerPhone, message, sender);
+          const result = await sendSms(order.customerPhone, message);
           if (result.success) {
             await updateOrderSmsFields(businessId, orderId, {
               readyPickupSmsSent: true,
               readyPickupSmsSentAt: new Date().toISOString(),
             });
             await logSmsEntry(businessId, {
-              orderId,
-              recipient: order.customerPhone,
-              message,
-              type: "ready_for_pickup",
-              status: "success",
-              response: result.response,
+              orderId, recipient: order.customerPhone, message,
+              type: "ready_for_pickup", status: "success", response: result.response,
             });
             toast.success("Pickup SMS sent to customer");
           } else {
-            await logSmsEntry(businessId, { orderId, recipient: order.customerPhone, message, type: "ready_for_pickup", status: "failed", response: result.error });
+            await logSmsEntry(businessId, {
+              orderId, recipient: order.customerPhone, message,
+              type: "ready_for_pickup", status: "failed", response: result.error,
+            });
             toast.warning("Stage updated — SMS failed: " + result.error);
           }
         } catch {
-          toast.warning("Stage updated but SMS failed");
+          toast.warning("Stage updated but SMS could not be sent");
         }
       }
     } catch {
@@ -198,21 +343,16 @@ export function OrderDetailModulePage() {
   };
 
   const handleDelaySms = async () => {
-    if (!expectedReadyDate || !order.customerPhone || delaySmsLoading) {
+    if (!order || !expectedReadyDate || !order.customerPhone || delaySmsLoading) {
       if (!expectedReadyDate) toast.error("Select the expected ready date");
       return;
     }
     setDelaySmsLoading(true);
-    const businessName = business?.name ?? "FundiFlow";
-    const customerName = order.customerName || "Customer";
     const formattedDate = new Date(expectedReadyDate).toLocaleDateString("en-KE", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
     const reasonLine = delayReason.trim() ? `\nReason: ${delayReason.trim()}\n` : "";
-    const message = `${timeGreeting()} ${customerName},\n\nYour order "${orderLabel(order)}" has been delayed.\n${reasonLine}\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${businessName}.`;
+    const message = `${timeGreeting()} ${order.customerName || "Customer"},\n\nYour order "${orderLabel(order)}" has been delayed.\n${reasonLine}\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${business?.name ?? "us"}.`;
     try {
       const result = await sendSms(order.customerPhone, message);
       if (result.success) {
@@ -221,12 +361,18 @@ export function OrderDetailModulePage() {
           delayNotificationSentAt: new Date().toISOString(),
           delayReason: delayReason.trim() || null,
         });
-        await logSmsEntry(businessId, { orderId, recipient: order.customerPhone, message, type: "delay_notification", status: "success", response: result.response });
+        await logSmsEntry(businessId, {
+          orderId, recipient: order.customerPhone, message,
+          type: "delay_notification", status: "success", response: result.response,
+        });
         toast.success("Delay notification sent");
         setExpectedReadyDate("");
         setDelayReason("");
       } else {
-        await logSmsEntry(businessId, { orderId, recipient: order.customerPhone, message, type: "delay_notification", status: "failed", response: result.error });
+        await logSmsEntry(businessId, {
+          orderId, recipient: order.customerPhone, message,
+          type: "delay_notification", status: "failed", response: result.error,
+        });
         toast.warning("Failed to send delay notification");
       }
     } catch {
@@ -236,256 +382,752 @@ export function OrderDetailModulePage() {
     }
   };
 
-  const stageIndex = stages.indexOf(order.stage);
-  const orderImages: string[] = (order as Order & { imageUrls?: string[] }).imageUrls ?? [];
+  const handleSaveFitting = async () => {
+    if (!user || !fittingNote.trim() || savingFitting) return;
+    setSavingFitting(true);
+    try {
+      await addFittingRecord(businessId, orderId, {
+        notes: fittingNote,
+        byUid: user.uid,
+        byName: user.displayName,
+      });
+      setFittingNote("");
+      setShowFittingForm(false);
+      toast.success("Fitting note added");
+    } catch {
+      toast.error("Could not save fitting note");
+    } finally {
+      setSavingFitting(false);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    setSavingNotes(true);
+    try {
+      await updateOrderProductionNotes(businessId, orderId, productionNotes);
+      toast.success("Production notes saved");
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  const updateUsageRow = (index: number, field: keyof UsageRow, value: string | number) => {
+    const updated = [...usageRows];
+    if (field === "materialId") {
+      const mat = materials.find((m) => m.id === value);
+      updated[index] = {
+        ...updated[index],
+        materialId: value as string,
+        materialName: mat?.name ?? "",
+        unit: mat?.unitName ?? "",
+      };
+    } else {
+      updated[index] = { ...updated[index], [field]: value };
+    }
+    setUsageRows(updated);
+  };
+
+  const handleRecordUsage = async () => {
+    if (!user || recordingUsage) return;
+    const valid = usageRows.filter((r) => r.materialId && r.quantityUsed > 0);
+    if (valid.length === 0) {
+      toast.error("Add at least one material with quantity");
+      return;
+    }
+    setRecordingUsage(true);
+    try {
+      await recordMaterialUsage(
+        businessId, orderId,
+        valid.map((r) => ({
+          materialId: r.materialId, materialName: r.materialName,
+          quantityUsed: r.quantityUsed, unit: r.unit,
+          recordedByUid: user.uid, recordedByName: user.displayName,
+        })),
+        { uid: user.uid, name: user.displayName }
+      );
+      if (order) await notifyMaterialsConsumed(businessId, order.orderNumber, orderId, user.uid);
+      setUsageRows([{ materialId: "", materialName: "", quantityUsed: 0, unit: "" }]);
+      setShowUsageForm(false);
+      toast.success("Material usage recorded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not record material usage");
+    } finally {
+      setRecordingUsage(false);
+    }
+  };
+
+  // ── render guards ────────────────────────────────────────────────────────────
+
+  if (!ready || !order) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600 mb-4" />
+        <p className="text-sm text-slate-500">Loading order…</p>
+      </div>
+    );
+  }
+
+  // ── derived values ───────────────────────────────────────────────────────────
+
+  const orderImages: string[] = order.imageUrls ?? [];
+  const stageIndex = STAGES.findIndex((s) => s.key === order.stage);
+  const materialOptions: SearchableOption[] = materials.map((m) => ({
+    value: m.id,
+    label: `${m.name} (${m.quantity} ${m.unitName} avail.)`,
+  }));
+
+  const paymentBadgeVariant =
+    order.paymentStatus === "paid" ? "success" :
+    order.paymentStatus === "partial" ? "warning" : "danger";
+
+  // ── render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <CardTitle>{order.orderNumber} — {order.customerName}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex flex-wrap gap-2">
-            <Badge>{order.stage.replaceAll("_", " ")}</Badge>
-            <Badge variant={order.balanceAmount > 0 ? "warning" : "success"}>{order.paymentStatus}</Badge>
-            <Badge>Due {order.dueDate}</Badge>
-            {order.assignedTailorName && <Badge variant="default">Tailor: {order.assignedTailorName}</Badge>}
-          </div>
+    <>
+      {/* Image lightbox */}
+      {lightboxIndex !== null && orderImages.length > 0 && (
+        <ImageLightbox
+          images={orderImages}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onNavigate={setLightboxIndex}
+        />
+      )}
 
-          <div className="grid gap-1 text-sm">
-            <p>Total: <span className="font-semibold">{formatKes(order.subtotalAmount)}</span></p>
-            <p>Paid: <span className="font-semibold text-emerald-600">{formatKes(order.amountPaid)}</span></p>
-            <p>Balance: <span className={`font-semibold ${order.balanceAmount > 0 ? "text-rose-600" : "text-slate-500"}`}>{formatKes(order.balanceAmount)}</span></p>
-            {order.garments?.map((g, i) => (
-              <p key={i} className="text-xs text-slate-500">
-                {g.name} × {g.quantity} @ {formatKes(g.agreedPrice)}
-              </p>
-            ))}
-          </div>
-
-          {/* Order reference images */}
-          {orderImages.length > 0 && (
-            <div>
-              <p className="mb-2 text-sm font-medium">Reference Images</p>
-              <div className="flex flex-wrap gap-3">
-                {orderImages.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                    <img
-                      src={url}
-                      alt={`Order reference ${i + 1}`}
-                      className="h-32 w-auto rounded-xl object-contain border border-slate-200 bg-slate-50"
-                    />
-                  </a>
-                ))}
-              </div>
+      <div className="space-y-4 pb-10">
+        {/* ── Page Header ── */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
+              <a href="/orders" className="flex items-center gap-1 hover:text-slate-700 transition-colors">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Orders
+              </a>
+              <span>/</span>
+              <span className="text-slate-700 font-medium truncate">{order.orderNumber}</span>
             </div>
-          )}
-
-          {/* Materials used */}
-          {order.materialUsage && order.materialUsage.length > 0 && (
-            <div>
-              <p className="mb-2 text-sm font-medium">Materials Used</p>
-              <div className="space-y-2">
-                {order.materialUsage.map((usage, index) => (
-                  <div key={index} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <Link className="font-medium text-emerald-700 hover:text-emerald-600" href={`/inventory/materials/${usage.materialId}`}>
-                        {usage.materialName}
-                      </Link>
-                      <span className="font-semibold text-slate-700">{usage.quantityUsed} {usage.unit}</span>
-                    </div>
-                    <p className="text-xs text-slate-400">Recorded by {usage.recordedByName}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Fittings */}
-          <div>
-            <p className="mb-2 text-sm font-medium">Fittings / adjustments</p>
-            <div className="space-y-2">
-              {order.fittingRecords?.map((record, index) => (
-                <div key={index} className="rounded-xl border border-slate-200 p-3 text-sm">
-                  <p>{record.notes}</p>
-                  <p className="text-xs text-slate-500">{record.byName}</p>
-                </div>
-              ))}
-            </div>
-            <Textarea
-              value={fittingNote}
-              onChange={(e) => setFittingNote(e.target.value)}
-              placeholder="Record fitting adjustment"
-              className="mt-3"
-            />
-            <Button
-              className="mt-2"
-              disabled={savingFitting || !fittingNote.trim()}
-              onClick={async () => {
-                if (!user) return;
-                setSavingFitting(true);
-                try {
-                  await addFittingRecord(businessId, orderId, {
-                    notes: fittingNote,
-                    byUid: user.uid,
-                    byName: user.displayName,
-                  });
-                  setFittingNote("");
-                  toast.success("Fitting note added");
-                } catch {
-                  toast.error("Could not save fitting note");
-                } finally {
-                  setSavingFitting(false);
-                }
-              }}
-            >
-              {savingFitting ? "Saving..." : "Save fitting note"}
-            </Button>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">
+              {order.customerName}
+            </h1>
+            <p className="text-sm text-slate-500 mt-0.5">Order {order.orderNumber}</p>
           </div>
-
-          {/* Production notes */}
-          <div>
-            <p className="mb-2 text-sm font-medium">Production notes</p>
-            <Textarea
-              value={productionNotes}
-              onChange={(e) => setProductionNotes(e.target.value)}
-              placeholder="Cutting notes, stitching details, pending blockers..."
-            />
-            <Button
-              className="mt-2"
-              disabled={savingNotes}
-              onClick={async () => {
-                setSavingNotes(true);
-                try {
-                  await updateOrderProductionNotes(businessId, orderId, productionNotes);
-                  toast.success("Production notes saved");
-                } finally {
-                  setSavingNotes(false);
-                }
-              }}
-            >
-              {savingNotes ? "Saving..." : "Save notes"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
-        {/* Production stage */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Production Stage</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {stages.map((stage, i) => (
-              <Button
-                key={stage}
-                variant={order.stage === stage ? "default" : "outline"}
-                className={`w-full justify-start ${i < stageIndex ? "opacity-50 line-through" : ""}`}
-                disabled={i < stageIndex || stageLoading !== null}
-                onClick={() => handleStageChange(stage)}
-              >
-                {stageLoading === stage ? "Updating..." : stage.replaceAll("_", " ")}
-                {stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent && (
-                  <span className="ml-auto text-xs opacity-60">+ SMS</span>
-                )}
-              </Button>
-            ))}
-            {order.readyPickupSmsSent && (
-              <p className="text-xs text-slate-400 text-center pt-1">Pickup SMS sent ✓</p>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Badge className={cn("capitalize text-white border-0", stageColor(order.stage))}>
+              {order.stage.replaceAll("_", " ")}
+            </Badge>
+            <Badge variant={paymentBadgeVariant as "success" | "warning" | "danger"} className="capitalize">
+              {order.paymentStatus.replaceAll("_", " ")}
+            </Badge>
+            {order.balanceAmount > 0 && (
+              <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-600">
+                Bal: {formatKes(order.balanceAmount)}
+              </span>
             )}
-          </CardContent>
-        </Card>
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+              Due {new Date(order.dueDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}
+            </span>
+          </div>
+        </div>
 
-        {/* Record materials used */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Record Materials Used</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Record which materials and quantities were consumed for this order.
-            </p>
-            {usageRows.map((row, index) => (
-              <div key={index} className="grid gap-2 rounded-xl border p-2">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2">
-                    <SearchableSelect
-                      options={materialOptions}
-                      value={row.materialId}
-                      onChange={(v) => updateUsageRow(index, "materialId", v)}
-                      placeholder="Select material"
+        {/* ── Main Layout ── */}
+        <div className="grid gap-4 lg:grid-cols-3">
+
+          {/* LEFT COLUMN */}
+          <div className="space-y-4 lg:col-span-2">
+
+            {/* ORDER DETAILS */}
+            <Section
+              title="Order Details"
+              icon={<Shirt className="h-4 w-4" />}
+              action={
+                !editingDetails ? (
+                  <button
+                    onClick={startEditing}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                ) : null
+              }
+            >
+              {!editingDetails ? (
+                /* ── View mode ── */
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Due Date</p>
+                      <p className="text-sm font-semibold text-slate-800">
+                        {new Date(order.dueDate).toLocaleDateString("en-KE", { weekday: "short", day: "numeric", month: "long", year: "numeric" })}
+                      </p>
+                    </div>
+                    {order.assignedTailorName && (
+                      <div>
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Assigned Tailor</p>
+                        <p className="text-sm font-semibold text-slate-800">{order.assignedTailorName}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Total Amount</p>
+                      <p className="text-lg font-bold text-slate-900">{formatKes(order.subtotalAmount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Payment</p>
+                      <p className="text-sm text-slate-700">
+                        Paid: <span className="font-semibold text-emerald-600">{formatKes(order.amountPaid)}</span>
+                        {order.balanceAmount > 0 && (
+                          <> · Balance: <span className="font-semibold text-rose-600">{formatKes(order.balanceAmount)}</span></>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Garments */}
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Garments</p>
+                    <div className="space-y-2">
+                      {order.garments.map((g, i) => (
+                        <div key={i} className="flex items-start justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-slate-800 text-sm">{g.name} <span className="text-slate-400">× {g.quantity}</span></p>
+                            {g.styleNotes && <p className="text-xs text-slate-500 mt-0.5">{g.styleNotes}</p>}
+                          </div>
+                          <p className="font-semibold text-slate-700 text-sm ml-3 shrink-0">{formatKes(g.agreedPrice)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Design notes */}
+                  {order.designNotes && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Design Notes</p>
+                      <p className="text-sm text-slate-700 bg-slate-50 rounded-xl px-3 py-2.5 whitespace-pre-line">
+                        {order.designNotes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ── Edit mode ── */
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 mb-1 block">Due Date</label>
+                      <Input
+                        type="date"
+                        value={editDueDate}
+                        onChange={(e) => setEditDueDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Editable garments */}
+                  <div>
+                    <p className="text-xs font-medium text-slate-600 mb-2">Garments</p>
+                    <div className="space-y-2">
+                      {editGarments.map((g, i) => (
+                        <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                              <Input
+                                placeholder="Garment name"
+                                value={g.name}
+                                onChange={(e) => updateGarmentField(i, "name", e.target.value)}
+                              />
+                            </div>
+                            <Input
+                              type="number"
+                              placeholder="Qty"
+                              min={1}
+                              value={g.quantity}
+                              onChange={(e) => updateGarmentField(i, "quantity", Number(e.target.value))}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              type="number"
+                              placeholder="Price (KES)"
+                              step="0.01"
+                              value={g.agreedPrice || ""}
+                              onChange={(e) => updateGarmentField(i, "agreedPrice", Number(e.target.value))}
+                            />
+                            <Input
+                              placeholder="Style notes (optional)"
+                              value={g.styleNotes ?? ""}
+                              onChange={(e) => updateGarmentField(i, "styleNotes", e.target.value)}
+                            />
+                          </div>
+                          {editGarments.length > 1 && (
+                            <button
+                              onClick={() => setEditGarments(editGarments.filter((_, idx) => idx !== i))}
+                              className="flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Remove garment
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 w-full"
+                      onClick={() => setEditGarments([...editGarments, { name: "", quantity: 1, agreedPrice: 0 }])}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add garment
+                    </Button>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 mb-1 block">Design Notes</label>
+                    <Textarea
+                      placeholder="Design instructions, style details..."
+                      value={editDesignNotes}
+                      onChange={(e) => setEditDesignNotes(e.target.value)}
+                      rows={3}
                     />
                   </div>
-                  <div>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Qty"
-                      value={row.quantityUsed || ""}
-                      onChange={(e) => updateUsageRow(index, "quantityUsed", Number(e.target.value))}
-                    />
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      className="flex-1"
+                      disabled={savingDetails}
+                      onClick={handleSaveDetails}
+                    >
+                      <Save className="h-4 w-4 mr-1.5" />
+                      {savingDetails ? "Saving…" : "Save Changes"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setEditingDetails(false)}
+                      disabled={savingDetails}
+                    >
+                      <X className="h-4 w-4 mr-1.5" /> Cancel
+                    </Button>
                   </div>
                 </div>
-                {row.unit && <p className="text-xs text-slate-400">Unit: {row.unit}</p>}
-                {usageRows.length > 1 && (
-                  <Button size="sm" variant="ghost" className="text-xs text-rose-500" onClick={() => removeUsageRow(index)}>
-                    Remove
+              )}
+            </Section>
+
+            {/* CUSTOMER INFO */}
+            <Section title="Customer" icon={<User className="h-4 w-4" />}>
+              <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Name</p>
+                    <p className="text-sm font-semibold text-slate-800">{order.customerName}</p>
+                  </div>
+                  {order.customerPhone && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Phone</p>
+                      <a
+                        href={`tel:${order.customerPhone}`}
+                        className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                        {order.customerPhone}
+                      </a>
+                    </div>
+                  )}
+                  {customer?.email && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Email</p>
+                      <a
+                        href={`mailto:${customer.email}`}
+                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-800 transition-colors"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        {customer.email}
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {customer?.preferences && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Preferences</p>
+                    <p className="text-sm text-slate-700 bg-emerald-50 rounded-xl px-3 py-2.5 whitespace-pre-line border border-emerald-100">
+                      {customer.preferences}
+                    </p>
+                  </div>
+                )}
+
+                {customer?.notes && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Notes</p>
+                    <p className="text-sm text-slate-700 bg-amber-50 rounded-xl px-3 py-2.5 whitespace-pre-line border border-amber-100">
+                      {customer.notes}
+                    </p>
+                  </div>
+                )}
+
+                {customer && (
+                  <a
+                    href={`/customers/${customer.id}`}
+                    className="inline-flex items-center gap-1.5 text-xs text-emerald-600 font-medium hover:text-emerald-700 transition-colors"
+                  >
+                    View full customer profile →
+                  </a>
+                )}
+              </div>
+            </Section>
+
+            {/* REFERENCE IMAGES */}
+            {orderImages.length > 0 && (
+              <Section
+                title="Reference Images"
+                icon={<ImageIcon className="h-4 w-4" />}
+                count={orderImages.length}
+                defaultOpen
+              >
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {orderImages.map((url, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setLightboxIndex(i)}
+                      className="group relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50 hover:border-emerald-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
+                    >
+                      <img
+                        src={url}
+                        alt={`Reference ${i + 1}`}
+                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors duration-200">
+                        <span className="scale-0 group-hover:scale-100 transition-transform duration-200 text-white font-medium text-xs bg-black/60 px-2 py-1 rounded-md">
+                          View
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {/* FABRIC SELECTIONS */}
+            {order.fabricSelections && order.fabricSelections.length > 0 && (
+              <Section
+                title="Fabric Selections"
+                icon={<Layers className="h-4 w-4" />}
+                count={order.fabricSelections.length}
+                defaultOpen
+              >
+                <div className="space-y-2">
+                  {order.fabricSelections.map((fab, i) => (
+                    <div key={i} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{fab.materialName}</p>
+                        {fab.color && <p className="text-xs text-slate-500">Color: {fab.color}</p>}
+                      </div>
+                      <p className="text-sm font-semibold text-slate-700 shrink-0">{fab.metersRequired} m</p>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {/* FITTINGS */}
+            <Section
+              title="Fittings & Adjustments"
+              icon={<Scissors className="h-4 w-4" />}
+              count={order.fittingRecords?.length ?? 0}
+            >
+              <div className="space-y-3">
+                {(order.fittingRecords?.length ?? 0) === 0 && (
+                  <p className="text-sm text-slate-400 text-center py-3">No fitting records yet.</p>
+                )}
+                {order.fittingRecords?.map((record, i) => (
+                  <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                    <p className="text-sm text-slate-800 whitespace-pre-line">{record.notes}</p>
+                    {record.adjustmentSummary && (
+                      <p className="text-xs text-slate-500 mt-1 italic">{record.adjustmentSummary}</p>
+                    )}
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-slate-400">{record.byName}</p>
+                      {record.date && (
+                        <p className="text-xs text-slate-400">
+                          {new Date(record.date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {showFittingForm ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+                    <Textarea
+                      placeholder="Fitting notes — what was adjusted, measurements taken, feedback..."
+                      value={fittingNote}
+                      onChange={(e) => setFittingNote(e.target.value)}
+                      rows={3}
+                      className="bg-white"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={savingFitting || !fittingNote.trim()}
+                        onClick={handleSaveFitting}
+                      >
+                        {savingFitting ? "Saving…" : "Save Note"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setShowFittingForm(false); setFittingNote(""); }}
+                        disabled={savingFitting}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowFittingForm(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Fitting Note
                   </Button>
                 )}
               </div>
-            ))}
-            <Button size="sm" variant="outline" className="w-full" onClick={addUsageRow}>
-              Add another material
-            </Button>
-            <Button size="sm" className="w-full" disabled={recordingUsage} onClick={handleRecordUsage}>
-              {recordingUsage ? "Saving..." : "Save Material Usage"}
-            </Button>
-          </CardContent>
-        </Card>
+            </Section>
 
-        {/* Delay notification */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Delay Notification</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Notify the customer if the order will be delayed. SMS is sent immediately on click.
-            </p>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">New expected ready date</label>
-              <Input
-                type="date"
-                value={expectedReadyDate}
-                onChange={(e) => setExpectedReadyDate(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Reason (optional)</label>
-              <Textarea
-                placeholder="e.g. fabric delivery delay, machine repair..."
-                value={delayReason}
-                onChange={(e) => setDelayReason(e.target.value)}
-                rows={2}
-              />
-            </div>
-            <Button
-              className="w-full"
-              disabled={delaySmsLoading || order.deliveryStatus === "picked" || !expectedReadyDate}
-              onClick={handleDelaySms}
+            {/* PRODUCTION NOTES */}
+            <Section
+              title="Production Notes"
+              icon={<ClipboardList className="h-4 w-4" />}
+              defaultOpen={!!order.productionNotes}
             >
-              {delaySmsLoading ? "Sending SMS..." : "Send Delay Notification"}
-            </Button>
-            {order.delayNotificationSentAt && (
-              <p className="text-xs text-slate-400 text-center">
-                Last sent: {new Date(order.delayNotificationSentAt).toLocaleString("en-KE")}
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="Cutting notes, stitching details, pending blockers, special instructions..."
+                  value={productionNotes}
+                  onChange={(e) => setProductionNotes(e.target.value)}
+                  rows={4}
+                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={savingNotes}
+                  onClick={handleSaveNotes}
+                >
+                  <Save className="h-3.5 w-3.5 mr-1.5" />
+                  {savingNotes ? "Saving…" : "Save Notes"}
+                </Button>
+              </div>
+            </Section>
+
+            {/* MATERIALS USED */}
+            <Section
+              title="Materials Used"
+              icon={<Package className="h-4 w-4" />}
+              count={order.materialUsage?.length ?? 0}
+              defaultOpen={(order.materialUsage?.length ?? 0) > 0}
+            >
+              <div className="space-y-3">
+                {(order.materialUsage?.length ?? 0) === 0 && !showUsageForm && (
+                  <p className="text-sm text-slate-400 text-center py-2">No materials recorded yet.</p>
+                )}
+
+                {(order.materialUsage?.length ?? 0) > 0 && (
+                  <div className="space-y-2">
+                    {order.materialUsage.map((usage, i) => (
+                      <div key={i} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-800 truncate">{usage.materialName}</p>
+                          <p className="text-xs text-slate-400">By {usage.recordedByName}</p>
+                        </div>
+                        <p className="text-sm font-bold text-emerald-700 ml-3 shrink-0">
+                          {usage.quantityUsed} {usage.unit}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {showUsageForm ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                    <p className="text-xs font-medium text-slate-600">Record materials consumed for this order</p>
+                    {usageRows.map((row, index) => (
+                      <div key={index} className="space-y-2 rounded-xl border border-slate-200 bg-white p-2.5">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2">
+                            <SearchableSelect
+                              options={materialOptions}
+                              value={row.materialId}
+                              onChange={(v) => updateUsageRow(index, "materialId", v)}
+                              placeholder="Select material"
+                            />
+                          </div>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Qty"
+                            value={row.quantityUsed || ""}
+                            onChange={(e) => updateUsageRow(index, "quantityUsed", Number(e.target.value))}
+                          />
+                        </div>
+                        {row.unit && (
+                          <p className="text-xs text-slate-400">Unit: {row.unit}</p>
+                        )}
+                        {usageRows.length > 1 && (
+                          <button
+                            onClick={() => setUsageRows(usageRows.filter((_, i) => i !== index))}
+                            className="flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 transition-colors"
+                          >
+                            <Trash2 className="h-3 w-3" /> Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setUsageRows([...usageRows, { materialId: "", materialName: "", quantityUsed: 0, unit: "" }])}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add material
+                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={recordingUsage}
+                        onClick={handleRecordUsage}
+                      >
+                        {recordingUsage ? "Saving…" : "Save Usage"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setShowUsageForm(false); setUsageRows([{ materialId: "", materialName: "", quantityUsed: 0, unit: "" }]); }}
+                        disabled={recordingUsage}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowUsageForm(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" /> Record Material Usage
+                  </Button>
+                )}
+              </div>
+            </Section>
+          </div>
+
+          {/* RIGHT COLUMN — sticky sidebar on desktop */}
+          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+
+            {/* PRODUCTION STAGE */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50">
+                  <FileText className="h-4 w-4 text-slate-500" />
+                </span>
+                Production Stage
+              </h3>
+              <div className="space-y-1">
+                {STAGES.map((s, i) => {
+                  const isCurrent = order.stage === s.key;
+                  const isDone = i < stageIndex;
+                  const isFuture = i > stageIndex;
+                  return (
+                    <button
+                      key={s.key}
+                      disabled={isDone || stageLoading !== null}
+                      onClick={() => !isDone && handleStageChange(s.key)}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+                        isCurrent
+                          ? cn("text-white shadow-sm", stageColor(s.key))
+                          : isDone
+                          ? "text-slate-400 cursor-default"
+                          : "text-slate-600 hover:bg-slate-50 border border-transparent hover:border-slate-200"
+                      )}
+                    >
+                      {isDone ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                      ) : isCurrent ? (
+                        <div className="h-4 w-4 shrink-0 rounded-full bg-white/30 flex items-center justify-center">
+                          <div className="h-2 w-2 rounded-full bg-white" />
+                        </div>
+                      ) : (
+                        <Circle className="h-4 w-4 shrink-0 text-slate-300" />
+                      )}
+                      <span className={isDone ? "line-through" : ""}>
+                        {stageLoading === s.key ? "Updating…" : s.label}
+                      </span>
+                      {s.key === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent && !isDone && (
+                        <span className="ml-auto text-[10px] font-normal opacity-60 shrink-0">
+                          + SMS
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {order.readyPickupSmsSent && (
+                <p className="text-xs text-emerald-600 text-center mt-3 font-medium">
+                  ✓ Pickup SMS sent to customer
+                </p>
+              )}
+            </div>
+
+            {/* DELAY NOTIFICATION */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                </span>
+                Delay Notification
+              </h3>
+              <p className="text-xs text-slate-500 mb-3 ml-10">
+                Notify the customer via SMS if the order will be delayed.
               </p>
-            )}
-          </CardContent>
-        </Card>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">New expected ready date</label>
+                  <Input
+                    type="date"
+                    value={expectedReadyDate}
+                    onChange={(e) => setExpectedReadyDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Reason <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <Textarea
+                    placeholder="e.g. fabric delivery delay, machine repair..."
+                    value={delayReason}
+                    onChange={(e) => setDelayReason(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={delaySmsLoading || order.deliveryStatus === "picked" || !expectedReadyDate}
+                  onClick={handleDelaySms}
+                >
+                  <Clock className="h-4 w-4 mr-1.5" />
+                  {delaySmsLoading ? "Sending SMS…" : "Send Delay Notification"}
+                </Button>
+                {order.delayNotificationSentAt && (
+                  <p className="text-xs text-slate-400 text-center">
+                    Last sent: {new Date(order.delayNotificationSentAt).toLocaleString("en-KE")}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
