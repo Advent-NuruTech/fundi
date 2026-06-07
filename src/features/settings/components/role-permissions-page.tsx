@@ -413,10 +413,11 @@ export function RolePermissionsPage() {
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
         <Shield className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
         <div>
-          <p className="font-semibold">Permissions are enforced at frontend, API, and database levels.</p>
+          <p className="font-semibold">Permissions only the business owner can access and modify this page.</p>
           <p className="mt-0.5 opacity-80">
-            Disabling a permission removes it from the UI and blocks the corresponding API endpoints. Unauthorized users will never receive restricted financial data.
-          </p>
+         just simply this statet for user to undersand Permissions are enforced at frontend, API, and database levels.
+
+Disabling a permission removes it from the UI and blocks the corresponding API endpoints. Unauthorized users will never receive restricted financial data.  </p>
         </div>
       </div>
 

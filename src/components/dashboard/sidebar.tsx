@@ -89,12 +89,12 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {visibleNavigation.map(navItem)}
         <Link
-          href="/profile"
+          href="/settings/role-permissions"
           onClick={() => setOpen(false)}
           className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
         >
           <UserCircle className="h-4 w-4 shrink-0" />
-          Profile
+          Permissions
         </Link>
       </nav>
 
@@ -149,7 +149,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
               {visibleNavigation.map(navItem)}
               <Link
-                href="/profile"
+                href="/settings/role-permissions"
                 onClick={() => setOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
@@ -157,7 +157,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 )}
               >
                 <UserCircle className="h-4 w-4 shrink-0" />
-                Profile
+                Permissions
               </Link>
             </nav>
 
