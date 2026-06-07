@@ -322,6 +322,8 @@ export function FinanceModulePage() {
   const canSeeYearHistory = canViewAsOwner || finPerms.canSeeYearEarnings;
   const canSeeOwnerKpis = canViewAsOwner || finPerms.canSeeProfitMargins;
   const canSeeTotalRevenue = canViewAsOwner || finPerms.canSeeTotalRevenue;
+  const canSeeStockValue = canViewAsOwner || finPerms.canSeeInventoryValue;
+  const canSeePayroll = canViewAsOwner || finPerms.hasFullDashboardAccess;
 
   // Filter nav links based on permissions
   const NAV_LINKS = ALL_NAV_LINKS.filter((link) => {
@@ -593,19 +595,25 @@ export function FinanceModulePage() {
             )}
             <StatsCard title="Today's Expenses" value={formatKes(metrics.monthExpenses)} trend={metrics.trends.expenseTrend} trendLabel="vs last month" variant="danger" icon={<ArrowDownRight className="h-4 w-4" />} />
             <StatsCard title="Pending Payments" value={formatKes(metrics.outstandingBalances)} variant="warning" icon={<CreditCard className="h-4 w-4" />} />
-            <StatsCard title="Withdrawals" value={formatKes(metrics.monthWithdrawals)} trend={metrics.trends.withdrawalTrend} trendLabel="vs last month" variant="warning" icon={<Wallet className="h-4 w-4" />} />
+            {canSeeOwnerKpis && (
+              <StatsCard title="Withdrawals" value={formatKes(metrics.monthWithdrawals)} trend={metrics.trends.withdrawalTrend} trendLabel="vs last month" variant="warning" icon={<Wallet className="h-4 w-4" />} />
+            )}
           </div>
 
           {/* Secondary stats — Payroll Due and Inventory Value are owner-only KPIs */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {canSeeOwnerKpis && (
+            {canSeePayroll && (
               <StatsCard title="Payroll Due" value={formatKes(metrics.payrollLiability)} variant="warning" icon={<Users className="h-4 w-4" />} />
             )}
-            {canSeeOwnerKpis && (
+            {canSeeStockValue && (
               <StatsCard title="Inventory Value" value={formatKes(metrics.inventoryValue)} variant="info" icon={<Package className="h-4 w-4" />} />
             )}
-            <StatsCard title="Total Cash In" value={formatKes(metrics.cashIn)} variant="success" icon={<ArrowUpRight className="h-4 w-4" />} />
-            <StatsCard title="Total Cash Out" value={formatKes(metrics.cashOut)} variant="danger" icon={<ArrowDownRight className="h-4 w-4" />} />
+            {canSeeOwnerKpis && (
+              <StatsCard title="Total Cash In" value={formatKes(metrics.cashIn)} variant="success" icon={<ArrowUpRight className="h-4 w-4" />} />
+            )}
+            {canSeeOwnerKpis && (
+              <StatsCard title="Total Cash Out" value={formatKes(metrics.cashOut)} variant="danger" icon={<ArrowDownRight className="h-4 w-4" />} />
+            )}
           </div>
 
           {/* Charts */}

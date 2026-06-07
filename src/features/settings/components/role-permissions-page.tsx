@@ -415,10 +415,17 @@ export function RolePermissionsPage() {
         <div>
           <p className="font-semibold">Permissions only the business owner can access and modify this page.</p>
           <p className="mt-0.5 opacity-80">
-         just simply this statet for user to undersand Permissions are enforced at frontend, API, and database levels.
+      
 
-Disabling a permission removes it from the UI and blocks the corresponding API endpoints. Unauthorized users will never receive restricted financial data.  </p>
-        </div>
+
+
+Only the business owner can access and make changes on this page. 
+
+When a permission is turned off, the feature can only be used by owner
+
+Users can only see the information they have been allowed to access. 
+
+Private financial records and reports are protected and cannot be viewed by unauthorized users. </div>
       </div>
 
       {/* Manager list */}

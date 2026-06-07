@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import type { Order, UserProfile, UserRole } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { usePermissions } from "@/modules/shared/use-permissions";
+import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
 import {
   listenMembers,
   listenOrders,
@@ -39,6 +40,8 @@ export function EmployeeProfilePage() {
   const router = useRouter();
   const { businessId, ready } = useBusinessContext();
   const permissions = usePermissions();
+  const finPerms = useFinancePermissions();
+  const canSeePay = finPerms.hasOwnerAccess || finPerms.hasFullDashboardAccess;
   const [members, setMembers] = useState<UserProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([]);
@@ -235,43 +238,45 @@ export function EmployeeProfilePage() {
           </div>
         </div>
 
-        {/* Pay summary */}
-        <div className="rounded-xl bg-emerald-50 px-4 py-3 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-emerald-700">
-              KES {(member.payRate ?? 0).toLocaleString()}
-              <span className="font-normal text-emerald-500 ml-1 capitalize">
-                / {member.payPeriod ?? "monthly"}
-              </span>
-            </p>
-            {member.nextPayDate && (
-              <p className="text-[11px] text-emerald-500 mt-0.5">
-                Next pay:{" "}
-                {new Date(member.nextPayDate).toLocaleDateString("en-KE", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
+        {/* Pay summary — visible to owner / full-access only */}
+        {canSeePay && (
+          <div className="rounded-xl bg-emerald-50 px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-emerald-700">
+                KES {(member.payRate ?? 0).toLocaleString()}
+                <span className="font-normal text-emerald-500 ml-1 capitalize">
+                  / {member.payPeriod ?? "monthly"}
+                </span>
               </p>
-            )}
-            {!member.nextPayDate && (
-              <p className="text-[11px] text-emerald-400 mt-0.5">Next pay date not set</p>
+              {member.nextPayDate && (
+                <p className="text-[11px] text-emerald-500 mt-0.5">
+                  Next pay:{" "}
+                  {new Date(member.nextPayDate).toLocaleDateString("en-KE", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </p>
+              )}
+              {!member.nextPayDate && (
+                <p className="text-[11px] text-emerald-400 mt-0.5">Next pay date not set</p>
+              )}
+            </div>
+            {permissions.canManageTeam && member.role !== "owner" && (
+              <button
+                type="button"
+                onClick={() => setShowPay((v) => !v)}
+                className="flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 font-medium transition-colors"
+              >
+                {showPay ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                {showPay ? "Hide" : "Edit"}
+              </button>
             )}
           </div>
-          {permissions.canManageTeam && member.role !== "owner" && (
-            <button
-              type="button"
-              onClick={() => setShowPay((v) => !v)}
-              className="flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 font-medium transition-colors"
-            >
-              {showPay ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {showPay ? "Hide" : "Edit"}
-            </button>
-          )}
-        </div>
+        )}
 
         {/* Inline pay edit */}
-        {showPay && permissions.canManageTeam && member.role !== "owner" && (
+        {showPay && canSeePay && permissions.canManageTeam && member.role !== "owner" && (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
             <p className="text-xs font-semibold text-slate-600">Update Compensation</p>
             <div className="grid grid-cols-2 gap-2">
