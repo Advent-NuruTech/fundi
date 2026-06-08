@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createEphemeralSupabaseClient } from "@/lib/supabase";
+import { createServiceSupabaseClient } from "@/lib/supabase";
 import { transformKeysToCamel, transformArrayToCamel } from "@/lib/case-utils";
 import type { CartItem, CheckoutInput, EcommerceOrder, EcommerceOrderItem } from "@/types/ecommerce";
 import { formatPhone, isValidKenyanPhone } from "@/lib/sms/formatPhone";
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const client = createEphemeralSupabaseClient();
+    const client = createServiceSupabaseClient();
 
     const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
     const total = subtotal;

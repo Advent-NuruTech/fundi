@@ -25,3 +25,16 @@ export function createEphemeralSupabaseClient() {
     },
   });
 }
+
+/** Server-side only — uses the service role key which bypasses RLS. */
+export function createServiceSupabaseClient() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+  return createClient(supabaseUrl(), serviceKey, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+  });
+}
