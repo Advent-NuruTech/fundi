@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/dashboard/sidebar";
 import { AuthGuard } from "@/features/auth/components/auth-context";
 import { SyncIndicator } from "@/components/pwa/sync-indicator";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { SubscriptionGuard } from "@/components/billing/subscription-guard";
 import { WifiOff, RefreshCw } from "lucide-react";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useSyncEngine } from "@/hooks/useSyncEngine";
@@ -77,15 +78,17 @@ function OfflineBanner() {
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
-      <OfflineBanner />
-      <Sidebar>
-        {children}
-      </Sidebar>
-      {/* Desktop sync dot — still useful for sync state at a glance */}
-      <div className="fixed bottom-20 right-4 z-40 hidden lg:block">
-        <SyncIndicator />
-      </div>
-      <InstallPrompt />
+      <SubscriptionGuard>
+        <OfflineBanner />
+        <Sidebar>
+          {children}
+        </Sidebar>
+        {/* Desktop sync dot — still useful for sync state at a glance */}
+        <div className="fixed bottom-20 right-4 z-40 hidden lg:block">
+          <SyncIndicator />
+        </div>
+        <InstallPrompt />
+      </SubscriptionGuard>
     </AuthGuard>
   );
 }

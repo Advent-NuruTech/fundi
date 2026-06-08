@@ -15,6 +15,7 @@ import {
   MessageSquare,
   UserCircle,
   Landmark,
+  Receipt,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -96,6 +97,21 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           <UserCircle className="h-4 w-4 shrink-0" />
           Permissions
         </Link>
+        {user?.role === "owner" && (
+          <Link
+            href="/settings/billing"
+            onClick={() => setOpen(false)}
+            className={cn(
+              "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
+              pathname.startsWith("/settings/billing")
+                ? "bg-emerald-600 text-white"
+                : "text-slate-700 hover:bg-slate-100"
+            )}
+          >
+            <Receipt className="h-4 w-4 shrink-0" />
+            Billing
+          </Link>
+        )}
       </nav>
 
       <div className="border-t border-slate-200 p-4">
@@ -150,15 +166,30 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               {visibleNavigation.map(navItem)}
               <Link
                 href="/settings/role-permissions"
-                onClick={() => setOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
-                  pathname === "/profile" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-100"
+                  pathname === "/settings/role-permissions"
+                    ? "bg-emerald-600 text-white"
+                    : "text-slate-700 hover:bg-slate-100"
                 )}
               >
                 <UserCircle className="h-4 w-4 shrink-0" />
                 Permissions
               </Link>
+              {user?.role === "owner" && (
+                <Link
+                  href="/settings/billing"
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
+                    pathname.startsWith("/settings/billing")
+                      ? "bg-emerald-600 text-white"
+                      : "text-slate-700 hover:bg-slate-100"
+                  )}
+                >
+                  <Receipt className="h-4 w-4 shrink-0" />
+                  Billing
+                </Link>
+              )}
             </nav>
 
             <div className="border-t border-slate-200 p-4">

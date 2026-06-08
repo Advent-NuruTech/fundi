@@ -72,7 +72,7 @@ const PLANS: Plan[] = [
       { text: "AI Assistant limited access", included: true },
     ],
     cta: "Start with Sindano",
-    ctaHref: "/register",
+    ctaHref: "/checkout?plan=sindano",
   },
   {
     id: "fundi",
@@ -110,7 +110,7 @@ const PLANS: Plan[] = [
       { text: "Custom SMS Sender ID additional cost 30200 KES", included: false },
     ],
     cta: "Start with Fundi",
-    ctaHref: "/register",
+    ctaHref: "/checkout?plan=fundi",
   },
   {
     id: "dhahabu",
@@ -443,7 +443,7 @@ export default function PricingPage() {
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
-              href="/register"
+              href="/checkout?plan=fundi"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:bg-emerald-400 hover:scale-105"
             >
               Get Started

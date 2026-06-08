@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -14,8 +14,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect") ?? "/pricing";
   const { registerOwner } = useAuth();
   const [step, setStep] = useState<"idle" | "creating" | "redirecting">("idle");
   const [error, setError] = useState("");
@@ -34,7 +36,7 @@ export default function RegisterPage() {
       setStep("redirecting");
       toast.success("Workshop created. Welcome to FundiFlow!");
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push(redirectTo);
       }, 700);
     } catch (err) {
       setStep("idle");
@@ -61,6 +63,62 @@ export default function RegisterPage() {
   const isBusy = step !== "idle";
 
   return (
+    <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
+      <div>
+        <Label htmlFor="displayName">Your name</Label>
+        <Input id="displayName" placeholder="Jane Tailor" {...register("displayName")} disabled={isBusy} />
+      </div>
+      <div>
+        <Label htmlFor="businessName">Business name</Label>
+        <Input id="businessName" placeholder="ABC Tailoring" {...register("businessName")} disabled={isBusy} />
+      </div>
+      <div>
+        <Label htmlFor="phone">Phone number</Label>
+        <Input id="phone" type="tel" placeholder="+254 7XX XXX XXX" {...register("phone")} disabled={isBusy} />
+      </div>
+      <div>
+        <Label htmlFor="location">Location</Label>
+        <Input id="location" placeholder="Nairobi, Kenya" {...register("location")} disabled={isBusy} />
+      </div>
+      <div>
+        <Label htmlFor="email">Email address</Label>
+        <Input id="email" type="email" placeholder="you@workshop.com" {...register("email")} disabled={isBusy} />
+      </div>
+      <div>
+        <Label htmlFor="password">Password</Label>
+        <Input id="password" type="password" placeholder="Min. 6 characters" {...register("password")} disabled={isBusy} />
+      </div>
+
+      {error && (
+        <div className="md:col-span-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          {error}{" "}
+          {(error.includes("already registered") || error.includes("Sign in")) && (
+            <Link href="/login" className="font-semibold underline">
+              Sign in
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className="md:col-span-2">
+        <Button className="w-full gap-2" type="submit" disabled={isBusy}>
+          {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+          {step === "creating" && "Creating your workspace..."}
+          {step === "redirecting" && "Setting up dashboard..."}
+          {step === "idle" && (
+            <>
+              Create workspace
+              <ArrowRight className="h-4 w-4" />
+            </>
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export default function RegisterPage() {
+  return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-amber-50 to-white p-4">
       <div className="w-full max-w-2xl">
         <div className="mb-6 text-center">
@@ -75,57 +133,13 @@ export default function RegisterPage() {
 
         <Card className="relative overflow-hidden">
           <CardContent className="p-6">
-            <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-              <div>
-                <Label htmlFor="displayName">Your name</Label>
-                <Input id="displayName" placeholder="Jane Tailor" {...register("displayName")} disabled={isBusy} />
+            <Suspense fallback={
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
               </div>
-              <div>
-                <Label htmlFor="businessName">Business name</Label>
-                <Input id="businessName" placeholder="ABC Tailoring" {...register("businessName")} disabled={isBusy} />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone number</Label>
-                <Input id="phone" type="tel" placeholder="+254 7XX XXX XXX" {...register("phone")} disabled={isBusy} />
-              </div>
-              <div>
-                <Label htmlFor="location">Location</Label>
-                <Input id="location" placeholder="Nairobi, Kenya" {...register("location")} disabled={isBusy} />
-              </div>
-              <div>
-                <Label htmlFor="email">Email address</Label>
-                <Input id="email" type="email" placeholder="you@workshop.com" {...register("email")} disabled={isBusy} />
-              </div>
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" placeholder="Min. 6 characters" {...register("password")} disabled={isBusy} />
-              </div>
-
-              {error && (
-                <div className="md:col-span-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">
-                  {error}{" "}
-                  {(error.includes("already registered") || error.includes("Sign in")) && (
-                    <Link href="/login" className="font-semibold underline">
-                      Sign in
-                    </Link>
-                  )}
-                </div>
-              )}
-
-              <div className="md:col-span-2">
-                <Button className="w-full gap-2" type="submit" disabled={isBusy}>
-                  {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {step === "creating" && "Creating your workspace..."}
-                  {step === "redirecting" && "Setting up dashboard..."}
-                  {step === "idle" && (
-                    <>
-                      Create workspace
-                      <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
+            }>
+              <RegisterForm />
+            </Suspense>
 
             <p className="mt-6 text-center text-sm text-slate-600">
               Already have an account?{" "}
