@@ -280,19 +280,11 @@ export function CheckoutClient({ planSlug }: Props) {
                     </div>
                   )}
 
-                  <div className="flex justify-between text-slate-500">
-                    <span>Paystack processing fee</span>
-                    <span>{formatKes(totals.paystackFee)}</span>
-                  </div>
-
                   <div className="border-t border-slate-200 pt-3">
                     <div className="flex justify-between text-base font-black text-slate-900">
                       <span>Total payable today</span>
                       <span>{formatKes(totals.total)}</span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-400">
-                      Including secure payment processing fee
-                    </p>
                   </div>
                 </div>
 

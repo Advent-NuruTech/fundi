@@ -46,7 +46,7 @@ const PLANS: Plan[] = [
     meaning: "Every master tailor starts with a single needle.",
     tagline: "Perfect for solo tailors & small workshops",
     monthlyPrice: 690,
-    installationFee: 5000,
+    installationFee: 5075,
     highlight: false,
     color: "border-slate-200",
     accentColor: "text-slate-700",
@@ -81,7 +81,7 @@ const PLANS: Plan[] = [
     meaning: "The expert who builds something lasting.",
     tagline: "For growing workshops with a team",
     monthlyPrice: 3690,
-    installationFee: 28000,
+    installationFee: 28420,
     highlight: true,
     badge: "Most Popular",
     color: "border-emerald-400",
@@ -165,13 +165,13 @@ const COMPARISON_ROWS = [
   { feature: "On-site training", sindano: "✗", fundi: "✗", dhahabu: "✓" },
   { feature: "API access", sindano: "✗", fundi: "✗", dhahabu: "✓" },
   { feature: "Support", sindano: "Email 48hr", fundi: "Priority 12hr", dhahabu: "Phone 2hr" },
-  { feature: "Installation fee", sindano: "KES 5,000", fundi: "KES 28,000", dhahabu: "KES 43,990" },
+  { feature: "Installation fee", sindano: "KES 5,075", fundi: "KES 28,420", dhahabu: "KES 43,990" },
 ];
 
 const FAQS = [
   {
     q: "What is the installation fee?",
-    a: "The installation fee is a one-time setup cost that covers account creation, data migration assistance, initial training and full onboarding support. Sindano: KES 5,000 | Fundi: KES 28,000 | Dhahabu: KES 43,990.",
+    a: "The installation fee is a one-time setup cost that covers account creation, data migration assistance, initial training and full onboarding support. Sindano: KES 5,075 | Fundi: KES 28,420 | Dhahabu: KES 43,990.",
   },
   {
     q: "Is there a free trial?",
@@ -325,8 +325,8 @@ export default function PricingPage() {
           </div>
           <div className="grid gap-6 sm:grid-cols-3">
             {[
-              { plan: "Sindano", fee: "KES 5,000", includes: ["Remote account setup", "Profile & business configuration", "1-hour onboarding call", "Digital training guide"] },
-              { plan: "Fundi", fee: "KES 28,000", includes: ["Full remote setup & configuration", "Data migration assistance", "Team account creation", "3-hour training session (remote)", "30-day post-setup support"] },
+              { plan: "Sindano", fee: "KES 5,075", includes: ["Remote account setup", "Profile & business configuration", "1-hour onboarding call", "Digital training guide"] },
+              { plan: "Fundi", fee: "KES 28,420", includes: ["Full remote setup & configuration", "Data migration assistance", "Team account creation", "3-hour training session (remote)", "30-day post-setup support"] },
               { plan: "Dhahabu", fee: "KES 43,990", includes: ["On-site setup (Nairobi & major towns)", "Full data migration", "Whole-team training workshop", "Custom configuration", "90-day dedicated onboarding support"] },
             ].map(({ plan, fee, includes }) => (
               <div key={plan} className="rounded-2xl bg-white border border-amber-200 p-5 shadow-sm">

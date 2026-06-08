@@ -18,6 +18,8 @@ export function calculatePaystackFee(subtotalKes: number): number {
 /**
  * Calculates the full checkout totals for a given plan + addons.
  * First payment = installation fee only (not monthly fee).
+ * Processing margin is already included in plan installation fees — no
+ * separate fee is added to the user-facing total.
  */
 export function calculateCheckoutTotals(
   planSlug: PlanSlug,
@@ -25,20 +27,16 @@ export function calculateCheckoutTotals(
 ): CheckoutTotals {
   const plan = getPlanConfig(planSlug);
 
-  // For custom plans we have no config — caller must validate
   const installationFee = plan?.installationFee ?? 0;
   const smsSenderIdAmount = addSmsSenderId ? SMS_SENDER_ID_PRICE : 0;
-
   const subtotal = installationFee + smsSenderIdAmount;
-  const paystackFee = calculatePaystackFee(subtotal);
-  const total = subtotal + paystackFee;
 
   return {
     installationFee,
     smsSenderIdAmount,
     subtotal,
-    paystackFee,
-    total,
+    paystackFee: 0,  // margin absorbed into plan pricing; not shown to users
+    total: subtotal,
   };
 }
 
