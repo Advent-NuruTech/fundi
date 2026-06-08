@@ -55,8 +55,31 @@ const withPWA = require("@ducanh2912/next-pwa").default({
   },
 });
 
+const ADMIN_SECURITY_HEADERS = [
+  { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive, nosnippet, noimageindex" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, private" },
+  { key: "Pragma", value: "no-cache" },
+  { key: "Expires", value: "0" },
+];
+
 const nextConfig: NextConfig = {
   turbopack: {},   // ← this silences the webpack config conflict
+  async headers() {
+    return [
+      {
+        source: "/ffmanage/:path*",
+        headers: ADMIN_SECURITY_HEADERS,
+      },
+      {
+        source: "/api/ffmanage/:path*",
+        headers: ADMIN_SECURITY_HEADERS,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "res.cloudinary.com" },

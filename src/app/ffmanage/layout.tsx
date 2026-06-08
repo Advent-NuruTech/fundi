@@ -1,13 +1,33 @@
 import type { Metadata } from "next";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export const metadata: Metadata = {
-  title: "FundiFlow Admin",
-  description: "Super admin management dashboard",
-  robots: { index: false, follow: false },
+  title: {
+    default: "Admin",
+    template: "%s | Admin",
+  },
+  description: undefined,
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+      "max-video-preview": -1,
+      "max-image-preview": "none",
+      "max-snippet": -1,
+    },
+  },
+  // Exclude from any sitemap, OG, or metadata discovery
+  openGraph: undefined,
+  twitter: undefined,
+  alternates: undefined,
 };
 
 export default function AdminRootLayout({ children }: { children: React.ReactNode }) {
-  // The root app/layout.tsx wraps this. We deliberately don't add
-  // AuthProvider here so the admin panel has its own independent auth.
   return <>{children}</>;
 }

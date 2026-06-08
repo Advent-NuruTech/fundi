@@ -1,0 +1,40 @@
+# FundiFlow — robots.txt
+# Admin routes are strictly off-limits to all crawlers
+
+User-agent: *
+Disallow: /ffmanage/
+Disallow: /api/ffmanage/
+Allow: /
+
+# Block AI training crawlers from the entire site
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: OmigiliBot
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /api/
+
+Sitemap: https://fundiflow.co.ke/sitemap.xml
