@@ -146,6 +146,39 @@ export async function POST(request: Request) {
       ),
     ]);
 
+    // ── Step 6: initialize system owner if not already set ─────────────────
+    // Additive only — does not affect existing functionality.
+    try {
+      const { data: ownerConfig } = await admin
+        .from("system_config")
+        .select("value")
+        .eq("key", "system_owner_uid")
+        .maybeSingle();
+
+      const currentOwnerUid = ownerConfig?.value
+        ? String(ownerConfig.value).replace(/^"|"$/g, "")
+        : null;
+
+      if (!currentOwnerUid || currentOwnerUid === "null") {
+        await Promise.allSettled([
+          admin.from("system_config").upsert(
+            { key: "system_owner_uid", value: JSON.stringify(user.id) },
+            { onConflict: "key" }
+          ),
+          admin.from("system_config").upsert(
+            { key: "system_initialized", value: JSON.stringify(true) },
+            { onConflict: "key" }
+          ),
+          admin.from("system_config").upsert(
+            { key: "public_signup_enabled", value: JSON.stringify(false) },
+            { onConflict: "key" }
+          ),
+        ]);
+      }
+    } catch {
+      // system_config table may not exist yet (migration not applied) — safe to ignore
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[onboard]", err);
