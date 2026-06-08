@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Loader2, ArrowRight, Building2 } from "lucide-react";
+import Image from "next/image";
+import { Loader2, ArrowRight } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { registerSchema, type RegisterValues } from "@/schemas/auth.schema";
 import { Card, CardContent } from "@/components/ui/card";
@@ -122,9 +123,16 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-amber-50 to-white p-4">
       <div className="w-full max-w-2xl">
         <div className="mb-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100">
-            <Building2 className="h-6 w-6 text-emerald-600" />
-          </div>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
+  <Image
+    src="/images/logo.jpeg"
+    alt="FundiFlow Logo"
+    width={56}
+    height={56}
+    className="h-full w-full object-cover"
+    priority
+  />
+</div>
           <h1 className="mt-3 text-xl font-bold text-slate-900">Create your tailoring workspace</h1>
           <p className="mt-1 text-sm text-slate-500">
             Set up your business in minutes. Invite your team and start managing orders.
