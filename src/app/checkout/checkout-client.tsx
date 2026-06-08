@@ -232,18 +232,7 @@ export function CheckoutClient({ planSlug }: Props) {
               </ol>
             </div>
 
-            {/* Features */}
-            <div>
-              <h3 className="mb-4 font-bold text-slate-900">What&apos;s included</h3>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {features.map((f) => (
-                  <div key={f} className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                    <span className="text-sm text-slate-600">{f}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+           
 
             {/* Trust badges */}
             <div className="grid grid-cols-3 gap-3">
