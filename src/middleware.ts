@@ -39,8 +39,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Login page: allow through but still apply security headers
-  if (pathname === "/ffmanage/login" || pathname.startsWith("/ffmanage/_next")) {
+  // Login + temp register page: allow through but still apply security headers
+  if (
+    pathname === "/ffmanage/login" ||
+    pathname === "/ffmanage/register" ||
+    pathname.startsWith("/ffmanage/_next")
+  ) {
     return applySecurityHeaders(NextResponse.next());
   }
 

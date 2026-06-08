@@ -1,7 +1,6 @@
 "use client";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 import { useState, useEffect, useCallback } from "react";
 import { AdminShell } from "@/components/admin/admin-shell";
