@@ -16,6 +16,7 @@ import {
   UserCircle,
   Landmark,
   Receipt,
+  Globe,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ const navigation = [
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Employees", href: "/employees", icon: Users },
   { label: "Messages", href: "/messages", icon: MessageSquare },
+  { label: "Global Sell", href: "/sell", icon: Globe },
 ];
 
 export function Sidebar({ children }: { children: React.ReactNode }) {
