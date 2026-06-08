@@ -144,8 +144,8 @@ const PLANS: Plan[] = [
       { text: "Quarterly business review sessions", included: true },
       { text: "Custom feature development (quoted separately)", included: true },
     ],
-    cta: "Talk to Us",
-    ctaHref: DEMO_URL,
+    cta: "Pay Dhahabu",
+    ctaHref: "/checkout?plan=dhahabu",
   },
 ];
 
@@ -278,25 +278,19 @@ export default function PricingPage() {
                 </p>
 
                 {/* CTA */}
-                {plan.id === "dhahabu" ? (
-                  <a
-                    href={plan.ctaHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`mb-8 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold transition-all bg-amber-500 text-white hover:bg-amber-400`}
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    {plan.cta}
-                  </a>
-                ) : (
-                  <Link
-                    href={plan.ctaHref}
-                    className={`mb-8 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold transition-all ${plan.highlight ? "bg-emerald-600 text-white hover:bg-emerald-500" : "bg-slate-900 text-white hover:bg-slate-800"}`}
-                  >
-                    {plan.cta}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                )}
+                <Link
+                  href={plan.ctaHref}
+                  className={`mb-8 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold transition-all ${
+                    plan.id === "dhahabu"
+                      ? "bg-amber-500 text-white hover:bg-amber-400"
+                      : plan.highlight
+                      ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                      : "bg-slate-900 text-white hover:bg-slate-800"
+                  }`}
+                >
+                  {plan.cta}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
 
                 {/* Features */}
                 <div className="flex-1 space-y-2.5">
