@@ -6,6 +6,7 @@ import { AuthGuard } from "@/features/auth/components/auth-context";
 import { SyncIndicator } from "@/components/pwa/sync-indicator";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { SubscriptionGuard } from "@/components/billing/subscription-guard";
+import { ExpiryReminder } from "@/components/billing/expiry-reminder";
 import { WifiOff, RefreshCw } from "lucide-react";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useSyncEngine } from "@/hooks/useSyncEngine";
@@ -80,6 +81,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     <AuthGuard>
       <SubscriptionGuard>
         <OfflineBanner />
+        <ExpiryReminder />
         <Sidebar>
           {children}
         </Sidebar>

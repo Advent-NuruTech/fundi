@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getBillingAdminClient } from "@/lib/billing/admin-client";
-import { mapDbToSubscription, mapDbToBillingPayment } from "@/lib/billing/subscription-service";
+import {
+  mapDbToSubscription,
+  mapDbToBillingPayment,
+  mapDbToAuditLog,
+} from "@/lib/billing/subscription-service";
 import { getPlanConfig } from "@/lib/billing/constants";
 import type { PlanSlug } from "@/types/billing";
 
@@ -36,7 +40,7 @@ export async function GET(request: Request) {
 
     const workspaceId = profile.business_id as string;
 
-    // Fetch subscription
+    // ── Fetch subscription ─────────────────────────────────────────────────
     const { data: subRow, error: subErr } = await admin
       .from("subscriptions")
       .select("*")
@@ -47,7 +51,57 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: subErr.message }, { status: 500 });
     }
 
-    // Fetch last 20 billing payments
+    // ── Apply pending downgrade if change_at has passed ────────────────────
+    if (
+      subRow?.pending_plan_slug &&
+      subRow?.pending_change_at &&
+      new Date(subRow.pending_change_at) <= new Date()
+    ) {
+      await admin
+        .from("subscriptions")
+        .update({
+          plan_slug: subRow.pending_plan_slug,
+          pending_plan_slug: null,
+          pending_change_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("workspace_id", workspaceId);
+
+      // Reload the row after applying the downgrade
+      const { data: refreshed } = await admin
+        .from("subscriptions")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+
+      if (refreshed) Object.assign(subRow, refreshed);
+    }
+
+    // ── Apply cancel_at_period_end if period has ended ─────────────────────
+    if (
+      subRow?.cancel_at_period_end &&
+      subRow?.current_period_end &&
+      new Date(subRow.current_period_end) <= new Date()
+    ) {
+      await admin
+        .from("subscriptions")
+        .update({
+          status: "cancelled",
+          cancelled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("workspace_id", workspaceId);
+
+      const { data: refreshed } = await admin
+        .from("subscriptions")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+
+      if (refreshed) Object.assign(subRow, refreshed);
+    }
+
+    // ── Fetch last 20 billing payments ─────────────────────────────────────
     const { data: paymentRows } = await admin
       .from("billing_payments")
       .select("*")
@@ -55,13 +109,22 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false })
       .limit(20);
 
+    // ── Fetch last 10 audit log entries ────────────────────────────────────
+    const { data: auditRows } = await admin
+      .from("billing_audit_logs")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
     const subscription = subRow ? mapDbToSubscription(subRow) : null;
     const payments = (paymentRows ?? []).map(mapDbToBillingPayment);
+    const auditLogs = (auditRows ?? []).map(mapDbToAuditLog);
     const plan = subscription
       ? getPlanConfig(subscription.planSlug as PlanSlug)
       : null;
 
-    return NextResponse.json({ subscription, payments, plan });
+    return NextResponse.json({ subscription, payments, plan, auditLogs });
   } catch (err) {
     console.error("[billing/portal]", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

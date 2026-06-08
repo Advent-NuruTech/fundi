@@ -21,7 +21,15 @@ export type BillingPaymentType =
   | "installation_fee"
   | "monthly_subscription"
   | "sms_sender_id"
-  | "upgrade";
+  | "upgrade"
+  | "renewal";
+
+export type SenderIdStatus =
+  | "none"
+  | "pending_payment"
+  | "pending_approval"
+  | "approved"
+  | "rejected";
 
 export interface PlanFeatures {
   analytics: boolean;
@@ -67,6 +75,11 @@ export interface Subscription {
   smsSenderIdEnabled: boolean;
   smsSenderIdPaid: boolean;
   smsSenderIdPaidAt: string | null;
+  smsSenderIdName: string | null;
+  smsSenderIdStatus: SenderIdStatus;
+  cancelAtPeriodEnd: boolean;
+  pendingPlanSlug: PlanSlug | null;
+  pendingChangeAt: string | null;
   paystackCustomerCode: string | null;
   paystackSubscriptionCode: string | null;
   cancelledAt: string | null;
@@ -110,6 +123,18 @@ export interface PaymentAttempt {
   updatedAt: string;
 }
 
+export interface BillingAuditLog {
+  id: string;
+  workspaceId: string;
+  userId: string | null;
+  action: string;
+  previousState: Record<string, unknown> | null;
+  newState: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  performedByRole: string | null;
+  createdAt: string;
+}
+
 // ─── Checkout flow ──────────────────────────────────────────────────────────
 
 export interface CheckoutTotals {
@@ -142,6 +167,11 @@ export interface PaystackTransactionMetadata {
   installation_fee_amount: number;
   sms_sender_id_amount: number;
   monthly_price: number;
+  // upgrade-specific
+  from_plan_slug?: string;
+  to_plan_slug?: string;
+  // sender-id specific
+  sender_id_name?: string;
 }
 
 export interface PaystackVerifiedTransaction {
@@ -167,4 +197,5 @@ export interface BillingPortalData {
   subscription: Subscription;
   payments: BillingPayment[];
   plan: PlanConfig;
+  auditLogs: BillingAuditLog[];
 }

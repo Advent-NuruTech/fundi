@@ -175,7 +175,7 @@ const FAQS = [
   },
   {
     q: "Is there a free trial?",
-    a: "Yes — we offer a guided demo session via WhatsApp before you commit. Contact us to schedule your demo and we will walk you through the platform live.",
+    a: "Yes — we offer a guided demo session via Google Meet before you commit. Contact us to schedule your demo and we will walk you through the platform live.",
   },
   {
     q: "Can I upgrade my plan later?",
@@ -187,15 +187,15 @@ const FAQS = [
   },
   {
     q: "Does it work without internet?",
-    a: "Yes. FundiFlow is an offline-first Progressive Web App (PWA). You can record orders, customers and payments without connectivity. Everything syncs automatically when internet is available.",
+    a: "Yes. FundiFlow is an offline-first Progressive Web App (PWA). we notice that the offline functionality is not yet working seemlesly, we are still commited to make it work seemless.You can record orders, customers and payments without connectivity. Everything syncs automatically when internet is available.",
   },
   {
     q: "Is my data secure?",
-    a: "Yes. All data is encrypted in transit and at rest. We use Supabase (enterprise-grade PostgreSQL) with row-level security. Your business data is never shared with third parties.",
+    a: "Yes. All data is encrypted in transit and at rest. Your business data is never shared with third parties.",
   },
   {
     q: "What payment methods do you accept for the subscription?",
-    a: "We accept M-Pesa and bank transfer. Monthly subscriptions are billed on your start date each month. Contact us via WhatsApp to set up your payment.",
+    a: "We accept M-Pesa and bank transfer. Monthly subscriptions are billed on your start date each month.The recurring charges are starts after 60 days of your setup. Contact us via WhatsApp to set up your payment.",
   },
 ];
 
