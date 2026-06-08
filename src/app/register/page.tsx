@@ -150,9 +150,23 @@ export default function RegisterPage() {
           </CardContent>
         </Card>
 
-        <div className="mt-6 text-center text-xs text-slate-400">
-          By creating an account, you agree to our Terms of Service and Privacy Policy.
-        </div>
+       <div className="mt-6 text-center text-xs text-slate-400">
+  By creating an account, you agree to our{" "}
+  <a
+    href="/terms"
+    className="text-amber-400 hover:text-amber-300 underline"
+  >
+    Terms of Service
+  </a>{" "}
+  and{" "}
+  <a
+    href="/privacy"
+    className="text-amber-400 hover:text-amber-300 underline"
+  >
+    Privacy Policy
+  </a>
+  .
+</div>
       </div>
     </div>
   );
