@@ -16,20 +16,27 @@ export async function GET(request: Request) {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const startOfYear  = new Date(now.getFullYear(), 0, 1).toISOString();
 
-  // Fetch platform admin user_ids so we can exclude them from tenant counts.
-  // Platform admins are NOT tenants — they must never be counted as businesses.
-  const { data: platformAdmins } = await db
-    .from("platform_admins")
-    .select("user_id")
-    .eq("is_active", true);
+  // Fetch platform admin UIDs + system_owner_uid so we can exclude them from tenant counts.
+  // Platform operators are NOT tenants — they must never be counted as businesses.
+  const [platformAdminsRes, ownerConfigRes] = await Promise.allSettled([
+    db.from("platform_admins").select("user_id").eq("is_active", true),
+    db.from("system_config").select("value").eq("key", "system_owner_uid").single(),
+  ]);
+  const platformAdminUids =
+    platformAdminsRes.status === "fulfilled"
+      ? (platformAdminsRes.value.data ?? []).map((p: { user_id: string }) => p.user_id)
+      : [];
+  const systemOwnerUid =
+    ownerConfigRes.status === "fulfilled" && ownerConfigRes.value.data
+      ? (ownerConfigRes.value.data.value as string | null)
+      : null;
+  const exclusionUids = [...new Set([...platformAdminUids, ...(systemOwnerUid ? [systemOwnerUid] : [])])];
 
-  const platformAdminUids = (platformAdmins ?? []).map((p: { user_id: string }) => p.user_id);
-
-  // Helper: build a businesses query that excludes platform admin UIDs
+  // Helper: build a businesses query that excludes all platform operator UIDs
   function tenantBusinessesQuery() {
     let q = db.from("businesses").select("id", { count: "exact", head: true });
-    if (platformAdminUids.length > 0) {
-      q = q.not("owner_uid", "in", `(${platformAdminUids.join(",")})`);
+    if (exclusionUids.length > 0) {
+      q = q.not("owner_uid", "in", `(${exclusionUids.join(",")})`);
     }
     return q;
   }

@@ -17,13 +17,21 @@ export async function GET(request: Request) {
   const sortDir = url.searchParams.get("sortDir") === "asc" ? true : false;
   const offset = (page - 1) * limit;
 
-  // Fetch platform admin UIDs so we can exclude them from tenant listings.
-  // Platform admins are NOT tenants and must never appear in the business table.
-  const { data: platformAdmins } = await db
-    .from("platform_admins")
-    .select("user_id")
-    .eq("is_active", true);
-  const platformAdminUids = (platformAdmins ?? []).map((p: { user_id: string }) => p.user_id);
+  // Fetch platform admin UIDs + system_owner_uid so we can exclude them from tenant listings.
+  // Platform operators are NOT tenants and must never appear in the business table.
+  const [platformAdminsRes, ownerConfigRes] = await Promise.allSettled([
+    db.from("platform_admins").select("user_id").eq("is_active", true),
+    db.from("system_config").select("value").eq("key", "system_owner_uid").single(),
+  ]);
+  const platformAdminUids =
+    platformAdminsRes.status === "fulfilled"
+      ? (platformAdminsRes.value.data ?? []).map((p: { user_id: string }) => p.user_id)
+      : [];
+  const systemOwnerUid =
+    ownerConfigRes.status === "fulfilled" && ownerConfigRes.value.data
+      ? (ownerConfigRes.value.data.value as string | null)
+      : null;
+  const exclusionUids = [...new Set([...platformAdminUids, ...(systemOwnerUid ? [systemOwnerUid] : [])])];
 
   let query = db
     .from("businesses")
@@ -40,9 +48,9 @@ export async function GET(request: Request) {
       { count: "exact" }
     );
 
-  // Always exclude platform admin accounts from the tenant listing
-  if (platformAdminUids.length > 0) {
-    query = query.not("owner_uid", "in", `(${platformAdminUids.join(",")})`);
+  // Always exclude platform operator accounts from the tenant listing
+  if (exclusionUids.length > 0) {
+    query = query.not("owner_uid", "in", `(${exclusionUids.join(",")})`);
   }
 
   if (search) {

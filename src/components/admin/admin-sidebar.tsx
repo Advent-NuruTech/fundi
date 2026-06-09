@@ -11,6 +11,7 @@ import {
   FileText,
   Link2,
   Shield,
+  Users,
   LogOut,
   X,
   ChevronRight,
@@ -47,6 +48,12 @@ const NAV_ITEMS = [
     icon: FileText,
     label: "Support",
     description: "Tickets & responses",
+  },
+  {
+    href: "/ffmanage/team",
+    icon: Users,
+    label: "Platform Team",
+    description: "Operators & roles",
   },
   {
     href: "/ffmanage/system",
