@@ -1,9 +1,10 @@
+// Public endpoint — no auth required. Returns only a boolean.
+// Checks whether a platform owner account exists.
+// Never reveals sensitive data.
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-// Public endpoint — no auth required. Returns only a boolean.
-// Rate-limited by middleware; response never reveals sensitive data.
-export const dynamic = "force-dynamic";
 
 function getDb() {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/rest\/v1\/?$/, "");
@@ -16,18 +17,31 @@ export async function GET() {
   try {
     const db = getDb();
 
-    const { data, error } = await db
+    // Primary check: platform_admins table (migration 00022+)
+    const { data: owner, error: paErr } = await db
+      .from("platform_admins")
+      .select("id")
+      .eq("role", "owner")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (!paErr) {
+      return NextResponse.json({ ownerExists: !!owner, initialized: !!owner });
+    }
+
+    // Fallback: system_config (pre-migration installs where platform_admins may not exist)
+    const { data: config, error: configErr } = await db
       .from("system_config")
       .select("value")
       .eq("key", "system_owner_uid")
       .maybeSingle();
 
-    if (error) {
-      // system_config table may not exist yet — treat as not initialized
+    if (configErr) {
       return NextResponse.json({ ownerExists: false, initialized: false });
     }
 
-    const uid = data?.value;
+    const uid = config?.value;
     const ownerExists =
       uid !== null &&
       uid !== undefined &&

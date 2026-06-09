@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Globe } from "lucide-react";
 import { CartNavButton } from "./_components/cart-nav-button";
+import { GlobalSellChannelNav } from "./_components/channel-nav";
 
 export const metadata = {
   title: "Global Sell — FundiFlow Marketplace",
@@ -41,6 +42,13 @@ export default function GlobalSellLayout({ children }: { children: ReactNode }) 
             <CartNavButton />
           </div>
         </div>
+
+        {/* Channel sub-nav */}
+        <div className="border-t border-slate-100 bg-white">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
+            <GlobalSellChannelNav />
+          </div>
+        </div>
       </header>
 
       {children}
@@ -54,6 +62,9 @@ export default function GlobalSellLayout({ children }: { children: ReactNode }) 
               <p className="text-xs text-slate-500">Powered by FundiFlow — Kenya&apos;s Tailoring OS</p>
             </div>
             <div className="flex gap-4 text-xs text-slate-500">
+              <Link href="/globalsell" className="hover:text-emerald-600">All Products</Link>
+              <Link href="/globalsell/retail" className="hover:text-emerald-600">Retail</Link>
+              <Link href="/globalsell/wholesale" className="hover:text-emerald-600">Wholesale</Link>
               <Link href="/globalsell/track" className="hover:text-emerald-600">Track Order</Link>
               <Link href="/dashboard" className="hover:text-emerald-600">Sell Here</Link>
             </div>

@@ -4,12 +4,14 @@ import { createHash, randomUUID } from "crypto";
 import { z } from "zod";
 import { signAdminToken, SESSION_COOKIE, TOKEN_TTL_SECONDS } from "@/lib/admin/session";
 
+export const dynamic = "force-dynamic";
+
 const bodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
 
-// Simple in-memory rate limiter: max 5 attempts per IP per 15 minutes
+// Rate limiter: 5 attempts per IP per 15 minutes
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -26,12 +28,10 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
-function getAdminDb() {
+function getDb() {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/rest\/v1\/?$/, "");
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 export async function POST(request: Request) {
@@ -54,48 +54,36 @@ export async function POST(request: Request) {
   }
 
   const { email, password } = parsed.data;
-  const db = getAdminDb();
+  const db = getDb();
 
-  // Authenticate via Supabase Auth
-  const { data: authData, error: authErr } = await db.auth.signInWithPassword({
-    email,
-    password,
-  });
-
+  // Step 1: Authenticate via Supabase Auth
+  const { data: authData, error: authErr } = await db.auth.signInWithPassword({ email, password });
   if (authErr || !authData?.user) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
 
   const user = authData.user;
 
-  // Check that this user is the system owner
-  const { data: ownerConfig } = await db
-    .from("system_config")
-    .select("value")
-    .eq("key", "system_owner_uid")
+  // Step 2: Verify the user is an active platform admin (explicit platform identity check).
+  //         This is intentionally separate from the tenant domain (profiles/businesses).
+  const { data: platformAdmin, error: paErr } = await db
+    .from("platform_admins")
+    .select("id, role, is_active, full_name")
+    .eq("user_id", user.id)
     .single();
 
-  const systemOwnerUid = ownerConfig?.value
-    ? String(ownerConfig.value).replace(/^"|"$/g, "")
-    : null;
-
-  if (systemOwnerUid !== user.id) {
+  if (paErr || !platformAdmin || !platformAdmin.is_active) {
     return NextResponse.json(
-      { error: "Access denied. This panel is restricted to the system owner." },
+      { error: "Access denied. You are not registered as a platform administrator." },
       { status: 403 }
     );
   }
 
-  // Create session
+  // Step 3: Create platform admin session
   const sessionId = randomUUID();
   const token = await signAdminToken(sessionId, user.id);
   const tokenHash = createHash("sha256").update(token).digest("hex");
-
   const userAgent = request.headers.get("user-agent") ?? "";
-  const deviceInfo = {
-    userAgent: userAgent.slice(0, 200),
-    acceptLanguage: request.headers.get("accept-language") ?? null,
-  };
 
   const { error: sessionErr } = await db.from("admin_sessions").insert({
     id: sessionId,
@@ -103,7 +91,7 @@ export async function POST(request: Request) {
     token_hash: tokenHash,
     ip_address: ip,
     user_agent: userAgent.slice(0, 500),
-    device_info: deviceInfo,
+    device_info: { userAgent: userAgent.slice(0, 200), acceptLanguage: request.headers.get("accept-language") },
     is_active: true,
     expires_at: new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString(),
   });
@@ -112,20 +100,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Session creation failed" }, { status: 500 });
   }
 
-  // Log the login
+  // Step 4: Update last_login_at on platform_admins record
+  await db.from("platform_admins")
+    .update({ last_login_at: new Date().toISOString() })
+    .eq("user_id", user.id);
+
+  // Step 5: Audit log
   await db.from("admin_audit_logs").insert({
     admin_uid: user.id,
     admin_email: user.email,
-    action: "admin_login",
-    metadata: { ip, userAgent: userAgent.slice(0, 200) },
+    action: "platform_admin_login",
+    metadata: { ip, role: platformAdmin.role, userAgent: userAgent.slice(0, 200) },
     ip_address: ip,
     user_agent: userAgent.slice(0, 500),
     severity: "info",
   });
 
-  // Set httpOnly session cookie
-  const response = NextResponse.json({ success: true });
   const isProd = process.env.NODE_ENV === "production";
+  const response = NextResponse.json({ success: true, role: platformAdmin.role });
   response.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: isProd,
@@ -133,6 +125,5 @@ export async function POST(request: Request) {
     path: "/",
     maxAge: TOKEN_TTL_SECONDS,
   });
-
   return response;
 }

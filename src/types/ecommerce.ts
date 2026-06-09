@@ -1,6 +1,7 @@
 // ── Ecommerce domain types for Global Sell marketplace ──────────────────────
 
 export type EcommerceProductStatus = 'draft' | 'published' | 'archived' | 'out_of_stock';
+export type EcommerceSaleChannel = 'retail' | 'wholesale' | 'both';
 
 export type EcommerceOrderStatus =
   | 'pending'
@@ -67,6 +68,14 @@ export interface EcommerceProductImage {
   createdAt: string;
 }
 
+// ── Variant image (lightweight, stored as JSONB in variant row) ──────────────
+
+export interface VariantImage {
+  url: string;
+  altText?: string;
+  isPrimary: boolean;
+}
+
 // ── Product Variant ──────────────────────────────────────────────────────────
 
 export interface EcommerceProductVariant {
@@ -77,9 +86,12 @@ export interface EcommerceProductVariant {
   options: Record<string, string>;  // { "Size": "L", "Color": "Red" }
   sku?: string;
   priceOverride?: number;
+  wholesalePrice?: number;
+  wholesaleMinQty?: number;
   stockQuantity: number;
   reservedQuantity: number;
   imageUrl?: string;
+  variantImages?: VariantImage[];
   isAvailable: boolean;
   sortOrder: number;
   createdAt: string;
@@ -102,6 +114,9 @@ export interface EcommerceProduct {
   sku?: string;
   basePrice: number;
   discountPrice?: number;
+  wholesalePrice?: number;
+  wholesaleMinQty?: number;
+  saleChannel: EcommerceSaleChannel;
   currency: string;
   status: EcommerceProductStatus;
   trackInventory: boolean;
@@ -123,6 +138,21 @@ export interface EcommerceProduct {
   updatedAt: string;
 }
 
+// ── Variant form input ───────────────────────────────────────────────────────
+
+export interface VariantFormInput {
+  id: string;                         // stable UUID for UI keying
+  name: string;                       // derived: option values joined
+  options: Record<string, string>;
+  sku?: string;
+  priceOverride?: number;
+  wholesalePrice?: number;
+  wholesaleMinQty?: number;
+  stockQuantity: number;
+  images: VariantImage[];             // multi-image; first isPrimary is imageUrl
+  isAvailable: boolean;
+}
+
 // ── Product form input ───────────────────────────────────────────────────────
 
 export interface ProductFormInput {
@@ -134,6 +164,9 @@ export interface ProductFormInput {
   sku?: string;
   basePrice: number;
   discountPrice?: number;
+  wholesalePrice?: number;
+  wholesaleMinQty?: number;
+  saleChannel: EcommerceSaleChannel;
   status: EcommerceProductStatus;
   trackInventory: boolean;
   allowBackorder: boolean;
@@ -142,16 +175,6 @@ export interface ProductFormInput {
   shippingWeight?: number;
   images: { url: string; altText?: string; isPrimary: boolean }[];
   variants: VariantFormInput[];
-}
-
-export interface VariantFormInput {
-  name: string;
-  options: Record<string, string>;
-  sku?: string;
-  priceOverride?: number;
-  stockQuantity: number;
-  imageUrl?: string;
-  isAvailable: boolean;
 }
 
 // ── Order Item ───────────────────────────────────────────────────────────────
@@ -241,6 +264,7 @@ export interface MarketplaceFilters {
   storeSlug?: string;
   sortBy?: 'latest' | 'price_asc' | 'price_desc' | 'popular';
   inStockOnly?: boolean;
+  channel?: EcommerceSaleChannel | 'all';
   page?: number;
   pageSize?: number;
 }

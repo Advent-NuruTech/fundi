@@ -172,6 +172,7 @@ export async function fetchMarketplaceProducts(
     storeSlug,
     sortBy = "latest",
     inStockOnly,
+    channel,
     page = 1,
     pageSize = 24,
   } = filters;
@@ -213,6 +214,10 @@ export async function fetchMarketplaceProducts(
   if (minPrice !== undefined) query = query.gte("base_price", minPrice);
   if (maxPrice !== undefined) query = query.lte("base_price", maxPrice);
   if (inStockOnly) query = query.gt("total_stock", 0);
+  if (channel && channel !== "all") {
+    // retail page: show retail + both; wholesale page: show wholesale + both
+    query = query.in("sale_channel", [channel, "both"]);
+  }
 
   if (storeSlug) {
     const { data: store } = await supabase
@@ -460,8 +465,11 @@ export async function createProduct(
       options: v.options,
       sku: v.sku ?? null,
       price_override: v.priceOverride ?? null,
+      wholesale_price: v.wholesalePrice ?? null,
+      wholesale_min_qty: v.wholesaleMinQty ?? null,
       stock_quantity: v.stockQuantity,
-      image_url: v.imageUrl ?? null,
+      image_url: v.images.find((img) => img.isPrimary)?.url ?? v.images[0]?.url ?? null,
+      variant_images: v.images ?? [],
       is_available: v.isAvailable,
       sort_order: i,
     }));
@@ -534,8 +542,11 @@ export async function updateProduct(
         options: v.options,
         sku: v.sku ?? null,
         price_override: v.priceOverride ?? null,
+        wholesale_price: v.wholesalePrice ?? null,
+        wholesale_min_qty: v.wholesaleMinQty ?? null,
         stock_quantity: v.stockQuantity,
-        image_url: v.imageUrl ?? null,
+        image_url: v.images.find((img) => img.isPrimary)?.url ?? v.images[0]?.url ?? null,
+        variant_images: v.images ?? [],
         is_available: v.isAvailable,
         sort_order: i,
       }));

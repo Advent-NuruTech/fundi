@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { Search, SlidersHorizontal, X, Globe, Tag, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { EcommerceCategory, MarketplaceFilters } from "@/types/ecommerce";
@@ -9,15 +9,46 @@ interface MarketplaceFiltersProps {
   filters: MarketplaceFilters;
   categories: EcommerceCategory[];
   onUpdate: (patch: Partial<MarketplaceFilters>) => void;
+  hideChannelTabs?: boolean;
 }
+
+const CHANNEL_TABS = [
+  { value: "all" as const, label: "All", icon: Globe },
+  { value: "retail" as const, label: "Retail", icon: Tag },
+  { value: "wholesale" as const, label: "Wholesale", icon: Users },
+] as const;
 
 export function MarketplaceFilters({
   filters,
   categories,
   onUpdate,
+  hideChannelTabs = false,
 }: MarketplaceFiltersProps) {
+  const activeChannel = filters.channel ?? "all";
+
   return (
     <div className="space-y-4">
+      {/* Channel tabs */}
+      {!hideChannelTabs && (
+        <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1 w-fit">
+          {CHANNEL_TABS.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => onUpdate({ channel: value === "all" ? undefined : value })}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition",
+                activeChannel === value || (value === "all" && !filters.channel)
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

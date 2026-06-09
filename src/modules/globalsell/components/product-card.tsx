@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { ShoppingCart, Star, Package } from "lucide-react";
+import { ShoppingCart, Star, Package, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatKes } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -16,17 +16,59 @@ interface ProductCardProps {
   showStore?: boolean;
 }
 
+function computeVariantStats(product: EcommerceProduct) {
+  const variants = product.variants ?? [];
+  if (variants.length === 0) return null;
+
+  const prices = variants
+    .filter((v) => v.isAvailable)
+    .map((v) => v.priceOverride ?? product.basePrice);
+
+  const totalStock = variants.reduce((n, v) => n + v.stockQuantity, 0);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : product.basePrice;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : product.basePrice;
+
+  // Collect primary images from variants for fallback
+  const variantImages = variants
+    .flatMap((v) => v.variantImages ?? (v.imageUrl ? [{ url: v.imageUrl, altText: "", isPrimary: true }] : []))
+    .filter((i) => i.isPrimary || true);
+
+  return { totalStock, minPrice, maxPrice, hasPriceRange: minPrice !== maxPrice, variantImages };
+}
+
 export function ProductCard({ product, showStore = true }: ProductCardProps) {
   const addItem = useCartStore((s) => s.addItem);
 
-  const primaryImage = product.images?.find((i) => i.isPrimary) ?? product.images?.[0];
-  const displayPrice = product.discountPrice ?? product.basePrice;
-  const hasDiscount = product.discountPrice && product.discountPrice < product.basePrice;
-  const inStock = product.totalStock > 0 || !product.trackInventory;
+  const variantStats = computeVariantStats(product);
+  const hasVariants = (product.variants?.length ?? 0) > 0;
+
+  // Image resolution: product images → variant images → placeholder
+  const primaryImage =
+    product.images?.find((i) => i.isPrimary) ??
+    product.images?.[0] ??
+    (variantStats?.variantImages[0] ? { url: variantStats.variantImages[0].url, altText: "" } : null);
+
+  const displayPrice = hasVariants
+    ? (variantStats?.minPrice ?? product.basePrice)
+    : (product.discountPrice ?? product.basePrice);
+
+  const baseDisplayPrice = hasVariants ? undefined : product.basePrice;
+  const hasDiscount =
+    !hasVariants && product.discountPrice && product.discountPrice < product.basePrice;
+  const hasPriceRange = hasVariants && variantStats?.hasPriceRange;
+
+  const effectiveStock = hasVariants
+    ? (variantStats?.totalStock ?? 0)
+    : product.totalStock;
+
+  const inStock = effectiveStock > 0 || !product.trackInventory;
+
+  const isWholesale = product.saleChannel === "wholesale";
+  const isBoth = product.saleChannel === "both";
 
   function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault();
-    if (!inStock) return;
+    if (!inStock || hasVariants) return;
     addItem({
       id: crypto.randomUUID(),
       productId: product.id,
@@ -37,7 +79,7 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
       imageUrl: primaryImage?.url,
       quantity: 1,
       unitPrice: displayPrice,
-      maxStock: product.totalStock,
+      maxStock: effectiveStock,
     });
     toast.success(`${product.name} added to cart`);
   }
@@ -63,7 +105,7 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
           </div>
         )}
 
-        {/* Badges overlay */}
+        {/* Badges */}
         <div className="absolute left-2 top-2 flex flex-col gap-1">
           {hasDiscount && (
             <Badge variant="danger" className="text-xs">
@@ -73,6 +115,17 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
           {!inStock && (
             <Badge variant="default" className="text-xs bg-slate-700 text-white">
               Out of Stock
+            </Badge>
+          )}
+          {isWholesale && (
+            <Badge variant="default" className="text-xs bg-blue-600 text-white gap-1">
+              <Users className="h-2.5 w-2.5" />
+              Wholesale
+            </Badge>
+          )}
+          {isBoth && (
+            <Badge variant="default" className="text-xs bg-purple-600 text-white">
+              B2B+B2C
             </Badge>
           )}
         </div>
@@ -94,7 +147,7 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
           <p className="mt-0.5 text-xs text-slate-500">{product.brand}</p>
         )}
 
-        {/* Rating placeholder */}
+        {/* Rating */}
         <div className="mt-1.5 flex items-center gap-1">
           {[1, 2, 3, 4, 5].map((star) => (
             <Star
@@ -113,21 +166,36 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
         </div>
 
         {/* Price */}
-        <div className="mt-2 flex items-baseline gap-2">
+        <div className="mt-2 flex items-baseline gap-2 flex-wrap">
           <span className="text-base font-bold text-slate-900">
-            {formatKes(displayPrice)}
+            {hasPriceRange ? "From " : ""}{formatKes(displayPrice)}
           </span>
-          {hasDiscount && (
+          {hasDiscount && baseDisplayPrice && (
             <span className="text-xs text-slate-400 line-through">
-              {formatKes(product.basePrice)}
+              {formatKes(baseDisplayPrice)}
+            </span>
+          )}
+          {hasPriceRange && variantStats && (
+            <span className="text-xs text-slate-400">
+              – {formatKes(variantStats.maxPrice)}
             </span>
           )}
         </div>
 
+        {/* Wholesale hint */}
+        {(isWholesale || isBoth) && product.wholesalePrice && (
+          <p className="mt-0.5 text-xs text-blue-600">
+            Wholesale: {formatKes(product.wholesalePrice)}
+            {product.wholesaleMinQty ? ` (min ${product.wholesaleMinQty})` : ""}
+          </p>
+        )}
+
         {/* Variants hint */}
-        {(product.variants?.length ?? 0) > 0 && (
+        {hasVariants && (
           <p className="mt-1 text-xs text-slate-400">
-            {product.variants!.length} variant{product.variants!.length !== 1 ? "s" : ""} available
+            {product.variants!.length} variant{product.variants!.length !== 1 ? "s" : ""}
+            {" · "}
+            {effectiveStock} in stock
           </p>
         )}
 
@@ -140,7 +208,11 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
           className="mt-3 w-full gap-2"
         >
           <ShoppingCart className="h-3.5 w-3.5" />
-          {inStock ? "Add to Cart" : "Out of Stock"}
+          {hasVariants
+            ? "View Options"
+            : inStock
+            ? "Add to Cart"
+            : "Out of Stock"}
         </Button>
       </div>
     </Link>

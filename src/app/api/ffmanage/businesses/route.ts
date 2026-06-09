@@ -17,6 +17,14 @@ export async function GET(request: Request) {
   const sortDir = url.searchParams.get("sortDir") === "asc" ? true : false;
   const offset = (page - 1) * limit;
 
+  // Fetch platform admin UIDs so we can exclude them from tenant listings.
+  // Platform admins are NOT tenants and must never appear in the business table.
+  const { data: platformAdmins } = await db
+    .from("platform_admins")
+    .select("user_id")
+    .eq("is_active", true);
+  const platformAdminUids = (platformAdmins ?? []).map((p: { user_id: string }) => p.user_id);
+
   let query = db
     .from("businesses")
     .select(
@@ -31,6 +39,11 @@ export async function GET(request: Request) {
     `,
       { count: "exact" }
     );
+
+  // Always exclude platform admin accounts from the tenant listing
+  if (platformAdminUids.length > 0) {
+    query = query.not("owner_uid", "in", `(${platformAdminUids.join(",")})`);
+  }
 
   if (search) {
     query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);

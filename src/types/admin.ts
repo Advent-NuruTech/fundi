@@ -248,6 +248,26 @@ export interface SystemHealth {
   checkedAt: string;
 }
 
+// ── Platform identity (separate from tenant domain) ──────────────────────────
+
+export type PlatformRole =
+  | "owner"
+  | "super_admin"
+  | "support_admin"
+  | "billing_admin"
+  | "operations_admin";
+
+export interface PlatformAdmin {
+  id: string;
+  userId: string;
+  role: PlatformRole;
+  email: string;
+  fullName: string | null;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
 // ── Session payload stored in cookie ─────────────────────────────────────────
 
 export interface AdminTokenPayload {

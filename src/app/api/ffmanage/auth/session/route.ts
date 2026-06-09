@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { validateAdminRequest } from "@/lib/admin/validate";
 
@@ -6,5 +8,10 @@ export async function GET(request: Request) {
   if (!admin) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
-  return NextResponse.json({ authenticated: true, uid: admin.uid, email: admin.email });
+  return NextResponse.json({
+    authenticated: true,
+    uid: admin.uid,
+    email: admin.email,
+    platformRole: admin.platformRole,
+  });
 }

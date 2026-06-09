@@ -1,13 +1,27 @@
 /**
- * Bootstrap the system owner account.
+ * Bootstrap the platform system owner account.
  *
- * Security guarantees:
- *  - Only executable when system_owner_uid is null (no owner exists)
- *  - Uses an advisory lock (pg_try_advisory_xact_lock) to prevent race conditions
- *  - Sets public_signup_enabled = false atomically after owner creation
- *  - Rate-limited to 3 attempts per IP per hour
- *  - Full audit log written on success and failure
- *  - Password policy enforced server-side
+ * PLATFORM DOMAIN ONLY — creates:
+ *   - auth.users entry
+ *   - platform_admins entry (role = 'owner')
+ *   - system_config flags (system_owner_uid, system_initialized, public_signup_enabled)
+ *   - admin_session + httpOnly cookie
+ *
+ * DOES NOT CREATE:
+ *   - profiles (tenant table)
+ *   - businesses (tenant table)
+ *   - business_members (tenant table)
+ *   - inventory defaults (tenant data)
+ *
+ * The platform owner is NOT a tenant. They operate the SaaS itself.
+ * Tenants sign up separately through the regular registration flow.
+ *
+ * Security:
+ *   - Only runs when platform_admins table has no 'owner' role entries
+ *   - Rate-limited: 3 attempts per IP per hour
+ *   - Password policy enforced server-side
+ *   - Audit log written on success
+ *   - Auth user deleted on any failure (rollback)
  */
 
 import { NextResponse } from "next/server";
@@ -39,17 +53,10 @@ const bodySchema = z.object({
   fullName: z.string().min(2).max(100).trim(),
   email: z.string().email().toLowerCase().trim(),
   password: z.string().min(8).max(128).refine(
-    (p) =>
-      /[A-Z]/.test(p) &&
-      /[0-9]/.test(p) &&
-      /[^A-Za-z0-9]/.test(p),
-    {
-      message:
-        "Password must contain at least one uppercase letter, one number, and one special character",
-    }
+    (p) => /[A-Z]/.test(p) && /[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p),
+    { message: "Password must contain at least one uppercase letter, one number, and one special character" }
   ),
   confirmPassword: z.string(),
-  businessName: z.string().min(2).max(200).trim().optional(),
 }).refine((d) => d.password === d.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"],
@@ -77,35 +84,49 @@ export async function POST(request: Request) {
 
   const db = getDb();
 
-  // ── Guard: only executable when no owner exists ───────────────────────────
-  // Use PostgreSQL advisory lock (hash of the string "bootstrap_owner_lock")
-  // to prevent concurrent bootstrap attempts.
-  // Attempt advisory lock — best effort only; the double-check below is the real guard.
-  // Wrapped in try/catch because the RPC signature may differ across PG versions.
-  try {
-    await db.rpc("pg_try_advisory_xact_lock", { key: 42424242 }).single();
-  } catch {
-    // Lock unavailable — proceed; the system_owner_uid check below is authoritative.
-  }
+  // Guard: only runs when no active platform owner exists.
+  // Check platform_admins table first (migration 00022+), then fall back to system_config.
+  let ownerAlreadyExists = false;
 
-  const { data: ownerConfig } = await db
-    .from("system_config")
-    .select("value")
-    .eq("key", "system_owner_uid")
+  const platformOwnerResult = await db
+    .from("platform_admins")
+    .select("id")
+    .eq("role", "owner")
+    .eq("is_active", true)
+    .limit(1)
     .maybeSingle();
 
-  const currentOwner = ownerConfig?.value
-    ? String(ownerConfig.value).replace(/^"|"$/g, "")
-    : null;
+  const existingOwner = platformOwnerResult?.data ?? null;
 
-  if (currentOwner && currentOwner !== "null" && currentOwner.length > 10) {
+  if (existingOwner) {
+    ownerAlreadyExists = true;
+  } else if (!platformOwnerResult?.error) {
+    // platform_admins table exists but no owner row — check is complete, no owner
+  } else {
+    // platform_admins table may not exist yet (pre-00022) — fall back to system_config
+    const { data: ownerConfig } = await db
+      .from("system_config")
+      .select("value")
+      .eq("key", "system_owner_uid")
+      .maybeSingle();
+
+    const rawUid = ownerConfig?.value
+      ? String(ownerConfig.value).replace(/^"|"$/g, "")
+      : null;
+
+    if (rawUid && rawUid !== "null" && rawUid.length > 10) {
+      ownerAlreadyExists = true;
+    }
+  }
+
+  if (ownerAlreadyExists) {
     return NextResponse.json(
-      { error: "System owner already exists. Use the sign-in form." },
+      { error: "Platform owner already exists. Use the sign-in form." },
       { status: 409 }
     );
   }
 
-  // ── Validate body ─────────────────────────────────────────────────────────
+  // Validate request body
   const raw = await request.json().catch(() => null);
   const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) {
@@ -113,13 +134,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: first?.message ?? "Invalid input" }, { status: 400 });
   }
 
-  const { fullName, email, password, businessName } = parsed.data;
+  const { fullName, email, password } = parsed.data;
 
-  // ── Create Supabase Auth user ─────────────────────────────────────────────
+  // Create Supabase Auth user (email auto-confirmed — owner needs immediate access)
   const { data: authData, error: authErr } = await db.auth.admin.createUser({
     email,
     password,
-    email_confirm: true, // auto-confirm — owner needs immediate access
+    email_confirm: true,
     user_metadata: { full_name: fullName },
   });
 
@@ -133,62 +154,19 @@ export async function POST(request: Request) {
   const userId = authData.user.id;
 
   try {
-    // ── Create profile ────────────────────────────────────────────────────
-    const { error: profileErr } = await db.from("profiles").upsert(
-      {
-        id: userId,
-        email,
-        display_name: fullName,
-        role: "owner",
-        roles: ["owner"],
-        active: true,
-        must_change_password: false,
-      },
-      { onConflict: "id" }
-    );
-    if (profileErr) throw new Error(`Profile: ${profileErr.message}`);
+    // Create platform_admins entry.
+    // This is the ONLY record we create for the platform owner.
+    // The platform owner is NOT a tenant — no profile, business, or members record.
+    const { error: paErr } = await db.from("platform_admins").insert({
+      user_id: userId,
+      role: "owner",
+      email,
+      full_name: fullName,
+      is_active: true,
+    });
+    if (paErr) throw new Error(`Platform admin record: ${paErr.message}`);
 
-    // ── Create business ───────────────────────────────────────────────────
-    const resolvedBizName = businessName || `${fullName}'s Workshop`;
-    const { data: bizData, error: bizErr } = await db
-      .from("businesses")
-      .insert({
-        name: resolvedBizName,
-        phone: "",
-        currency: "KES",
-        country: "Kenya",
-        owner_uid: userId,
-        order_counter: 0,
-        employee_counter: 0,
-      })
-      .select("id")
-      .single();
-    if (bizErr || !bizData) throw new Error(`Business: ${bizErr?.message}`);
-
-    const businessId = bizData.id;
-
-    // ── Link profile → business ───────────────────────────────────────────
-    await db.from("profiles").update({ business_id: businessId }).eq("id", userId);
-
-    // ── Add as business member ────────────────────────────────────────────
-    await db.from("business_members").upsert(
-      { profile_id: userId, business_id: businessId, role: "owner", roles: ["owner"], active: true },
-      { onConflict: "profile_id,business_id" }
-    );
-
-    // ── Default inventory setup ───────────────────────────────────────────
-    const units = ["Pieces", "Meters", "Cones", "Kilograms", "Liters"];
-    const cats = ["Fabrics", "Threads", "Buttons", "Zips", "Elastic", "Lining", "Accessories"];
-    await Promise.allSettled([
-      ...units.map((name) =>
-        db.from("inventory_units").upsert({ business_id: businessId, name }, { onConflict: "business_id,name" })
-      ),
-      ...cats.map((name) =>
-        db.from("inventory_categories").upsert({ business_id: businessId, name }, { onConflict: "business_id,name" })
-      ),
-    ]);
-
-    // ── Set as system owner ───────────────────────────────────────────────
+    // Set system_config flags (kept for backward compat with pre-00022 queries)
     await Promise.all([
       db.from("system_config").upsert(
         { key: "system_owner_uid", value: JSON.stringify(userId) },
@@ -199,12 +177,12 @@ export async function POST(request: Request) {
         { onConflict: "key" }
       ),
       db.from("system_config").upsert(
-        { key: "public_signup_enabled", value: JSON.stringify(false) },
+        { key: "public_signup_enabled", value: JSON.stringify(true) },
         { onConflict: "key" }
       ),
     ]);
 
-    // ── Create admin session ──────────────────────────────────────────────
+    // Create admin session
     const sessionId = randomUUID();
     const token = await signAdminToken(sessionId, userId);
     const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -221,19 +199,18 @@ export async function POST(request: Request) {
       expires_at: new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString(),
     });
 
-    // ── Audit log ─────────────────────────────────────────────────────────
+    // Audit log
     await db.from("admin_audit_logs").insert({
       admin_uid: userId,
       admin_email: email,
-      action: "bootstrap_system_owner",
-      resource_type: "system",
-      metadata: { ip, businessId, fullName },
+      action: "bootstrap_platform_owner",
+      resource_type: "platform",
+      metadata: { ip, fullName, domain: "platform" },
       ip_address: ip,
       user_agent: userAgent.slice(0, 500),
       severity: "critical",
     });
 
-    // ── Set httpOnly cookie and return ────────────────────────────────────
     const isProd = process.env.NODE_ENV === "production";
     const response = NextResponse.json({ success: true });
     response.cookies.set(SESSION_COOKIE, token, {
@@ -246,7 +223,7 @@ export async function POST(request: Request) {
     return response;
 
   } catch (err) {
-    // Roll back: delete the auth user to keep DB consistent
+    // Rollback: delete the auth user to keep DB consistent
     await db.auth.admin.deleteUser(userId).catch(() => {});
     const msg = err instanceof Error ? err.message : "Setup failed";
     return NextResponse.json({ error: msg }, { status: 500 });

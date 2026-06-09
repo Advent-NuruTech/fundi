@@ -4,11 +4,17 @@ import { useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, Tag, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { VariantBuilder } from "./variant-builder";
-import type { EcommerceCategory, EcommerceProduct, ProductFormInput, VariantFormInput } from "@/types/ecommerce";
+import type {
+  EcommerceCategory,
+  EcommerceProduct,
+  ProductFormInput,
+  VariantFormInput,
+} from "@/types/ecommerce";
 
 const schema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -18,6 +24,9 @@ const schema = z.object({
   sku: z.string().optional(),
   basePrice: z.coerce.number().min(0, "Price is required"),
   discountPrice: z.coerce.number().optional(),
+  wholesalePrice: z.coerce.number().optional(),
+  wholesaleMinQty: z.coerce.number().min(1).optional(),
+  saleChannel: z.enum(["retail", "wholesale", "both"]),
   status: z.enum(["draft", "published", "archived", "out_of_stock"]),
   trackInventory: z.boolean(),
   allowBackorder: z.boolean(),
@@ -34,6 +43,30 @@ interface ProductFormProps {
   onSubmit: (input: ProductFormInput) => Promise<void>;
   submitLabel?: string;
 }
+
+const CHANNEL_OPTIONS = [
+  {
+    value: "retail" as const,
+    label: "Retail",
+    desc: "Sell to individual customers",
+    icon: Tag,
+    color: "border-emerald-500 bg-emerald-50 text-emerald-700",
+  },
+  {
+    value: "wholesale" as const,
+    label: "Wholesale",
+    desc: "Sell in bulk to businesses",
+    icon: Users,
+    color: "border-blue-500 bg-blue-50 text-blue-700",
+  },
+  {
+    value: "both" as const,
+    label: "Both",
+    desc: "Available on both channels",
+    icon: Tag,
+    color: "border-purple-500 bg-purple-50 text-purple-700",
+  },
+];
 
 export function ProductForm({
   initial,
@@ -53,12 +86,15 @@ export function ProductForm({
   );
   const [variants, setVariants] = useState<VariantFormInput[]>(
     initial?.variants?.map((v) => ({
+      id: crypto.randomUUID(),
       name: v.name,
       options: v.options,
       sku: v.sku,
       priceOverride: v.priceOverride,
+      wholesalePrice: v.wholesalePrice,
+      wholesaleMinQty: v.wholesaleMinQty,
       stockQuantity: v.stockQuantity,
-      imageUrl: v.imageUrl,
+      images: v.variantImages ?? (v.imageUrl ? [{ url: v.imageUrl, altText: "", isPrimary: true }] : []),
       isAvailable: v.isAvailable,
     })) ?? []
   );
@@ -68,6 +104,7 @@ export function ProductForm({
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema) as Resolver<FormValues>,
@@ -79,6 +116,9 @@ export function ProductForm({
       sku: initial?.sku ?? "",
       basePrice: initial?.basePrice ?? 0,
       discountPrice: initial?.discountPrice ?? undefined,
+      wholesalePrice: initial?.wholesalePrice ?? undefined,
+      wholesaleMinQty: initial?.wholesaleMinQty ?? undefined,
+      saleChannel: initial?.saleChannel ?? "retail",
       status: initial?.status ?? "draft",
       trackInventory: initial?.trackInventory ?? true,
       allowBackorder: initial?.allowBackorder ?? false,
@@ -89,6 +129,9 @@ export function ProductForm({
   });
 
   const basePrice = watch("basePrice");
+  const saleChannel = watch("saleChannel");
+  const productName = watch("name");
+  const showWholesale = saleChannel === "wholesale" || saleChannel === "both";
 
   function addImage() {
     const url = imageUrl.trim();
@@ -110,6 +153,8 @@ export function ProductForm({
         brand: values.brand || undefined,
         sku: values.sku || undefined,
         discountPrice: values.discountPrice || undefined,
+        wholesalePrice: values.wholesalePrice || undefined,
+        wholesaleMinQty: values.wholesaleMinQty || undefined,
         shippingWeight: values.shippingWeight || undefined,
         richDescription: undefined,
         tags: values.tags
@@ -126,7 +171,7 @@ export function ProductForm({
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
-      {/* Basic Info */}
+      {/* ── Basic Info ── */}
       <Card>
         <CardHeader>
           <CardTitle>Basic Information</CardTitle>
@@ -175,7 +220,6 @@ export function ProductForm({
                 ))}
               </select>
             </div>
-
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Brand
@@ -213,7 +257,41 @@ export function ProductForm({
         </CardContent>
       </Card>
 
-      {/* Pricing */}
+      {/* ── Sale Channel ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Sales Channel</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            {CHANNEL_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const selected = saleChannel === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setValue("saleChannel", opt.value)}
+                  className={cn(
+                    "flex flex-col items-start rounded-xl border-2 p-3.5 text-left transition",
+                    selected
+                      ? opt.color
+                      : "border-slate-200 hover:border-slate-300"
+                  )}
+                >
+                  <Icon className={cn("h-4 w-4 mb-1.5", selected ? "" : "text-slate-400")} />
+                  <p className="text-sm font-semibold">{opt.label}</p>
+                  <p className={cn("text-xs mt-0.5", selected ? "opacity-80" : "text-slate-400")}>
+                    {opt.desc}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Pricing ── */}
       <Card>
         <CardHeader><CardTitle>Pricing</CardTitle></CardHeader>
         <CardContent className="space-y-4">
@@ -248,10 +326,49 @@ export function ProductForm({
               />
             </div>
           </div>
+
+          {showWholesale && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Wholesale Pricing
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    Wholesale Price (KES)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    {...register("wholesalePrice")}
+                    placeholder="Bulk unit price"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-slate-700">
+                    Minimum Qty
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    {...register("wholesaleMinQty")}
+                    placeholder="e.g. 10"
+                    className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-blue-500">
+                Variant-level wholesale prices override these defaults.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Inventory */}
+      {/* ── Inventory ── */}
       <Card>
         <CardHeader><CardTitle>Inventory</CardTitle></CardHeader>
         <CardContent className="space-y-4">
@@ -280,7 +397,7 @@ export function ProductForm({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Stock Quantity
+                {variants.length > 0 ? "Base Stock (overridden by variants)" : "Stock Quantity"}
               </label>
               <input
                 type="number"
@@ -303,10 +420,19 @@ export function ProductForm({
               />
             </div>
           </div>
+          {variants.length > 0 && (
+            <p className="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Variant stock totals{" "}
+              <span className="font-semibold text-amber-700">
+                {variants.reduce((n, v) => n + v.stockQuantity, 0)} units
+              </span>{" "}
+              — these override the base stock above.
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Images */}
+      {/* ── Images ── */}
       <Card>
         <CardHeader><CardTitle>Product Images</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -324,7 +450,7 @@ export function ProductForm({
             </Button>
           </div>
           {images.length > 0 && (
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
               {images.map((img, i) => (
                 <div
                   key={i}
@@ -372,7 +498,7 @@ export function ProductForm({
         </CardContent>
       </Card>
 
-      {/* Variants */}
+      {/* ── Variants ── */}
       <Card>
         <CardHeader>
           <CardTitle>Product Variants</CardTitle>
@@ -381,12 +507,13 @@ export function ProductForm({
           <VariantBuilder
             variants={variants}
             basePrice={basePrice ?? 0}
+            productName={productName}
             onChange={setVariants}
           />
         </CardContent>
       </Card>
 
-      {/* Status */}
+      {/* ── Publishing ── */}
       <Card>
         <CardHeader><CardTitle>Publishing</CardTitle></CardHeader>
         <CardContent>
