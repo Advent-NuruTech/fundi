@@ -328,7 +328,7 @@ export default function HomePage() {
 
               <p className="mb-8 flex items-center gap-2 text-sm font-medium text-emerald-300">
                 <Globe className="h-4 w-4" />
-                Plus <strong className="text-white">Global Sell</strong> — Kenya&apos;s dedicated tailoring marketplace, built in.
+              <strong className="text-white">Global Sell</strong> — Kenya&apos;s dedicated tailoring marketplace, built in.
               </p>
 
               <div className="flex flex-col items-start gap-4 sm:flex-row">
