@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Menu, X, Scissors, MessageCircle } from "lucide-react";
+import { Menu, X, Scissors, MessageCircle, Globe } from "lucide-react";
 
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/globalsell", label: "Marketplace" },
 ];
 
 const LEGAL_LINKS = [
@@ -47,8 +48,13 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={l.href}
                 href={l.href}
-                className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+                className={
+                  l.href === "/globalsell"
+                    ? "flex items-center gap-1.5 text-sm font-semibold text-emerald-700 transition-colors hover:text-emerald-600"
+                    : "text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
+                }
               >
+                {l.href === "/globalsell" && <Globe className="h-3.5 w-3.5" />}
                 {l.label}
               </Link>
             ))}
@@ -189,11 +195,14 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
                   </a>
                 </li>
                 <li>
-                  <Link
-                    href="/register"
-                    className="transition-colors hover:text-white"
-                  >
+                  <Link href="/register" className="transition-colors hover:text-white">
                     Get Started
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/globalsell" className="flex items-center gap-1.5 text-emerald-400 transition-colors hover:text-emerald-300">
+                    <Globe className="h-3.5 w-3.5" />
+                    Global Sell Marketplace
                   </Link>
                 </li>
               </ul>
