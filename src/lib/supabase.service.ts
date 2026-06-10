@@ -10,6 +10,7 @@ import {
 } from "@/lib/local-db";
 import type {
   Customer,
+  MeasurementSet,
   EmployeeInvitation,
   Business,
   InventoryMaterial,
@@ -425,7 +426,7 @@ export function listenCustomer(businessId: string, customerId: string, callback:
     if (destroyed) return;
     const { data } = await supabase
       .from('customers')
-      .select('*')
+      .select('*, customer_measurements(*)')
       .eq('id', customerId)
       .maybeSingle();
     if (destroyed) return;
@@ -433,7 +434,21 @@ export function listenCustomer(businessId: string, customerId: string, callback:
       callback(null);
       return;
     }
-    callback(transformKeysToCamel<Customer>(data as Record<string, unknown>));
+    const { customer_measurements: measurementRows, ...customerRow } =
+      data as Record<string, unknown> & { customer_measurements?: Record<string, unknown>[] };
+    const customer = transformKeysToCamel<Customer>(customerRow as Record<string, unknown>);
+    if (measurementRows && measurementRows.length > 0) {
+      const latest = [...measurementRows].sort((a, b) =>
+        String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
+      )[0];
+      // strip metadata columns, keep only measurement values
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _mid, customer_id: _cid, created_at: _mcat, recorded_by: _rb, ...measureValues } = latest;
+      customer.measurements = measureValues as MeasurementSet;
+    } else {
+      customer.measurements = {};
+    }
+    callback(customer);
   };
   fetchAndCallback();
   const channel = supabase
