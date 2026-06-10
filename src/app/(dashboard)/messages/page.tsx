@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -163,7 +164,24 @@ function isConvUnread(conv: Conversation, uid: string, readMap: Record<string, s
   if (conv.lastMessage.senderUid === uid) return false;
   const lastRead = readMap[conv.id];
   if (!lastRead) return true;
-  return new Date(conv.updatedAt) > new Date(lastRead);
+  const msgTime = conv.lastMessageAt ?? conv.updatedAt;
+  return new Date(msgTime) > new Date(lastRead);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getMessagePreview(conv: Conversation, uid: string) {
+  const msg = conv.lastMessage;
+  if (!msg) return "No messages yet";
+
+  const firstLine = (msg.text || "").split("\n")[0].trim();
+
+  const prefix =
+    msg.senderUid === uid ? "You: " : `${msg.senderName || "User"}: `;
+
+  if (!firstLine) return `${prefix}📷 Photo`;
+
+  return `${prefix}${firstLine}`;
 }
 
 // ─── Main page ───────────────────────────────────────────────────────────────
@@ -230,7 +248,47 @@ export default function MessagesPage() {
   );
 
   const handleSend = useCallback(async () => {
-    if (!text.trim() || !user?.businessId || !selectedConvId || sending) return;
+    const trimmed = text.trim();
+    if (!trimmed || !user?.businessId || !selectedConvId || sending) return;
+
+    // ── Optimistic insert ──────────────────────────────────────────────────
+    const tempId = `opt-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversationId: selectedConvId,
+      businessId: user.businessId,
+      senderUid: user.uid,
+      senderName: user.displayName,
+      text: trimmed,
+      attachments: [],
+      readBy: [user.uid],
+      createdAt: now,
+    };
+
+    setText("");
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    // Move conversation to top with preview instantly
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === selectedConvId
+          ? {
+              ...c,
+              lastMessage: {
+                messageId: tempId,
+                text: trimmed,
+                senderUid: user.uid,
+                senderName: user.displayName,
+                createdAt: now,
+              },
+              lastMessageAt: now,
+              updatedAt: now,
+            }
+          : c
+      )
+    );
+
     setSending(true);
     try {
       await sendMessage({
@@ -238,10 +296,13 @@ export default function MessagesPage() {
         conversationId: selectedConvId,
         senderUid: user.uid,
         senderName: user.displayName,
-        text: text.trim(),
+        text: trimmed,
       });
-      setText("");
+      // Real-time subscription replaces optimistic message with DB-confirmed one
     } catch {
+      // Rollback: remove optimistic message and restore input
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setText(trimmed);
       toast.error("Message could not be sent");
     } finally {
       setSending(false);
@@ -396,25 +457,40 @@ export default function MessagesPage() {
     selectedConv?.participantProfiles.filter((p) => p.uid !== user?.uid) ?? [];
 
   // Deduplicate: for direct conversations keep only the most recent per participant pair
-  const deduplicatedConversations = conversations.filter((conv, idx, arr) => {
-    if (conv.type !== "direct") return true;
-    const key = [...conv.participants].sort().join(",");
-    return arr.findIndex(
-      (c) => c.type === "direct" && [...c.participants].sort().join(",") === key
-    ) === idx;
-  });
+  const deduplicatedConversations = useMemo(() => {
+    return conversations.filter((conv, idx, arr) => {
+      if (conv.type !== "direct") return true;
+      const key = [...conv.participants].sort().join(",");
+      return arr.findIndex(
+        (c) =>
+          c.type === "direct" && [...c.participants].sort().join(",") === key
+      ) === idx;
+    });
+  }, [conversations]);
 
-  const totalUnread = deduplicatedConversations.filter((c) =>
-    isConvUnread(c, user?.uid ?? "", readMap)
-  ).length;
+  const sortedConversations = useMemo(() => {
+    return [...deduplicatedConversations].sort((a, b) => {
+      const aTime = a.lastMessageAt ?? a.lastMessage?.createdAt ?? a.updatedAt;
+      const bTime = b.lastMessageAt ?? b.lastMessage?.createdAt ?? b.updatedAt;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  }, [deduplicatedConversations]);
 
-  const filteredMembers = members
-    .filter((m) => m.uid !== user?.uid && m.active !== false)
-    .filter((m) =>
-      memberSearch
-        ? m.displayName?.toLowerCase().includes(memberSearch.toLowerCase())
-        : true
-    );
+  const totalUnread = useMemo(() => {
+    return deduplicatedConversations.filter((c) =>
+      isConvUnread(c, user?.uid ?? "", readMap)
+    ).length;
+  }, [deduplicatedConversations, user?.uid, readMap]);
+
+  const filteredMembers = useMemo(() => {
+    return members
+      .filter((m) => m.uid !== user?.uid && m.active !== false)
+      .filter((m) =>
+        memberSearch
+          ? m.displayName?.toLowerCase().includes(memberSearch.toLowerCase())
+          : true
+      );
+  }, [members, user?.uid, memberSearch]);
 
   // Collect all images across conversation for lightbox navigation
   const openLightbox = useCallback(
@@ -519,7 +595,7 @@ export default function MessagesPage() {
           </div>
         ) : (
           <div>
-            {deduplicatedConversations.length === 0 && (
+            {sortedConversations.length === 0 && (
               <div className="p-8">
                 <EmptyState
                   icon={<MessageSquare className="h-8 w-8" />}
@@ -528,7 +604,7 @@ export default function MessagesPage() {
                 />
               </div>
             )}
-            {deduplicatedConversations
+            {sortedConversations
               .filter((c) =>
                 memberSearch
                   ? (c.title ?? "")
@@ -618,11 +694,10 @@ export default function MessagesPage() {
                           <p
                             className={cn(
                               "truncate text-xs mt-0.5",
-                              unread ? "text-slate-600 font-medium" : "text-slate-400"
+                              unread ? "text-slate-900 font-semibold" : "text-slate-400"
                             )}
                           >
-                            {conv.lastMessage.senderUid === user?.uid ? "You: " : ""}
-                            {conv.lastMessage.text || "📷 Image"}
+                            {getMessagePreview(conv, user?.uid ?? "")}
                           </p>
                         )}
                       </div>

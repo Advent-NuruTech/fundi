@@ -107,6 +107,8 @@ export interface Conversation {
     senderName: string;
     createdAt: string;
   };
+  lastMessageAt?: string;
+  lastMessageText?: string;
   type: ConversationType;
   title?: string;
   priority?: AnnouncementPriority;

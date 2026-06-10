@@ -972,9 +972,9 @@ export default function HomePage() {
           <span className="mb-3 inline-block rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
             Pricing
           </span>
-          <h2 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
+          <h6 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
             Simple, honest pricing
-          </h2>
+          </h6>
           <p className="mx-auto mb-10 max-w-lg text-lg text-slate-500">
             Three plans built for every stage of your tailoring journey — from solo needle to full enterprise workshop.
           </p>

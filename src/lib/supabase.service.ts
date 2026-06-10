@@ -2521,8 +2521,9 @@ export function listenConversations(
       .select('*')
       .eq('business_id', businessId)
       .contains('participants', [uid])
+      .order('last_message_at', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false })
-      .limit(30);
+      .limit(50);
     if (data && !destroyed) {
       callback(transformArrayToCamel<Conversation>(data as Record<string, unknown>[]));
     }

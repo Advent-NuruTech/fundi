@@ -209,11 +209,11 @@ export default function PricingPage() {
             <Scissors className="h-4 w-4" />
             Transparent Pricing
           </span>
-          <h1 className="mb-4 text-5xl font-black leading-tight sm:text-6xl">
+          <h6 className="mb-2 text-2xl font-black leading-tight sm:text-3xl">
             Simple, honest pricing
             <br className="hidden sm:block" />
             <span className="text-emerald-400">for every tailor</span>
-          </h1>
+          </h6>
           <p className="mx-auto max-w-xl text-lg text-slate-300">
             Three plans built for every stage of your business. No hidden fees,
             no surprises — just the tools you need at a price that makes sense.
