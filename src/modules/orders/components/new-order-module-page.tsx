@@ -8,9 +8,11 @@ import { toast } from "sonner";
 import type { Customer, UserProfile } from "@/types/domain";
 import { orderSchema, type OrderInput, type OrderValues } from "@/schemas/order.schema";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useAuth } from "@/features/auth/components/auth-context";
 import { appendOrderImageId, createOrder, fetchMembers, listenCustomers } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
 import { notifyNewOrder } from "@/services/notification-catalog";
+import { sendSms } from "@/lib/sms/sendSms";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +23,7 @@ import { Button } from "@/components/ui/button";
 export function NewOrderModulePage() {
   const router = useRouter();
   const { businessId, user, ready } = useBusinessContext();
+  const { business } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tailors, setTailors] = useState<UserProfile[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -75,7 +78,7 @@ export function NewOrderModulePage() {
     const tailor = tailors.find((entry) => entry.uid === values.assignedTailorId);
 
     try {
-      const { id: orderId, orderNumber } = await createOrder(
+      const { id: orderId, orderNumber, trackingToken } = await createOrder(
         businessId,
         {
           businessId,
@@ -119,6 +122,23 @@ export function NewOrderModulePage() {
         }
       }
       await notifyNewOrder(businessId, orderNumber, customer.fullName, orderId, user.uid);
+
+      // Auto-send creation SMS — awaited so navigation doesn't cancel the request
+      if (customer.phone && trackingToken) {
+        const origin = window.location.origin;
+        const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1");
+        const firstName = customer.fullName.split(" ")[0];
+        const bizName = business?.name ?? "our workshop";
+        const trackingLine = isLocalhost
+          ? ""
+          : `\nTrack your order:\n${origin}/track/${trackingToken}\n`;
+        const message = `Hello ${firstName},\n\nYour order ${orderNumber} has been created at ${bizName}.${trackingLine}\nThank you.`;
+        const smsResult = await sendSms(customer.phone, message);
+        if (!smsResult.success) {
+          console.warn("Order creation SMS failed:", smsResult.error);
+        }
+      }
+
       toast.success("Order created");
       router.push(`/orders/${orderId}`);
     } catch {

@@ -178,7 +178,7 @@ function LoginForm() {
                   Create account
                 </Link>
               </p>
-              {!inviteToken && <p className="text-slate-500">Password resets are handled by your workspace admin.</p>}
+              {!inviteToken && <p className="text-slate-500">glad to have you on board!</p>}
             </div>
           </CardContent>
 

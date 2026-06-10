@@ -46,6 +46,11 @@ import type {
   SavingsDeposit,
 } from "@/types/domain";
 
+function generateTrackingToken(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  return "ord_" + Array.from({ length: 9 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
 const orderStageSort: Record<ProductionStage, number> = {
   cutting: 1,
   stitching: 2,
@@ -804,6 +809,7 @@ export async function createOrder(
   actor: { uid: string; name: string }
 ) {
   const orderNumber = await getNextOrderNumber(businessId);
+  const trackingToken = generateTrackingToken();
 
   // garments and fabricSelections live in separate tables â€” strip them before inserting into orders
   const { garments, fabricSelections, ...orderFields } = payload as typeof payload & {
@@ -817,6 +823,7 @@ export async function createOrder(
       ...orderFields,
       businessId,
       orderNumber,
+      trackingToken,
       stage: "cutting",
       deliveryStatus: "pending",
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
@@ -876,7 +883,7 @@ export async function createOrder(
       } as unknown as Record<string, unknown>));
   }
 
-  return { id: orderId, orderNumber: orderData.order_number };
+  return { id: orderId, orderNumber: orderData.order_number as string, trackingToken };
 }
 
 export function listenOrders(businessId: string, callback: (rows: Order[]) => void) {

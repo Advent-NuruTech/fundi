@@ -1,0 +1,40 @@
+import type { ProductionStage, PaymentStatus } from "@/types/domain";
+
+export const STAGE_LABEL: Record<ProductionStage, string> = {
+  cutting: "Cutting",
+  stitching: "Stitching",
+  fitting: "Fitting",
+  finishing: "Finishing",
+  ready_for_pickup: "Ready for Pickup",
+  delivered: "Delivered",
+};
+
+export const STAGE_COLOR: Record<ProductionStage, string> = {
+  cutting: "bg-sky-100 text-sky-700 border-sky-200",
+  stitching: "bg-violet-100 text-violet-700 border-violet-200",
+  fitting: "bg-amber-100 text-amber-700 border-amber-200",
+  finishing: "bg-orange-100 text-orange-700 border-orange-200",
+  ready_for_pickup: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  delivered: "bg-slate-100 text-slate-700 border-slate-200",
+};
+
+export const PAYMENT_LABEL: Record<PaymentStatus, string> = {
+  unpaid: "Unpaid",
+  partial: "Partial",
+  paid: "Paid",
+};
+
+export const PAYMENT_COLOR: Record<PaymentStatus, string> = {
+  unpaid: "text-rose-600 border-rose-200",
+  partial: "text-amber-600 border-amber-200",
+  paid: "text-emerald-600 border-emerald-200",
+};
+
+export const STAGE_ORDER: ProductionStage[] = [
+  "cutting",
+  "stitching",
+  "fitting",
+  "finishing",
+  "ready_for_pickup",
+  "delivered",
+];

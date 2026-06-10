@@ -4,7 +4,8 @@ export type UserRole =
   | "tailor"
   | "receptionist"
   | "inventory_manager"
-  | "cashier";
+  | "cashier"
+  | "customer";
 
 export type ProductionStage =
   | "cutting"
@@ -233,6 +234,7 @@ export interface Customer {
   createdAt: string;
   updatedAt: string;
   measurements: MeasurementSet;
+  portalUserId?: string;
 }
 
 export interface OrderGarmentItem {
@@ -299,6 +301,7 @@ export interface Order {
   delayNotificationSentAt?: string | null;
   delayReason?: string | null;
   imageUrls?: string[];
+  trackingToken?: string;
 }
 
 export interface FabricMeta {

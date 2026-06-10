@@ -90,6 +90,9 @@ export async function resolveProfile(user: User) {
 }
 
 export async function ensureProfileExists(user: User): Promise<boolean> {
+  // Customer portal users have no employee profile — skip onboarding entirely
+  if (user.user_metadata?.portal_type === "customer") return false;
+
   const profile = await fetchUserProfile(user.id);
   if (profile?.businessId) return true;
 
