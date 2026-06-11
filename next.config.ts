@@ -4,8 +4,13 @@ const withPWA = require("@ducanh2912/next-pwa").default({
   register: true,
   skipWaiting: true,
   cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: true,
   reloadOnOnline: false,
   disable: process.env.NODE_ENV === "development",
+  fallbacks: {
+    // Served for navigations to pages that were never cached while online
+    document: "/offline",
+  },
   workboxOptions: {
     disableDevLogs: true,
     runtimeCaching: [
@@ -18,23 +23,24 @@ const withPWA = require("@ducanh2912/next-pwa").default({
         },
       },
       {
-        urlPattern: /\.(?:js|css|woff2?)$/,
-        handler: "CacheFirst",
+        // Every same-origin page navigation: serve fresh when online, cached
+        // copy when offline (Workbox matches the full URL, so this must be a
+        // function matcher rather than a path-anchored regex).
+        urlPattern: ({ request, url, sameOrigin }: { request: Request; url: URL; sameOrigin: boolean }) =>
+          sameOrigin &&
+          request.mode === "navigate" &&
+          !url.pathname.startsWith("/ffmanage") &&
+          !url.pathname.startsWith("/api"),
+        handler: "NetworkFirst",
         options: {
-          cacheName: "build-assets",
-          expiration: { maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 },
+          cacheName: "app-pages",
+          expiration: { maxEntries: 100, maxAgeSeconds: 7 * 24 * 60 * 60 },
+          networkTimeoutSeconds: 5,
         },
       },
       {
-        urlPattern: /\.(?:png|jpg|jpeg|gif|svg|ico|webp)$/,
-        handler: "CacheFirst",
-        options: {
-          cacheName: "static-images",
-          expiration: { maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 },
-        },
-      },
-      {
-        urlPattern: /^\/_next\/data\/.*/i,
+        urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) =>
+          sameOrigin && url.pathname.startsWith("/_next/data/"),
         handler: "NetworkFirst",
         options: {
           cacheName: "next-data",
@@ -43,12 +49,38 @@ const withPWA = require("@ducanh2912/next-pwa").default({
         },
       },
       {
-        urlPattern: /^\/(?:dashboard|orders|customers|finance|payments|analytics|inventory|production|messages|employees|profile|settings)(?:\/.*)?$/i,
-        handler: "NetworkFirst",
+        urlPattern: /\.(?:js|css|woff2?)$/,
+        handler: "CacheFirst",
         options: {
-          cacheName: "app-pages",
-          expiration: { maxEntries: 50, maxAgeSeconds: 24 * 60 * 60 },
-          networkTimeoutSeconds: 5,
+          cacheName: "build-assets",
+          expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
+        },
+      },
+      {
+        urlPattern: /\.(?:png|jpg|jpeg|gif|svg|ico|webp)$/,
+        handler: "CacheFirst",
+        options: {
+          cacheName: "static-images",
+          expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
+        },
+      },
+      {
+        // Next.js image optimizer responses
+        urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) =>
+          sameOrigin && url.pathname.startsWith("/_next/image"),
+        handler: "StaleWhileRevalidate",
+        options: {
+          cacheName: "next-images",
+          expiration: { maxEntries: 100, maxAgeSeconds: 7 * 24 * 60 * 60 },
+        },
+      },
+      {
+        // Cloudinary-hosted user images (order photos, avatars, fabrics)
+        urlPattern: /^https:\/\/res\.cloudinary\.com\/.*/i,
+        handler: "StaleWhileRevalidate",
+        options: {
+          cacheName: "cloudinary-images",
+          expiration: { maxEntries: 200, maxAgeSeconds: 14 * 24 * 60 * 60 },
         },
       },
     ],

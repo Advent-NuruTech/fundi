@@ -16,6 +16,8 @@ import {
 import { fetchBusinessProfile, fetchUserProfile } from "@/services/firestore.service";
 import { supabase } from "@/lib/supabase";
 import { useSessionStore } from "@/store/session-store";
+import { getAppState, setAppState } from "@/lib/local-db";
+import { isOffline } from "@/lib/offline-write";
 
 export type OnboardingStep = "idle" | "authenticating" | "setting_up" | "redirecting" | "complete" | "error";
 
@@ -60,12 +62,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let resolved = await resolveProfile(authUser);
 
+      // Offline (or flaky network): restore the last known profile from the
+      // local cache so the app keeps working without a connection. The
+      // Supabase session itself is restored from local storage, so a cached
+      // profile only ever applies to the same signed-in user.
+      if (!resolved && isOffline()) {
+        resolved = await getAppState<UserProfile>(`cached_profile_${authUser.id}`).catch(() => null);
+      }
+
       // If no profile exists, attempt to create one via the onboard API.
       // Covers SIGNED_IN (active login) and INITIAL_SESSION (page reload
       // after email-confirmation or a failed first-time setup), so a user
       // with a valid Supabase session but missing DB records never gets
       // stuck in a redirect loop back to login.
-      if (!resolved && (event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
+      if (!resolved && !isOffline() && (event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
         const fixed = await ensureProfileExists(authUser);
         if (fixed) {
           resolved = await fetchUserProfile(authUser.id);
@@ -74,8 +84,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setProfile(resolved);
       if (resolved?.businessId) {
-        const businessProfile = await fetchBusinessProfile(resolved.businessId);
+        let businessProfile = await fetchBusinessProfile(resolved.businessId).catch(() => null);
+        if (!businessProfile) {
+          businessProfile = await getAppState<Business>(`cached_business_${resolved.businessId}`).catch(() => null);
+        }
         setBusiness(businessProfile);
+        // Persist for the next offline boot (fire-and-forget)
+        if (!isOffline()) {
+          setAppState(`cached_profile_${authUser.id}`, resolved).catch(() => {});
+          if (businessProfile) {
+            setAppState(`cached_business_${resolved.businessId}`, businessProfile).catch(() => {});
+          }
+        }
       } else {
         setBusiness(null);
       }

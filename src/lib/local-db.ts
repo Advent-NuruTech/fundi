@@ -276,26 +276,34 @@ export async function getSyncQueueSize(): Promise<number> {
 
 // Bulk-upsert a whole collection snapshot into the cache.
 // items should already be in camelCase with an `id` field.
+// When `prune` is true (default), cached rows that are fully synced but no
+// longer present in the server snapshot are removed so server-side deletes
+// propagate to offline caches. Pass false for partial/windowed snapshots.
 export async function cacheCollection(
   collection: string,
   businessId: string,
-  items: Array<Record<string, unknown>>
+  items: Array<Record<string, unknown>>,
+  prune = true
 ): Promise<void> {
   if (typeof window === "undefined") return;
   const db = getLocalDB();
   const deviceId = getDeviceId();
   const now = new Date().toISOString();
   await db.transaction("rw", db.records, async () => {
+    const snapshotIds = new Set<string>();
     for (const item of items) {
       const docId = (item.id ?? item.uid) as string | undefined;
       if (!docId) continue;
+      snapshotIds.add(docId);
       const existing = await db.records
         .where("[collection+docId]")
         .equals([collection, docId])
         .first();
       if (existing) {
-        // Never overwrite a local-only (unsynced) record with stale server data
-        if (!existing.synced && existing.data && (existing.data as Record<string, unknown>)._localOnly) continue;
+        // Never overwrite a record with pending local changes (creates OR
+        // updates) with potentially stale server data — the sync engine
+        // marks it synced again once the local change has been pushed.
+        if (!existing.synced) continue;
         await db.records.update(existing.id!, {
           data: item,
           synced: true,
@@ -316,6 +324,16 @@ export async function cacheCollection(
           updatedAt: now,
           deleted: false,
         });
+      }
+    }
+    if (prune) {
+      const stale = await db.records
+        .where("[collection+businessId]")
+        .equals([collection, businessId])
+        .filter((r) => r.synced && !snapshotIds.has(r.docId))
+        .toArray();
+      for (const r of stale) {
+        await db.records.delete(r.id!);
       }
     }
   });
@@ -345,6 +363,65 @@ export async function cacheLocalRecord(
       createdAt: now, updatedAt: now, deleted: false,
     });
   }
+}
+
+// Merge a partial patch into a cached record's data and mark it unsynced
+// (a sync-queue entry is expected to push the same patch to the server).
+// No-op when the record isn't cached — the server copy is then authoritative.
+export async function patchCachedRecord(
+  collection: string,
+  docId: string,
+  patch: Record<string, unknown>
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = getLocalDB();
+  const existing = await db.records
+    .where("[collection+docId]")
+    .equals([collection, docId])
+    .first();
+  if (!existing) return;
+  const merged = { ...(existing.data as Record<string, unknown>), ...patch };
+  await db.records.update(existing.id!, {
+    data: merged,
+    synced: false,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Remove a record from the cache entirely (after a confirmed delete).
+export async function removeCachedRecord(
+  collection: string,
+  docId: string
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = getLocalDB();
+  await db.records
+    .where("[collection+docId]")
+    .equals([collection, docId])
+    .delete();
+}
+
+// Called by the sync engine once a queued local change has been pushed to
+// Supabase: clears the local-only marker so future server snapshots are
+// allowed to overwrite (and thus reconcile) this record.
+export async function markCachedRecordSynced(
+  collection: string,
+  docId: string
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = getLocalDB();
+  const existing = await db.records
+    .where("[collection+docId]")
+    .equals([collection, docId])
+    .first();
+  if (!existing) return;
+  const data = { ...(existing.data as Record<string, unknown>) };
+  delete data._localOnly;
+  await db.records.update(existing.id!, {
+    data,
+    synced: true,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export { getDeviceId, generateId };

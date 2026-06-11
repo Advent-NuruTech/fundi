@@ -1,6 +1,13 @@
 import { supabase } from "@/lib/supabase";
 import { transformKeysToSnake } from "@/lib/case-utils";
-import { getLocalDB, getSyncQueueSize, setAppState } from "@/lib/local-db";
+import {
+  getLocalDB,
+  getSyncQueueSize,
+  setAppState,
+  markCachedRecordSynced,
+  removeCachedRecord,
+  patchCachedRecord,
+} from "@/lib/local-db";
 
 const COLLECTION_TABLE_MAP: Record<string, string> = {
   orders: "orders",
@@ -26,6 +33,31 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   images: "images",
   users: "profiles",
 };
+
+// Child tables keyed by a parent row rather than a business — the sync engine
+// must not inject business_id into their payloads.
+const TABLES_WITHOUT_BUSINESS_ID = new Set([
+  "order_garments",
+  "order_images",
+  "order_fitting_records",
+  "order_material_usage",
+  "customer_measurements",
+  "inventory_material_images",
+]);
+
+// Conflict targets for idempotent replays (default is the primary key `id`).
+const ON_CONFLICT_TARGET: Record<string, string> = {
+  order_images: "order_id,image_id",
+};
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "23505"
+  );
+}
 
 type SyncOperation = "create" | "update" | "delete";
 type SyncPriority = "high" | "normal" | "low";
@@ -66,18 +98,46 @@ async function executeOperation(entry: SyncEntry): Promise<boolean> {
     switch (operation) {
       case "create": {
         const payload = transformKeysToSnake(data as Record<string, unknown>);
-        payload.business_id = businessId;
+        if (!TABLES_WITHOUT_BUSINESS_ID.has(table)) {
+          payload.business_id = businessId;
+        }
         // Preserve client-generated UUID so the local cache ID matches the server ID
         if (docId) payload.id = docId;
-        // Strip the local-only marker before sending to Supabase
+        // Strip local-only markers before sending to Supabase
         delete payload._local_only;
-        const { error } = await supabase.from(table).insert([payload]);
-        if (error) throw error;
+
+        // Orders created offline carry a placeholder order number — claim a
+        // real one from the per-business counter now that we're online.
+        if (payload._needs_order_number) {
+          delete payload._needs_order_number;
+          const { data: orderNumber, error: rpcError } = await supabase.rpc(
+            "get_next_order_number",
+            { biz_id: businessId }
+          );
+          if (rpcError) throw rpcError;
+          payload.order_number = orderNumber;
+          if (docId) {
+            await patchCachedRecord(collectionName, docId, {
+              orderNumber: orderNumber as string,
+            }).catch(() => {});
+          }
+        }
+
+        // Upsert so replaying an already-applied create is a no-op instead of
+        // a permanent unique-violation failure.
+        const { error } = await supabase
+          .from(table)
+          .upsert([payload], {
+            onConflict: ON_CONFLICT_TARGET[table] ?? "id",
+            ignoreDuplicates: ON_CONFLICT_TARGET[table] !== undefined,
+          });
+        if (error && !isDuplicateKeyError(error)) throw error;
         break;
       }
       case "update": {
         if (!docId) throw new Error("docId required for update");
         const payload = transformKeysToSnake(data as Record<string, unknown>, false);
+        delete payload._local_only;
         const { error } = await supabase.from(table).update(payload).eq("id", docId);
         if (error) throw error;
         break;
@@ -93,6 +153,31 @@ async function executeOperation(entry: SyncEntry): Promise<boolean> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown sync error";
     throw new Error(message);
+  }
+}
+
+// Once an operation has been pushed (or permanently abandoned), reconcile the
+// Dexie cache: deletes are removed outright; creates/updates are marked synced
+// so future server snapshots may overwrite them — unless another queued
+// operation still targets the same document.
+async function reconcileCacheAfterSync(entry: SyncEntry): Promise<void> {
+  if (!entry.docId) return;
+  try {
+    if (entry.operation === "delete") {
+      await removeCachedRecord(entry.collection, entry.docId);
+      return;
+    }
+    const localDb = getLocalDB();
+    const stillPending = await localDb.syncQueue
+      .where("collection")
+      .equals(entry.collection)
+      .and((e) => e.docId === entry.docId && e.id !== entry.id)
+      .count();
+    if (stillPending === 0) {
+      await markCachedRecordSynced(entry.collection, entry.docId);
+    }
+  } catch {
+    // cache reconciliation is best-effort
   }
 }
 
@@ -131,10 +216,7 @@ export class SyncEngine {
 
     try {
       const localDb = getLocalDB();
-      const pending = await localDb.syncQueue
-        .orderBy("priority")
-        .reverse()
-        .toArray();
+      const pending = await localDb.syncQueue.toArray();
 
       if (pending.length === 0) {
         this.syncing = false;
@@ -146,10 +228,14 @@ export class SyncEngine {
       let synced = 0;
       let failed = 0;
 
-      const highPriority = pending.filter((p) => p.priority === "high");
-      const normalPriority = pending.filter((p) => p.priority === "normal");
-      const lowPriority = pending.filter((p) => p.priority === "low");
-      const ordered = [...highPriority, ...normalPriority, ...lowPriority];
+      // High priority first; within a priority replay in insertion (causal)
+      // order so creates land before updates that reference them.
+      const priorityRank: Record<SyncPriority, number> = { high: 0, normal: 1, low: 2 };
+      const ordered = [...pending].sort(
+        (a, b) =>
+          priorityRank[a.priority] - priorityRank[b.priority] ||
+          (a.id ?? 0) - (b.id ?? 0)
+      );
 
       for (const entry of ordered) {
         if (this.destroyed) break;
@@ -157,6 +243,7 @@ export class SyncEngine {
         try {
           await executeOperation(entry);
           await localDb.syncQueue.delete(entry.id!);
+          await reconcileCacheAfterSync(entry);
           synced++;
           this.emit({
             type: "item_synced",
@@ -169,29 +256,24 @@ export class SyncEngine {
           entry.retryCount++;
           entry.lastError = message;
           if (entry.retryCount >= entry.maxRetries) {
+            // Abandon the change: drop the queue entry and let server data
+            // overwrite the optimistic cache copy on the next snapshot.
             await localDb.syncQueue.delete(entry.id!);
-            failed++;
-            this.emit({
-              type: "item_failed",
-              operationId: entry.operationId,
-              collection: entry.collection,
-              error: message,
-              remaining: ordered.length - synced - failed,
-            });
+            await reconcileCacheAfterSync(entry);
           } else {
             await localDb.syncQueue.update(entry.id!, {
               retryCount: entry.retryCount,
               lastError: message,
             });
-            failed++;
-            this.emit({
-              type: "item_failed",
-              operationId: entry.operationId,
-              collection: entry.collection,
-              error: message,
-              remaining: ordered.length - synced - failed,
-            });
           }
+          failed++;
+          this.emit({
+            type: "item_failed",
+            operationId: entry.operationId,
+            collection: entry.collection,
+            error: message,
+            remaining: ordered.length - synced - failed,
+          });
         }
 
         await delay(100);
@@ -228,6 +310,7 @@ export class SyncEngine {
       try {
         await executeOperation(entry);
         await localDb.syncQueue.delete(entry.id!);
+        await reconcileCacheAfterSync(entry);
       } catch {
         entry.retryCount++;
         await localDb.syncQueue.update(entry.id!, {

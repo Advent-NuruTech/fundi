@@ -5,9 +5,21 @@ import {
   getCachedCollection,
   cacheCollection,
   cacheLocalRecord,
+  patchCachedRecord,
   enqueueSyncOperation,
   generateId,
 } from "@/lib/local-db";
+import {
+  isOffline,
+  isNetworkError,
+  withOfflineFallback,
+  offlineCreate,
+  offlineUpdate,
+  offlineDelete,
+  getCachedById,
+  onLocalWrite,
+  notifyLocalWrite,
+} from "@/lib/offline-write";
 import type {
   Customer,
   MeasurementSet,
@@ -75,6 +87,15 @@ function roleFromRoles(roles: UserRole[]): UserRole {
 
 // â”€â”€â”€ LISTENER HELPER â”€â”€â”€
 
+// Attach a refetch to the browser's `online` event so listeners recover
+// immediately when connectivity returns. Returns a cleanup function.
+function refetchOnReconnect(fetchAndCallback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = () => setTimeout(fetchAndCallback, 300);
+  window.addEventListener("online", handler, { passive: true });
+  return () => window.removeEventListener("online", handler);
+}
+
 function listenToTable<T>(
   table: string,
   businessId: string,
@@ -82,13 +103,21 @@ function listenToTable<T>(
   options?: { orderBy?: string; orderDir?: 'asc' | 'desc'; limit?: number }
 ): () => void {
   let destroyed = false;
+  let gotFresh = false;
+
+  // Serve the Dexie cache (used for instant first paint, offline mode, and
+  // network-error fallback). Only overrides fresher server data when forced
+  // by an optimistic local write.
+  const serveCache = async (force = false) => {
+    const cached = await getCachedCollection<T>(table, businessId).catch(() => []);
+    if (!destroyed && (force || !gotFresh) && cached.length > 0) callback(cached);
+  };
+
   const fetchAndCallback = async () => {
     if (destroyed) return;
 
-    // ── Offline path: serve from Dexie cache ──────────────────────────────
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const cached = await getCachedCollection<T>(table, businessId).catch(() => []);
-      if (!destroyed && cached.length > 0) callback(cached);
+    if (isOffline()) {
+      await serveCache(true);
       return;
     }
 
@@ -101,22 +130,26 @@ function listenToTable<T>(
     }
     const { data, error } = await query;
     if (data && !destroyed) {
+      gotFresh = true;
       const rows = transformArrayToCamel<T>(data as Record<string, unknown>[]);
       callback(rows);
-      // Cache for offline use (fire-and-forget)
-      cacheCollection(table, businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+      // Cache for offline use (fire-and-forget). Windowed queries must not
+      // prune cached rows that fall outside the window.
+      cacheCollection(table, businessId, rows as unknown as Array<Record<string, unknown>>, !options?.limit).catch(() => {});
     } else if (!destroyed && error) {
       // Network/Supabase error — fall back to cache
-      const cached = await getCachedCollection<T>(table, businessId).catch(() => []);
-      if (cached.length > 0) callback(cached);
+      await serveCache();
     }
   };
+  serveCache();
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite([table], () => serveCache(true));
   const channel = supabase
     .channel(`${table}-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table, filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 function listenToTableWithoutBusinessId<T>(
@@ -343,11 +376,16 @@ export async function fetchBusinessProfile(businessId: string): Promise<Business
 }
 
 export async function updateBusinessProfile(businessId: string, data: Partial<Pick<Business, "name" | "phone" | "location" | "smsSenderId">>) {
-  const { error } = await supabase
-    .from('businesses')
-    .update(transformKeysToSnake(data as Record<string, unknown>))
-    .eq('id', businessId);
-  if (error) throw error;
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('businesses')
+        .update(transformKeysToSnake(data as Record<string, unknown>))
+        .eq('id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'businesses', businessId, data as Record<string, unknown>)
+  );
 }
 
 export async function updateFinanceAccess(businessId: string, settings: import("@/types/domain").FinanceAccessSettings) {
@@ -364,20 +402,32 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
   const { measurements, ...customerData } = payload as typeof payload & { measurements?: Record<string, unknown> };
 
   // ── Offline path ─────────────────────────────────────────────────────────
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const localId = generateId();
-    const now = new Date().toISOString();
-    const record = {
-      id: localId,
+  const createOffline = async () => {
+    // Duplicate-phone guard against the local cache (best effort offline)
+    const cached = await getCachedCollection<Customer>('customers', businessId).catch(() => [] as Customer[]);
+    if (cached.some((c) => c.phone === customerData.phone)) {
+      throw new Error("A customer with this phone number already exists.");
+    }
+    const customerId = await offlineCreate(businessId, 'customers', {
       ...customerData,
-      measurements: measurements ?? {},
       outstandingBalance: 0,
-      createdAt: now, updatedAt: now, _localOnly: true,
-    };
-    await cacheLocalRecord('customers', localId, businessId, record as unknown as Record<string, unknown>).catch(() => {});
-    await enqueueSyncOperation(businessId, 'customers', 'create', record, localId, 'normal').catch(() => {});
-    return localId;
-  }
+    } as unknown as Record<string, unknown>);
+    // measurements live in their own table — queue separately so the replay
+    // doesn't try to write a non-existent column on `customers`
+    if (measurements && Object.values(measurements).some((v) => v !== null && v !== undefined)) {
+      await enqueueSyncOperation(
+        businessId,
+        'customer_measurements',
+        'create',
+        { customerId, ...measurements },
+        generateId(),
+        'normal'
+      ).catch(() => {});
+      await patchCachedRecord('customers', customerId, { measurements }).catch(() => {});
+    }
+    return customerId;
+  };
+  if (isOffline()) return createOffline();
 
   const { data: phoneExisting } = await supabase
     .from('customers')
@@ -427,14 +477,26 @@ export function listenCustomers(businessId: string, callback: (rows: Customer[])
 
 export function listenCustomer(businessId: string, customerId: string, callback: (row: Customer | null) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedById<Customer>('customers', businessId, customerId);
+    if (!destroyed && cached) callback({ ...cached, measurements: cached.measurements ?? {} } as Customer);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('customers')
       .select('*, customer_measurements(*)')
       .eq('id', customerId)
       .maybeSingle();
     if (destroyed) return;
+    if (error) {
+      await serveCache();
+      return;
+    }
     if (!data) {
       callback(null);
       return;
@@ -456,11 +518,13 @@ export function listenCustomer(businessId: string, customerId: string, callback:
     callback(customer);
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['customers'], fetchAndCallback);
   const channel = supabase
     .channel(`customer-${customerId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${customerId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 // â”€â”€â”€ MEMBERS â”€â”€â”€
@@ -510,7 +574,7 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
     if (destroyed) return;
 
     // ── Offline path ───────────────────────────────────────────────────────
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
+    if (isOffline()) {
       const cached = await getCachedCollection<UserProfile>('members', businessId).catch(() => []);
       if (!destroyed && cached.length > 0) callback(cached);
       return;
@@ -532,6 +596,7 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
     }
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
   const uuid = crypto.randomUUID();
   // Subscribe to both tables: profiles for identity changes, business_members for role changes
   const profilesChannel = supabase
@@ -544,6 +609,7 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
     .subscribe();
   return () => {
     destroyed = true;
+    offReconnect();
     supabase.removeChannel(profilesChannel);
     supabase.removeChannel(bMembersChannel);
   };
@@ -653,14 +719,26 @@ export async function upsertInvitedMember(input: {
 
 export function listenInvitations(businessId: string, callback: (rows: EmployeeInvitation[]) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<EmployeeInvitation>('invitations', businessId).catch(() => []);
+    if (!destroyed && cached.length > 0) callback(cached);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('employee_invitations')
       .select('*')
       .eq('business_id', businessId)
       .order('created_at', { ascending: false });
-    if (destroyed || !data) return;
+    if (destroyed) return;
+    if (!data) {
+      if (error) await serveCache();
+      return;
+    }
 
     const now = Date.now();
     const invitations = transformArrayToCamel<EmployeeInvitation>(data as Record<string, unknown>[]);
@@ -675,19 +753,20 @@ export function listenInvitations(businessId: string, callback: (rows: EmployeeI
       )
     );
 
-    callback(
-      invitations.filter((invite) => {
-        const expiresAt = toDate(invite.expiresAt as unknown as string);
-        return invite.status !== "pending" || !expiresAt || expiresAt.getTime() > now;
-      })
-    );
+    const active = invitations.filter((invite) => {
+      const expiresAt = toDate(invite.expiresAt as unknown as string);
+      return invite.status !== "pending" || !expiresAt || expiresAt.getTime() > now;
+    });
+    callback(active);
+    cacheCollection('invitations', businessId, active as unknown as Array<Record<string, unknown>>).catch(() => {});
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
   const channel = supabase
     .channel(`invitations-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_invitations', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); supabase.removeChannel(channel); };
 }
 
 export async function deleteInvitation(businessId: string, invitationId: string) {
@@ -719,23 +798,33 @@ export async function acceptInvitationByToken(token: string, uid: string) {
 // â”€â”€â”€ DYNAMIC UNITS & CATEGORIES â”€â”€â”€
 
 export async function createUnit(businessId: string, name: string): Promise<string> {
-  const { data, error } = await supabase
-    .from('inventory_units')
-    .insert(transformKeysToSnake({ businessId, name } as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create unit");
-  return data.id;
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('inventory_units')
+        .insert(transformKeysToSnake({ businessId, name } as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create unit");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'inventory_units', { businessId, name })
+  );
 }
 
 export async function createCategory(businessId: string, name: string): Promise<string> {
-  const { data, error } = await supabase
-    .from('inventory_categories')
-    .insert(transformKeysToSnake({ businessId, name } as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create category");
-  return data.id;
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('inventory_categories')
+        .insert(transformKeysToSnake({ businessId, name } as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create category");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'inventory_categories', { businessId, name })
+  );
 }
 
 export function listenUnits(businessId: string, callback: (rows: DbUnit[]) => void) {
@@ -747,29 +836,49 @@ export function listenCategories(businessId: string, callback: (rows: DbCategory
 }
 
 export async function fetchUnits(businessId: string): Promise<DbUnit[]> {
+  if (isOffline()) {
+    return getCachedCollection<DbUnit>('inventory_units', businessId).catch(() => []);
+  }
   const { data } = await supabase
     .from('inventory_units')
     .select('*')
     .eq('business_id', businessId)
     .order('name', { ascending: true });
-  return transformArrayToCamel<DbUnit>((data as Record<string, unknown>[]) || []);
+  if (!data) return getCachedCollection<DbUnit>('inventory_units', businessId).catch(() => []);
+  return transformArrayToCamel<DbUnit>(data as Record<string, unknown>[]);
 }
 
 export async function fetchCategories(businessId: string): Promise<DbCategory[]> {
+  if (isOffline()) {
+    return getCachedCollection<DbCategory>('inventory_categories', businessId).catch(() => []);
+  }
   const { data } = await supabase
     .from('inventory_categories')
     .select('*')
     .eq('business_id', businessId)
     .order('name', { ascending: true });
-  return transformArrayToCamel<DbCategory>((data as Record<string, unknown>[]) || []);
+  if (!data) return getCachedCollection<DbCategory>('inventory_categories', businessId).catch(() => []);
+  return transformArrayToCamel<DbCategory>(data as Record<string, unknown>[]);
 }
 
 export async function updateCategory(businessId: string, categoryId: string, name: string) {
-  await supabase.from('inventory_categories').update({ name }).eq('id', categoryId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('inventory_categories').update({ name }).eq('id', categoryId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'inventory_categories', categoryId, { name })
+  );
 }
 
 export async function deleteCategory(businessId: string, categoryId: string) {
-  await supabase.from('inventory_categories').delete().eq('id', categoryId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('inventory_categories').delete().eq('id', categoryId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'inventory_categories', categoryId)
+  );
 }
 
 // â”€â”€â”€ COUNTER HELPERS â”€â”€â”€
@@ -808,14 +917,102 @@ export async function createOrder(
   depositAmount: number,
   actor: { uid: string; name: string }
 ) {
-  const orderNumber = await getNextOrderNumber(businessId);
-  const trackingToken = generateTrackingToken();
-
   // garments and fabricSelections live in separate tables â€” strip them before inserting into orders
   const { garments, fabricSelections, ...orderFields } = payload as typeof payload & {
     garments?: Array<{ name: string; quantity: number; agreedPrice: number; styleNotes?: string }>;
     fabricSelections?: unknown[];
   };
+  void fabricSelections;
+
+  // ── Offline path ─────────────────────────────────────────────────────────
+  // The order is created locally with a provisional number; the sync engine
+  // claims a real per-business order number when the create replays online.
+  const createOffline = async () => {
+    const orderId = generateId();
+    const offlineTrackingToken = generateTrackingToken();
+    const now = new Date().toISOString();
+    const provisionalNumber = `PND-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    const balance = Math.max(0, payload.subtotalAmount - depositAmount);
+
+    const orderRecord = {
+      ...orderFields,
+      id: orderId,
+      businessId,
+      orderNumber: provisionalNumber,
+      trackingToken: offlineTrackingToken,
+      stage: "cutting",
+      deliveryStatus: "pending",
+      paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
+      amountPaid: depositAmount,
+      balanceAmount: balance,
+      createdAt: now,
+      updatedAt: now,
+    } as unknown as Record<string, unknown>;
+
+    await enqueueSyncOperation(
+      businessId, 'orders', 'create',
+      { ...orderRecord, _needsOrderNumber: true },
+      orderId, 'high'
+    );
+    await cacheLocalRecord('orders', orderId, businessId, {
+      ...orderRecord,
+      garments: garments ?? [],
+      _localOnly: true,
+    }).catch(() => {});
+
+    for (const [index, g] of (garments ?? []).entries()) {
+      await enqueueSyncOperation(
+        businessId, 'order_garments', 'create',
+        {
+          orderId,
+          name: g.name,
+          quantity: g.quantity,
+          agreedPrice: g.agreedPrice,
+          styleNotes: g.styleNotes ?? "",
+          sortOrder: index,
+        },
+        generateId(), 'high'
+      );
+    }
+
+    const cachedCustomer = await getCachedById<Customer>('customers', businessId, payload.customerId);
+    await offlineUpdate(businessId, 'customers', payload.customerId, {
+      outstandingBalance: Number(cachedCustomer?.outstandingBalance ?? 0) + balance,
+      lastOrderAt: now,
+    });
+
+    if (depositAmount > 0) {
+      const nowDate = new Date();
+      await offlineCreate(businessId, 'payments', {
+        businessId,
+        customerId: payload.customerId,
+        customerName: payload.customerName,
+        orderId,
+        orderNumber: provisionalNumber,
+        amount: depositAmount,
+        method: "cash",
+        description: `${payload.customerName} paid - deposit of ${formatKes(depositAmount)} on ${nowDate.toLocaleDateString()} at ${nowDate.toLocaleTimeString()}`,
+        recordedByUid: actor.uid,
+        recordedByName: actor.name,
+        recordedAt: now,
+      }, 'high');
+    }
+
+    notifyLocalWrite('orders');
+    return { id: orderId, orderNumber: provisionalNumber, trackingToken: offlineTrackingToken };
+  };
+  if (isOffline()) return createOffline();
+
+  // Claim the order number first; if the network drops before any server
+  // write has happened, fall back to the fully-offline path.
+  let orderNumber: string;
+  try {
+    orderNumber = await getNextOrderNumber(businessId);
+  } catch (error) {
+    if (isOffline() || isNetworkError(error)) return createOffline();
+    throw error;
+  }
+  const trackingToken = generateTrackingToken();
 
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
@@ -888,13 +1085,19 @@ export async function createOrder(
 
 export function listenOrders(businessId: string, callback: (rows: Order[]) => void) {
   let destroyed = false;
+  let gotFresh = false;
+  const serveCache = async (force = false) => {
+    const cached = await getCachedCollection<Order>('orders', businessId).catch(() => []);
+    if (!destroyed && (force || !gotFresh) && cached.length > 0) {
+      callback([...cached].sort((a, b) => (orderStageSort[a.stage] ?? 9) - (orderStageSort[b.stage] ?? 9)));
+    }
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
 
     // ── Offline path ───────────────────────────────────────────────────────
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const cached = await getCachedCollection<Order>('orders', businessId).catch(() => []);
-      if (!destroyed && cached.length > 0) callback(cached);
+    if (isOffline()) {
+      await serveCache(true);
       return;
     }
 
@@ -919,27 +1122,39 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
             })),
         } as Order;
       }).sort((a, b) => orderStageSort[a.stage] - orderStageSort[b.stage]);
+      gotFresh = true;
       callback(rows);
       cacheCollection('orders', businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
     } else if (!destroyed && error) {
-      const cached = await getCachedCollection<Order>('orders', businessId).catch(() => []);
-      if (cached.length > 0) callback(cached);
+      await serveCache();
     }
   };
+  serveCache();
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['orders'], () => serveCache(true));
   const channel = supabase
     .channel(`orders-list-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_garments' }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export function listenOrdersAssignedToUser(businessId: string, uid: string, callback: (rows: Order[]) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Order>('orders', businessId).catch(() => []);
+    const mine = cached.filter((o) => o.assignedTailorId === uid);
+    if (!destroyed && mine.length > 0) callback(mine);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('orders')
       .select('*')
       .eq('business_id', businessId)
@@ -947,14 +1162,18 @@ export function listenOrdersAssignedToUser(businessId: string, uid: string, call
       .order('updated_at', { ascending: false });
     if (data && !destroyed) {
       callback(transformArrayToCamel<Order>(data as Record<string, unknown>[]));
+    } else if (!destroyed && error) {
+      await serveCache();
     }
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['orders'], fetchAndCallback);
   const channel = supabase
     .channel(`orders-assigned-${businessId}-${uid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 async function assembleOrder(orderId: string): Promise<Order | null> {
@@ -1016,12 +1235,35 @@ async function assembleOrder(orderId: string): Promise<Order | null> {
 
 export function listenOrder(businessId: string, orderId: string, callback: (row: Order | null) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedById<Order>('orders', businessId, orderId);
+    if (!destroyed && cached) {
+      callback({
+        ...cached,
+        materialUsage: cached.materialUsage ?? [],
+        fittingRecords: cached.fittingRecords ?? [],
+        imageIds: cached.imageIds ?? [],
+      } as Order);
+    }
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const order = await assembleOrder(orderId);
-    if (!destroyed) callback(order);
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    try {
+      const order = await assembleOrder(orderId);
+      if (destroyed) return;
+      if (order) callback(order);
+      else await serveCache();
+    } catch {
+      await serveCache();
+    }
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['orders'], fetchAndCallback);
   const channelName = `order-full-${orderId}-${crypto.randomUUID()}`;
   const channel = supabase
     .channel(channelName)
@@ -1030,16 +1272,22 @@ export function listenOrder(businessId: string, orderId: string, callback: (row:
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_material_usage', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_fitting_records', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export async function updateOrderStage(businessId: string, orderId: string, stage: ProductionStage) {
   const deliveryStatus = stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending";
-  await supabase
-    .from('orders')
-    .update({ stage, delivery_status: deliveryStatus })
-    .eq('id', orderId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('orders')
+        .update({ stage, delivery_status: deliveryStatus })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'orders', orderId, { stage, deliveryStatus }, 'high')
+  );
 }
 
 export async function logSmsEntry(
@@ -1054,6 +1302,10 @@ export async function logSmsEntry(
   }
 ) {
   try {
+    if (isOffline()) {
+      await offlineCreate(businessId, 'sms_logs', { ...data, businessId } as unknown as Record<string, unknown>, 'low');
+      return;
+    }
     await supabase
       .from('sms_logs')
       .insert(transformKeysToSnake({
@@ -1076,12 +1328,18 @@ export async function updateOrderSmsFields(
     delayReason?: string | null;
   }
 ) {
-  const snakePayload = transformKeysToSnake(fields as unknown as Record<string, unknown>);
-  await supabase
-    .from('orders')
-    .update(snakePayload as any)
-    .eq('id', orderId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const snakePayload = transformKeysToSnake(fields as unknown as Record<string, unknown>);
+      const { error } = await supabase
+        .from('orders')
+        .update(snakePayload as any)
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'orders', orderId, fields as unknown as Record<string, unknown>)
+  );
 }
 
 export async function addFittingRecord(
@@ -1089,29 +1347,44 @@ export async function addFittingRecord(
   orderId: string,
   payload: { notes: string; adjustmentSummary?: string; byUid: string; byName: string }
 ) {
-  await supabase
-    .from('order_fitting_records')
-    .insert(transformKeysToSnake({
-      orderId,
-      notes: payload.notes,
-      adjustmentSummary: payload.adjustmentSummary ?? null,
-      recordedByUid: payload.byUid,
-      recordedByName: payload.byName,
-    } as Record<string, unknown>));
-
-  await supabase
-    .from('orders')
-    .update({ stage: 'fitting', updated_at: new Date().toISOString() })
-    .eq('id', orderId)
-    .eq('business_id', businessId);
+  const record = {
+    orderId,
+    notes: payload.notes,
+    adjustmentSummary: payload.adjustmentSummary ?? null,
+    recordedByUid: payload.byUid,
+    recordedByName: payload.byName,
+  };
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('order_fitting_records')
+        .insert(transformKeysToSnake(record as Record<string, unknown>));
+      if (error) throw error;
+      await supabase
+        .from('orders')
+        .update({ stage: 'fitting', updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+    },
+    async () => {
+      await enqueueSyncOperation(businessId, 'order_fitting_records', 'create', record, generateId(), 'normal');
+      await offlineUpdate(businessId, 'orders', orderId, { stage: 'fitting' });
+    }
+  );
 }
 
 export async function updateOrderProductionNotes(businessId: string, orderId: string, notes: string) {
-  await supabase
-    .from('orders')
-    .update({ production_notes: notes })
-    .eq('id', orderId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('orders')
+        .update({ production_notes: notes })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'orders', orderId, { productionNotes: notes })
+  );
 }
 
 export async function updateOrderDetails(
@@ -1119,12 +1392,18 @@ export async function updateOrderDetails(
   orderId: string,
   fields: Partial<Pick<Order, "dueDate" | "designNotes" | "assignedTailorId" | "assignedTailorName" | "customerPhone">>
 ) {
-  const now = new Date().toISOString();
-  await supabase
-    .from('orders')
-    .update({ ...transformKeysToSnake(fields as Record<string, unknown>), updated_at: now })
-    .eq('id', orderId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from('orders')
+        .update({ ...transformKeysToSnake(fields as Record<string, unknown>), updated_at: now })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'orders', orderId, fields as Record<string, unknown>)
+  );
 }
 
 export async function updateOrderGarments(
@@ -1170,6 +1449,56 @@ export async function recordMaterialUsage(
   items: Omit<MaterialUsageRecord, "recordedAt">[],
   actor: { uid: string; name: string }
 ) {
+  // ── Offline path ─────────────────────────────────────────────────────────
+  if (isOffline()) {
+    const cachedOrder = await getCachedById<Order>('orders', businessId, orderId);
+    const offlineOrderNumber = cachedOrder?.orderNumber ?? "";
+    const offlineNow = new Date().toISOString();
+    const offlineUsage: MaterialUsageRecord[] = items.map((item) => ({
+      ...item,
+      recordedByUid: actor.uid,
+      recordedByName: actor.name,
+      recordedAt: offlineNow,
+    }));
+    for (const record of offlineUsage) {
+      await enqueueSyncOperation(businessId, 'order_material_usage', 'create', {
+        orderId,
+        materialId: record.materialId || null,
+        materialName: record.materialName,
+        quantityUsed: record.quantityUsed,
+        unit: record.unit,
+        recordedByUid: record.recordedByUid || null,
+        recordedByName: record.recordedByName,
+      }, generateId(), 'normal');
+      if (record.materialId) {
+        const cachedMat = await getCachedById<InventoryMaterial>('inventory_materials', businessId, record.materialId);
+        const newQty = Math.max(0, Number(cachedMat?.quantity ?? 0) - Math.abs(record.quantityUsed));
+        await offlineUpdate(businessId, 'inventory_materials', record.materialId, { quantity: newQty });
+        await offlineCreate(businessId, 'stock_movements', {
+          businessId,
+          movementType: "used_in_order",
+          materialId: record.materialId,
+          materialName: record.materialName,
+          orderId,
+          quantityChange: -Math.abs(record.quantityUsed),
+          unit: record.unit,
+          reason: `Used in order ${offlineOrderNumber}`,
+          createdByUid: actor.uid,
+          createdByName: actor.name,
+        });
+      }
+    }
+    await offlineCreate(businessId, 'consumption_reports', {
+      businessId,
+      orderId,
+      orderNumber: offlineOrderNumber,
+      items: offlineUsage,
+      totalItems: offlineUsage.length,
+    });
+    notifyLocalWrite('orders');
+    return offlineUsage;
+  }
+
   const { data: orderData } = await supabase
     .from('orders')
     .select('order_number')
@@ -1259,33 +1588,54 @@ function assembleMaterialImages(rawRow: Record<string, unknown>): InventoryMater
 
 export function listenMaterials(businessId: string, callback: (rows: InventoryMaterial[]) => void) {
   let destroyed = false;
+  let gotFresh = false;
+  const serveCache = async (force = false) => {
+    const cached = await getCachedCollection<InventoryMaterial>('inventory_materials', businessId).catch(() => []);
+    if (!destroyed && (force || !gotFresh) && cached.length > 0) callback(cached);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache(true);
+      return;
+    }
+    const { data, error } = await supabase
       .from('inventory_materials')
       .select('*, inventory_material_images(url, public_id, sort_order)')
       .eq('business_id', businessId)
       .order('updated_at', { ascending: false });
     if (data && !destroyed) {
-      callback((data as Record<string, unknown>[]).map(assembleMaterialImages));
+      gotFresh = true;
+      const rows = (data as Record<string, unknown>[]).map(assembleMaterialImages);
+      callback(rows);
+      cacheCollection('inventory_materials', businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+    } else if (!destroyed && error) {
+      await serveCache();
     }
   };
+  serveCache();
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['inventory_materials'], () => serveCache(true));
   const channel = supabase
     .channel(`inventory_materials-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_materials', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_material_images' }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export async function fetchMaterialById(businessId: string, materialId: string) {
-  const { data } = await supabase
+  if (isOffline()) {
+    return getCachedById<InventoryMaterial>('inventory_materials', businessId, materialId);
+  }
+  const { data, error } = await supabase
     .from('inventory_materials')
     .select('*, inventory_material_images(url, public_id, sort_order)')
     .eq('id', materialId)
     .eq('business_id', businessId)
     .maybeSingle();
+  if (error) return getCachedById<InventoryMaterial>('inventory_materials', businessId, materialId);
   if (!data) return null;
   return assembleMaterialImages(data as Record<string, unknown>);
 }
@@ -1295,23 +1645,51 @@ export async function createMaterial(
   payload: Omit<InventoryMaterial, "id" | "createdAt" | "updatedAt">
 ) {
   const { images, ...rest } = payload as typeof payload & { images?: Array<{ url: string; publicId: string }> };
-  const { data, error } = await supabase
-    .from('inventory_materials')
-    .insert(transformKeysToSnake({ ...rest, businessId } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create material");
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('inventory_materials')
+        .insert(transformKeysToSnake({ ...rest, businessId } as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create material");
 
-  if (images && images.length > 0) {
-    await supabase.from('inventory_material_images').insert(
-      images.map((img, i) => ({ material_id: data.id, url: img.url, public_id: img.publicId, sort_order: i }))
-    );
-  }
-  return data.id;
+      if (images && images.length > 0) {
+        await supabase.from('inventory_material_images').insert(
+          images.map((img, i) => ({ material_id: data.id, url: img.url, public_id: img.publicId, sort_order: i }))
+        );
+      }
+      return data.id as string;
+    },
+    async () => {
+      const materialId = await offlineCreate(businessId, 'inventory_materials', {
+        ...rest,
+        businessId,
+      } as unknown as Record<string, unknown>);
+      if (images && images.length > 0) {
+        for (const [i, img] of images.entries()) {
+          await enqueueSyncOperation(businessId, 'inventory_material_images', 'create', {
+            materialId,
+            url: img.url,
+            publicId: img.publicId,
+            sortOrder: i,
+          }, generateId(), 'normal');
+        }
+        await patchCachedRecord('inventory_materials', materialId, { images }).catch(() => {});
+      }
+      return materialId;
+    }
+  );
 }
 
 export async function deleteMaterial(businessId: string, materialId: string) {
-  await supabase.from('inventory_materials').delete().eq('id', materialId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('inventory_materials').delete().eq('id', materialId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'inventory_materials', materialId)
+  );
 }
 
 export async function updateMaterial(
@@ -1320,21 +1698,35 @@ export async function updateMaterial(
   payload: Partial<Omit<InventoryMaterial, "id" | "businessId" | "createdAt" | "updatedAt">>
 ) {
   const { images, ...rest } = payload as typeof payload & { images?: Array<{ url: string; publicId: string }> };
-  if (Object.keys(rest).length > 0) {
-    await supabase
-      .from('inventory_materials')
-      .update(transformKeysToSnake(rest as unknown as Record<string, unknown>))
-      .eq('id', materialId)
-      .eq('business_id', businessId);
-  }
-  if (images !== undefined) {
-    await supabase.from('inventory_material_images').delete().eq('material_id', materialId);
-    if (images.length > 0) {
-      await supabase.from('inventory_material_images').insert(
-        images.map((img, i) => ({ material_id: materialId, url: img.url, public_id: img.publicId, sort_order: i }))
-      );
+  return withOfflineFallback(
+    async () => {
+      if (Object.keys(rest).length > 0) {
+        const { error } = await supabase
+          .from('inventory_materials')
+          .update(transformKeysToSnake(rest as unknown as Record<string, unknown>))
+          .eq('id', materialId)
+          .eq('business_id', businessId);
+        if (error) throw error;
+      }
+      if (images !== undefined) {
+        await supabase.from('inventory_material_images').delete().eq('material_id', materialId);
+        if (images.length > 0) {
+          await supabase.from('inventory_material_images').insert(
+            images.map((img, i) => ({ material_id: materialId, url: img.url, public_id: img.publicId, sort_order: i }))
+          );
+        }
+      }
+    },
+    async () => {
+      // Image set changes need a connection (replace-all delete can't be queued)
+      if (Object.keys(rest).length > 0) {
+        await offlineUpdate(businessId, 'inventory_materials', materialId, rest as unknown as Record<string, unknown>);
+      }
+      if (images !== undefined) {
+        throw new Error("Material photos can only be changed while online. Your other changes were saved and will sync.");
+      }
     }
-  }
+  );
 }
 
 export async function adjustMaterialStock(
@@ -1349,34 +1741,46 @@ export async function adjustMaterialStock(
     actorName: string;
   }
 ) {
-  const { data: materialData } = await supabase
-    .from('inventory_materials')
-    .select('quantity')
-    .eq('id', payload.materialId)
-    .single();
-  const currentQty = Number((materialData as any)?.quantity ?? 0);
-  const newQty = currentQty + payload.adjustment;
+  const movement = {
+    businessId,
+    movementType: "adjustment",
+    materialId: payload.materialId,
+    materialName: payload.materialName,
+    quantityChange: payload.adjustment,
+    unit: payload.unit,
+    reason: payload.reason,
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data: materialData } = await supabase
+        .from('inventory_materials')
+        .select('quantity')
+        .eq('id', payload.materialId)
+        .single();
+      const currentQty = Number((materialData as any)?.quantity ?? 0);
+      const newQty = currentQty + payload.adjustment;
 
-  await supabase
-    .from('inventory_materials')
-    .update({ quantity: newQty })
-    .eq('id', payload.materialId)
-    .eq('business_id', businessId);
+      const { error } = await supabase
+        .from('inventory_materials')
+        .update({ quantity: newQty })
+        .eq('id', payload.materialId)
+        .eq('business_id', businessId);
+      if (error) throw error;
 
-  const { error: adjMovErr } = await supabase
-    .from('stock_movements')
-    .insert(transformKeysToSnake({
-      businessId,
-      movementType: "adjustment",
-      materialId: payload.materialId,
-      materialName: payload.materialName,
-      quantityChange: payload.adjustment,
-      unit: payload.unit,
-      reason: payload.reason,
-      createdByUid: payload.actorUid,
-      createdByName: payload.actorName,
-    } as unknown as Record<string, unknown>));
-  if (adjMovErr) console.error("Failed to insert adjustment movement:", adjMovErr);
+      const { error: adjMovErr } = await supabase
+        .from('stock_movements')
+        .insert(transformKeysToSnake(movement as unknown as Record<string, unknown>));
+      if (adjMovErr) console.error("Failed to insert adjustment movement:", adjMovErr);
+    },
+    async () => {
+      const cachedMat = await getCachedById<InventoryMaterial>('inventory_materials', businessId, payload.materialId);
+      const newQty = Number(cachedMat?.quantity ?? 0) + payload.adjustment;
+      await offlineUpdate(businessId, 'inventory_materials', payload.materialId, { quantity: newQty });
+      await offlineCreate(businessId, 'stock_movements', movement);
+    }
+  );
 }
 
 // â”€â”€â”€ SUPPLIERS â”€â”€â”€
@@ -1385,13 +1789,18 @@ export async function createSupplier(
   businessId: string,
   payload: Omit<Supplier, "id" | "createdAt">
 ) {
-  const { data, error } = await supabase
-    .from('suppliers')
-    .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create supplier");
-  return data.id;
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create supplier");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'suppliers', { ...payload, businessId } as unknown as Record<string, unknown>)
+  );
 }
 
 export async function updateSupplier(
@@ -1399,15 +1808,27 @@ export async function updateSupplier(
   supplierId: string,
   payload: Partial<Omit<Supplier, "id" | "businessId" | "createdAt">>
 ) {
-  await supabase
-    .from('suppliers')
-    .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
-    .eq('id', supplierId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('suppliers')
+        .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
+        .eq('id', supplierId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'suppliers', supplierId, payload as unknown as Record<string, unknown>)
+  );
 }
 
 export async function deleteSupplier(businessId: string, supplierId: string) {
-  await supabase.from('suppliers').delete().eq('id', supplierId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('suppliers').delete().eq('id', supplierId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'suppliers', supplierId)
+  );
 }
 
 export function listenSuppliers(businessId: string, callback: (rows: Supplier[]) => void) {
@@ -1415,12 +1836,16 @@ export function listenSuppliers(businessId: string, callback: (rows: Supplier[])
 }
 
 export async function fetchSupplierById(businessId: string, supplierId: string): Promise<Supplier | null> {
-  const { data } = await supabase
+  if (isOffline()) {
+    return getCachedById<Supplier>('suppliers', businessId, supplierId);
+  }
+  const { data, error } = await supabase
     .from('suppliers')
     .select('*')
     .eq('id', supplierId)
     .eq('business_id', businessId)
     .maybeSingle();
+  if (error) return getCachedById<Supplier>('suppliers', businessId, supplierId);
   if (!data) return null;
   return transformKeysToCamel<Supplier>(data as Record<string, unknown>);
 }
@@ -1437,22 +1862,31 @@ export async function createPurchaseOrder(
   businessId: string,
   payload: Omit<PurchaseOrder, "id" | "createdAt">
 ) {
-  const { data, error } = await supabase
-    .from('purchase_orders')
-    .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create purchase order");
-  return data.id;
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create purchase order");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'purchase_orders', { ...payload, businessId } as unknown as Record<string, unknown>)
+  );
 }
 
 export async function fetchPurchaseOrderById(businessId: string, poId: string) {
-  const { data } = await supabase
+  if (isOffline()) {
+    return getCachedById<PurchaseOrder>('purchase_orders', businessId, poId);
+  }
+  const { data, error } = await supabase
     .from('purchase_orders')
     .select('*')
     .eq('id', poId)
     .eq('business_id', businessId)
     .maybeSingle();
+  if (error) return getCachedById<PurchaseOrder>('purchase_orders', businessId, poId);
   if (!data) return null;
   return transformKeysToCamel<PurchaseOrder>(data as Record<string, unknown>);
 }
@@ -1462,15 +1896,27 @@ export async function updatePurchaseOrder(
   poId: string,
   payload: Partial<Omit<PurchaseOrder, "id" | "businessId" | "createdAt">>
 ) {
-  await supabase
-    .from('purchase_orders')
-    .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
-    .eq('id', poId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('purchase_orders')
+        .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
+        .eq('id', poId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'purchase_orders', poId, payload as unknown as Record<string, unknown>)
+  );
 }
 
 export async function deletePurchaseOrder(businessId: string, poId: string) {
-  await supabase.from('purchase_orders').delete().eq('id', poId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('purchase_orders').delete().eq('id', poId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'purchase_orders', poId)
+  );
 }
 
 export function listenPurchaseOrders(businessId: string, callback: (rows: PurchaseOrder[]) => void) {
@@ -1495,6 +1941,74 @@ export async function receiveStockFromPurchaseOrder(
 ) {
   if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
     throw new Error("Receive quantity must be greater than zero.");
+  }
+
+  // ── Offline path ─────────────────────────────────────────────────────────
+  if (isOffline()) {
+    const cachedPo = await getCachedById<PurchaseOrder>('purchase_orders', businessId, payload.purchaseOrderId);
+    if (!cachedPo) throw new Error("This purchase order isn't available offline yet. Reconnect to receive stock.");
+
+    const currentReceived = Number((cachedPo as any).quantityReceived ?? 0);
+    const remaining = Number((cachedPo as any).quantity ?? 0) - currentReceived;
+    if (remaining <= 0) throw new Error("Purchase order is already fully received.");
+    if (payload.quantity > remaining) {
+      throw new Error(`Cannot receive more than the remaining ${remaining} ${payload.unit}.`);
+    }
+
+    let materialId = payload.materialId;
+    let cachedMat: InventoryMaterial | null = null;
+    if (materialId) {
+      cachedMat = await getCachedById<InventoryMaterial>('inventory_materials', businessId, materialId);
+    } else {
+      const allMats = await getCachedCollection<InventoryMaterial>('inventory_materials', businessId).catch(() => [] as InventoryMaterial[]);
+      cachedMat = allMats.find((m) => m.name === payload.materialName) ?? null;
+      materialId = cachedMat?.id;
+    }
+    if (!materialId) {
+      materialId = await offlineCreate(businessId, 'inventory_materials', {
+        businessId,
+        name: payload.materialName,
+        categoryId: payload.categoryId ?? null,
+        categoryName: payload.categoryName || "Uncategorized",
+        unitId: payload.unitId || "",
+        unitName: payload.unitName || payload.unit,
+        quantity: 0,
+        reorderLevel: 0,
+        averageUnitCost: Number((cachedPo as any).unitCost ?? 0),
+      });
+    }
+
+    const currentQuantity = Number(cachedMat?.quantity ?? 0);
+    const currentAverageCost = Number((cachedMat as any)?.averageUnitCost ?? 0);
+    const poUnitCostOffline = Number((cachedPo as any).unitCost ?? 0);
+    const newQuantity = currentQuantity + payload.quantity;
+    const newAverageCost = newQuantity > 0
+      ? ((currentQuantity * currentAverageCost) + (payload.quantity * poUnitCostOffline)) / newQuantity
+      : currentAverageCost;
+    const newReceived = currentReceived + payload.quantity;
+    const newStatus = newReceived >= Number((cachedPo as any).quantity ?? 0) ? "received" : "partial";
+
+    await offlineUpdate(businessId, 'purchase_orders', payload.purchaseOrderId, {
+      status: newStatus,
+      quantityReceived: newReceived,
+    });
+    await offlineUpdate(businessId, 'inventory_materials', materialId, {
+      quantity: newQuantity,
+      averageUnitCost: newAverageCost,
+      unitName: payload.unit,
+    });
+    await offlineCreate(businessId, 'stock_movements', {
+      businessId,
+      movementType: "stock_in",
+      materialId,
+      materialName: payload.materialName,
+      quantityChange: payload.quantity,
+      unit: payload.unit,
+      reason: `Purchase order delivery (${newReceived}/${Number((cachedPo as any).quantity ?? 0)} ${payload.unit})`,
+      createdByUid: payload.actorUid,
+      createdByName: payload.actorName,
+    });
+    return materialId;
   }
 
   const { data: poData } = await supabase
@@ -1652,31 +2166,47 @@ export async function recordPayment(
   }
 ) {
   // ── Offline path ─────────────────────────────────────────────────────────
-  // Queue the payment row. Balance fields on orders/customers will reconcile
-  // once the user reconnects and the sync engine replays.
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const localId = generateId();
+  // Queue the payment row and optimistically reconcile order/customer
+  // balances from cached values; the sync engine replays them online.
+  const recordOffline = async () => {
     const now = new Date().toISOString();
-    const record = {
-      id: localId, businessId,
+    await offlineCreate(businessId, 'payments', {
+      businessId,
       customerId: payload.customerId, customerName: payload.customerName,
       orderId: payload.orderId, orderNumber: payload.orderNumber,
       amount: payload.amount, method: payload.method,
       mpesaCode: payload.mpesaCode ?? null,
       description: payload.description ?? "",
       recordedByUid: payload.actorUid, recordedByName: payload.actorName,
-      recordedAt: now, _localOnly: true,
-    };
-    await cacheLocalRecord('payments', localId, businessId, record).catch(() => {});
-    await enqueueSyncOperation(businessId, 'payments', 'create', record, localId, 'high').catch(() => {});
-    return;
-  }
+      recordedAt: now,
+    }, 'high');
 
-  const { data: orderData } = await supabase
+    const cachedOrder = await getCachedById<Order>('orders', businessId, payload.orderId);
+    if (cachedOrder) {
+      const nextPaid = Number(cachedOrder.amountPaid ?? 0) + payload.amount;
+      const nextBalance = Math.max(0, Number(cachedOrder.subtotalAmount ?? 0) - nextPaid);
+      await offlineUpdate(businessId, 'orders', payload.orderId, {
+        amountPaid: nextPaid,
+        balanceAmount: nextBalance,
+        paymentStatus: nextBalance === 0 ? "paid" : "partial",
+      }, 'high');
+    }
+
+    const cachedCustomer = await getCachedById<Customer>('customers', businessId, payload.customerId);
+    if (cachedCustomer) {
+      await offlineUpdate(businessId, 'customers', payload.customerId, {
+        outstandingBalance: Math.max(0, Number(cachedCustomer.outstandingBalance ?? 0) - payload.amount),
+      }, 'high');
+    }
+  };
+  if (isOffline()) return recordOffline();
+
+  const { data: orderData, error: orderFetchError } = await supabase
     .from('orders')
     .select('amount_paid, subtotal_amount')
     .eq('id', payload.orderId)
     .single();
+  if (orderFetchError && isNetworkError(orderFetchError)) return recordOffline();
   if (!orderData) {
     throw new Error("Order not found.");
   }
@@ -1745,23 +2275,35 @@ export async function createExpense(
   }
 ) {
   // ── Offline path ─────────────────────────────────────────────────────────
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const localId = generateId();
-    const now = new Date().toISOString();
-    const record = {
-      id: localId, businessId,
+  const createOffline = async () => {
+    const expenseId = await offlineCreate(businessId, 'expenses', {
+      businessId,
       category: payload.category, amount: payload.amount,
       description: payload.description, notes: payload.notes ?? "",
       receiptUrl: payload.receiptUrl ?? "",
       supplierId: payload.supplierId ?? null, supplierName: payload.supplierName ?? "",
       expenseDate: payload.expenseDate.toISOString(),
       createdByUid: payload.actorUid, createdByName: payload.actorName,
-      createdAt: now, updatedAt: now, _localOnly: true,
-    };
-    await cacheLocalRecord('expenses', localId, businessId, record).catch(() => {});
-    await enqueueSyncOperation(businessId, 'expenses', 'create', record, localId, 'normal').catch(() => {});
-    return localId;
-  }
+    });
+    await offlineCreate(businessId, 'transactions', {
+      businessId,
+      type: "expense",
+      amount: -Math.abs(payload.amount),
+      description: `Expense: ${payload.description}`,
+      referenceId: expenseId,
+      referenceType: "expense",
+      referenceLabel: payload.category,
+      linkedEntityId: payload.supplierId ?? null,
+      linkedEntityType: payload.supplierId ? "supplier" : "",
+      linkedEntityName: payload.supplierName ?? "",
+      performedByUid: payload.actorUid,
+      performedByName: payload.actorName,
+      status: "completed",
+      notes: payload.notes ?? "",
+    });
+    return expenseId;
+  };
+  if (isOffline()) return createOffline();
 
   const { data: expenseData, error: expenseError } = await supabase
     .from('expenses')
@@ -1780,6 +2322,7 @@ export async function createExpense(
     } as unknown as Record<string, unknown>))
     .select('id')
     .single();
+  if (expenseError && isNetworkError(expenseError)) return createOffline();
   if (expenseError || !expenseData) throw expenseError || new Error("Failed to create expense");
 
   await supabase
@@ -1815,61 +2358,99 @@ export async function updateExpense(
     : typeof rawDate === "string" && rawDate
     ? new Date(rawDate).toISOString()
     : undefined;
-  const snakePayload = transformKeysToSnake({
-    ...payload,
-    expenseDate,
-  } as unknown as Record<string, unknown>);
+  return withOfflineFallback(
+    async () => {
+      const snakePayload = transformKeysToSnake({
+        ...payload,
+        expenseDate,
+      } as unknown as Record<string, unknown>);
 
-  await supabase
-    .from('expenses')
-    .update(snakePayload as any)
-    .eq('id', expenseId)
-    .eq('business_id', businessId);
+      const { error } = await supabase
+        .from('expenses')
+        .update(snakePayload as any)
+        .eq('id', expenseId)
+        .eq('business_id', businessId);
+      if (error) throw error;
 
-  const { data: existingTx } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('reference_id', expenseId)
-    .eq('business_id', businessId);
-
-  if (existingTx) {
-    for (const tx of existingTx) {
-      await supabase
+      const { data: existingTx } = await supabase
         .from('transactions')
-        .update({
+        .select('*')
+        .eq('reference_id', expenseId)
+        .eq('business_id', businessId);
+
+      if (existingTx) {
+        for (const tx of existingTx) {
+          await supabase
+            .from('transactions')
+            .update({
+              amount: payload.amount !== undefined ? -Math.abs(payload.amount) : (tx as any).amount,
+              description: payload.description ? `Expense: ${payload.description}` : (tx as any).description,
+              reference_label: payload.category ?? (tx as any).reference_label,
+              linked_entity_id: payload.supplierId ?? (tx as any).linked_entity_id ?? null,
+              linked_entity_name: payload.supplierName ?? (tx as any).linked_entity_name ?? "",
+              notes: payload.notes ?? (tx as any).notes ?? "",
+            } as any)
+            .eq('id', (tx as any).id);
+        }
+      }
+    },
+    async () => {
+      await offlineUpdate(businessId, 'expenses', expenseId, {
+        ...payload,
+        expenseDate,
+      } as unknown as Record<string, unknown>);
+      const cachedTxs = await getCachedCollection<Transaction>('transactions', businessId).catch(() => [] as Transaction[]);
+      for (const tx of cachedTxs.filter((t) => (t as any).referenceId === expenseId)) {
+        await offlineUpdate(businessId, 'transactions', tx.id, {
           amount: payload.amount !== undefined ? -Math.abs(payload.amount) : (tx as any).amount,
           description: payload.description ? `Expense: ${payload.description}` : (tx as any).description,
-          reference_label: payload.category ?? (tx as any).reference_label,
-          linked_entity_id: payload.supplierId ?? (tx as any).linked_entity_id ?? null,
-          linked_entity_name: payload.supplierName ?? (tx as any).linked_entity_name ?? "",
+          referenceLabel: payload.category ?? (tx as any).referenceLabel,
+          linkedEntityId: payload.supplierId ?? (tx as any).linkedEntityId ?? null,
+          linkedEntityName: payload.supplierName ?? (tx as any).linkedEntityName ?? "",
           notes: payload.notes ?? (tx as any).notes ?? "",
-        } as any)
-        .eq('id', (tx as any).id);
+        });
+      }
     }
-  }
+  );
 }
 
 export async function deleteExpense(businessId: string, expenseId: string) {
-  await supabase.from('expenses').delete().eq('id', expenseId).eq('business_id', businessId);
-  const { data: txs } = await supabase
-    .from('transactions')
-    .select('id')
-    .eq('reference_id', expenseId)
-    .eq('business_id', businessId);
-  if (txs) {
-    for (const tx of txs) {
-      await supabase.from('transactions').delete().eq('id', (tx as any).id);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('expenses').delete().eq('id', expenseId).eq('business_id', businessId);
+      if (error) throw error;
+      const { data: txs } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('reference_id', expenseId)
+        .eq('business_id', businessId);
+      if (txs) {
+        for (const tx of txs) {
+          await supabase.from('transactions').delete().eq('id', (tx as any).id);
+        }
+      }
+    },
+    async () => {
+      await offlineDelete(businessId, 'expenses', expenseId);
+      const cachedTxs = await getCachedCollection<Transaction>('transactions', businessId).catch(() => [] as Transaction[]);
+      for (const tx of cachedTxs.filter((t) => (t as any).referenceId === expenseId)) {
+        await offlineDelete(businessId, 'transactions', tx.id);
+      }
     }
-  }
+  );
 }
 
 export async function fetchExpenseById(businessId: string, expenseId: string): Promise<Expense | null> {
-  const { data } = await supabase
+  if (isOffline()) {
+    return getCachedById<Expense>('expenses', businessId, expenseId);
+  }
+  const { data, error } = await supabase
     .from('expenses')
     .select('*')
     .eq('id', expenseId)
     .eq('business_id', businessId)
     .maybeSingle();
+  if (error) return getCachedById<Expense>('expenses', businessId, expenseId);
   if (!data) return null;
   return transformKeysToCamel<Expense>(data as Record<string, unknown>);
 }
@@ -1880,22 +2461,34 @@ export function listenExpenses(businessId: string, callback: (rows: Expense[]) =
 
 export function listenExpensesByCategory(businessId: string, category: ExpenseCategory, callback: (rows: Expense[]) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Expense>('expenses', businessId).catch(() => []);
+    const filtered = cached.filter((e) => e.category === category);
+    if (!destroyed && filtered.length > 0) callback(filtered);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('expenses')
       .select('*')
       .eq('business_id', businessId)
       .eq('category', category)
       .order('expense_date', { ascending: false });
     if (data && !destroyed) callback(transformArrayToCamel<Expense>(data as Record<string, unknown>[]));
+    else if (!destroyed && error) await serveCache();
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['expenses'], fetchAndCallback);
   const channel = supabase
     .channel(`expenses-cat-${businessId}-${category}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export async function fetchExpensesInRange(businessId: string, startDate: Date, endDate: Date): Promise<Expense[]> {
@@ -1924,20 +2517,30 @@ export async function createWithdrawal(
   }
 ) {
   // ── Offline path ─────────────────────────────────────────────────────────
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const localId = generateId();
-    const now = new Date().toISOString();
-    const record = {
-      id: localId, businessId,
+  const createOffline = async () => {
+    const withdrawalId = await offlineCreate(businessId, 'withdrawals', {
+      businessId,
       amount: payload.amount, reason: payload.reason, category: payload.category,
       withdrawnByUid: payload.actorUid, withdrawnByName: payload.actorName,
       withdrawalDate: payload.withdrawalDate.toISOString(),
-      notes: payload.notes ?? "", createdAt: now, _localOnly: true,
-    };
-    await cacheLocalRecord('withdrawals', localId, businessId, record).catch(() => {});
-    await enqueueSyncOperation(businessId, 'withdrawals', 'create', record, localId, 'normal').catch(() => {});
-    return localId;
-  }
+      notes: payload.notes ?? "",
+    });
+    await offlineCreate(businessId, 'transactions', {
+      businessId,
+      type: "withdrawal",
+      amount: -Math.abs(payload.amount),
+      description: `Withdrawal: ${payload.reason}`,
+      referenceId: withdrawalId,
+      referenceType: "withdrawal",
+      referenceLabel: payload.category,
+      performedByUid: payload.actorUid,
+      performedByName: payload.actorName,
+      status: "completed",
+      notes: payload.notes ?? "",
+    });
+    return withdrawalId;
+  };
+  if (isOffline()) return createOffline();
 
   const { data: withdrawalData, error: withdrawalError } = await supabase
     .from('withdrawals')
@@ -1953,6 +2556,7 @@ export async function createWithdrawal(
     } as unknown as Record<string, unknown>))
     .select('id')
     .single();
+  if (withdrawalError && isNetworkError(withdrawalError)) return createOffline();
   if (withdrawalError || !withdrawalData) throw withdrawalError || new Error("Failed to create withdrawal");
 
   await supabase
@@ -1985,57 +2589,93 @@ export async function updateWithdrawal(
     : typeof rawWdDate === "string" && rawWdDate
     ? new Date(rawWdDate).toISOString()
     : undefined;
-  await supabase
-    .from('withdrawals')
-    .update(transformKeysToSnake({
-      ...payload,
-      withdrawalDate,
-    } as unknown as Record<string, unknown>))
-    .eq('id', withdrawalId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('withdrawals')
+        .update(transformKeysToSnake({
+          ...payload,
+          withdrawalDate,
+        } as unknown as Record<string, unknown>))
+        .eq('id', withdrawalId)
+        .eq('business_id', businessId);
+      if (error) throw error;
 
-  const { data: existingTx } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('reference_id', withdrawalId)
-    .eq('business_id', businessId);
-
-  if (existingTx) {
-    for (const tx of existingTx) {
-      await supabase
+      const { data: existingTx } = await supabase
         .from('transactions')
-        .update({
+        .select('*')
+        .eq('reference_id', withdrawalId)
+        .eq('business_id', businessId);
+
+      if (existingTx) {
+        for (const tx of existingTx) {
+          await supabase
+            .from('transactions')
+            .update({
+              amount: payload.amount !== undefined ? -Math.abs(payload.amount) : (tx as any).amount,
+              description: payload.reason ? `Withdrawal: ${payload.reason}` : (tx as any).description,
+              reference_label: payload.category ?? (tx as any).reference_label,
+              notes: payload.notes ?? (tx as any).notes ?? "",
+            } as any)
+            .eq('id', (tx as any).id);
+        }
+      }
+    },
+    async () => {
+      await offlineUpdate(businessId, 'withdrawals', withdrawalId, {
+        ...payload,
+        withdrawalDate,
+      } as unknown as Record<string, unknown>);
+      const cachedTxs = await getCachedCollection<Transaction>('transactions', businessId).catch(() => [] as Transaction[]);
+      for (const tx of cachedTxs.filter((t) => (t as any).referenceId === withdrawalId)) {
+        await offlineUpdate(businessId, 'transactions', tx.id, {
           amount: payload.amount !== undefined ? -Math.abs(payload.amount) : (tx as any).amount,
           description: payload.reason ? `Withdrawal: ${payload.reason}` : (tx as any).description,
-          reference_label: payload.category ?? (tx as any).reference_label,
+          referenceLabel: payload.category ?? (tx as any).referenceLabel,
           notes: payload.notes ?? (tx as any).notes ?? "",
-        } as any)
-        .eq('id', (tx as any).id);
+        });
+      }
     }
-  }
+  );
 }
 
 export async function deleteWithdrawal(businessId: string, withdrawalId: string) {
-  await supabase.from('withdrawals').delete().eq('id', withdrawalId).eq('business_id', businessId);
-  const { data: txs } = await supabase
-    .from('transactions')
-    .select('id')
-    .eq('reference_id', withdrawalId)
-    .eq('business_id', businessId);
-  if (txs) {
-    for (const tx of txs) {
-      await supabase.from('transactions').delete().eq('id', (tx as any).id);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('withdrawals').delete().eq('id', withdrawalId).eq('business_id', businessId);
+      if (error) throw error;
+      const { data: txs } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('reference_id', withdrawalId)
+        .eq('business_id', businessId);
+      if (txs) {
+        for (const tx of txs) {
+          await supabase.from('transactions').delete().eq('id', (tx as any).id);
+        }
+      }
+    },
+    async () => {
+      await offlineDelete(businessId, 'withdrawals', withdrawalId);
+      const cachedTxs = await getCachedCollection<Transaction>('transactions', businessId).catch(() => [] as Transaction[]);
+      for (const tx of cachedTxs.filter((t) => (t as any).referenceId === withdrawalId)) {
+        await offlineDelete(businessId, 'transactions', tx.id);
+      }
     }
-  }
+  );
 }
 
 export async function fetchWithdrawalById(businessId: string, withdrawalId: string): Promise<Withdrawal | null> {
-  const { data } = await supabase
+  if (isOffline()) {
+    return getCachedById<Withdrawal>('withdrawals', businessId, withdrawalId);
+  }
+  const { data, error } = await supabase
     .from('withdrawals')
     .select('*')
     .eq('id', withdrawalId)
     .eq('business_id', businessId)
     .maybeSingle();
+  if (error) return getCachedById<Withdrawal>('withdrawals', businessId, withdrawalId);
   if (!data) return null;
   return transformKeysToCamel<Withdrawal>(data as Record<string, unknown>);
 }
@@ -2046,22 +2686,34 @@ export function listenWithdrawals(businessId: string, callback: (rows: Withdrawa
 
 export function listenWithdrawalsByCategory(businessId: string, category: WithdrawalCategory, callback: (rows: Withdrawal[]) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Withdrawal>('withdrawals', businessId).catch(() => []);
+    const filtered = cached.filter((w) => w.category === category);
+    if (!destroyed && filtered.length > 0) callback(filtered);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('withdrawals')
       .select('*')
       .eq('business_id', businessId)
       .eq('category', category)
       .order('withdrawal_date', { ascending: false });
     if (data && !destroyed) callback(transformArrayToCamel<Withdrawal>(data as Record<string, unknown>[]));
+    else if (!destroyed && error) await serveCache();
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['withdrawals'], fetchAndCallback);
   const channel = supabase
     .channel(`withdrawals-cat-${businessId}-${category}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export async function fetchWithdrawalsInRange(businessId: string, startDate: Date, endDate: Date): Promise<Withdrawal[]> {
@@ -2090,25 +2742,31 @@ export async function createInvestment(
     actorName: string;
   }
 ) {
-  const { data, error } = await supabase
-    .from('investments')
-    .insert(transformKeysToSnake({
-      businessId,
-      type: payload.type,
-      amount: payload.amount,
-      description: payload.description,
-      notes: payload.notes ?? "",
-      investmentDate: payload.investmentDate.toISOString(),
-      returnExpected: payload.returnExpected ?? 0,
-      returnActual: 0,
-      status: "active",
-      createdByUid: payload.actorUid,
-      createdByName: payload.actorName,
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create investment");
-  return data.id;
+  const record = {
+    businessId,
+    type: payload.type,
+    amount: payload.amount,
+    description: payload.description,
+    notes: payload.notes ?? "",
+    investmentDate: payload.investmentDate.toISOString(),
+    returnExpected: payload.returnExpected ?? 0,
+    returnActual: 0,
+    status: "active",
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('investments')
+        .insert(transformKeysToSnake(record as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create investment");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'investments', record as unknown as Record<string, unknown>)
+  );
 }
 
 export async function updateInvestment(
@@ -2116,15 +2774,27 @@ export async function updateInvestment(
   investmentId: string,
   payload: Partial<Omit<Investment, "id" | "businessId" | "createdAt" | "createdByUid" | "createdByName">>
 ) {
-  await supabase
-    .from('investments')
-    .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
-    .eq('id', investmentId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('investments')
+        .update(transformKeysToSnake(payload as unknown as Record<string, unknown>))
+        .eq('id', investmentId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'investments', investmentId, payload as unknown as Record<string, unknown>)
+  );
 }
 
 export async function deleteInvestment(businessId: string, investmentId: string) {
-  await supabase.from('investments').delete().eq('id', investmentId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('investments').delete().eq('id', investmentId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'investments', investmentId)
+  );
 }
 
 export function listenInvestments(businessId: string, callback: (rows: Investment[]) => void) {
@@ -2145,24 +2815,30 @@ export async function createSavingsGoal(
     actorName: string;
   }
 ) {
-  const { data, error } = await supabase
-    .from('savings_goals')
-    .insert(transformKeysToSnake({
-      businessId,
-      name: payload.name,
-      targetAmount: payload.targetAmount,
-      currentAmount: 0,
-      deadline: payload.deadline ?? null,
-      description: payload.description ?? "",
-      color: payload.color ?? "#059669",
-      status: "active",
-      createdByUid: payload.actorUid,
-      createdByName: payload.actorName,
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create savings goal");
-  return data.id;
+  const record = {
+    businessId,
+    name: payload.name,
+    targetAmount: payload.targetAmount,
+    currentAmount: 0,
+    deadline: payload.deadline ?? null,
+    description: payload.description ?? "",
+    color: payload.color ?? "#059669",
+    status: "active",
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('savings_goals')
+        .insert(transformKeysToSnake(record as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create savings goal");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'savings_goals', record as unknown as Record<string, unknown>)
+  );
 }
 
 export async function updateSavingsGoal(
@@ -2170,15 +2846,27 @@ export async function updateSavingsGoal(
   goalId: string,
   payload: Partial<Omit<SavingsGoal, "id" | "businessId" | "createdAt" | "createdByUid" | "createdByName">>
 ) {
-  await supabase
-    .from('savings_goals')
-    .update(transformKeysToSnake({ ...payload, updatedAt: new Date().toISOString() } as unknown as Record<string, unknown>))
-    .eq('id', goalId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('savings_goals')
+        .update(transformKeysToSnake({ ...payload, updatedAt: new Date().toISOString() } as unknown as Record<string, unknown>))
+        .eq('id', goalId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'savings_goals', goalId, payload as unknown as Record<string, unknown>)
+  );
 }
 
 export async function deleteSavingsGoal(businessId: string, goalId: string) {
-  await supabase.from('savings_goals').delete().eq('id', goalId).eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('savings_goals').delete().eq('id', goalId).eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'savings_goals', goalId)
+  );
 }
 
 export function listenSavingsGoals(businessId: string, callback: (rows: SavingsGoal[]) => void) {
@@ -2196,65 +2884,115 @@ export async function createSavingsDeposit(
     actorName: string;
   }
 ) {
-  const { data, error } = await supabase
-    .from('savings_deposits')
-    .insert(transformKeysToSnake({
-      businessId,
-      goalId: payload.goalId,
-      amount: payload.amount,
-      notes: payload.notes ?? "",
-      depositDate: payload.depositDate.toISOString(),
-      createdByUid: payload.actorUid,
-      createdByName: payload.actorName,
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to record deposit");
+  const record = {
+    businessId,
+    goalId: payload.goalId,
+    amount: payload.amount,
+    notes: payload.notes ?? "",
+    depositDate: payload.depositDate.toISOString(),
+    createdByUid: payload.actorUid,
+    createdByName: payload.actorName,
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('savings_deposits')
+        .insert(transformKeysToSnake(record as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to record deposit");
 
-  const { data: goal } = await supabase
-    .from('savings_goals')
-    .select('current_amount, target_amount')
-    .eq('id', payload.goalId)
-    .single();
-  if (goal) {
-    const newAmount = Number((goal as any).current_amount ?? 0) + payload.amount;
-    const isComplete = newAmount >= Number((goal as any).target_amount ?? 0);
-    await supabase
-      .from('savings_goals')
-      .update({ current_amount: newAmount, status: isComplete ? 'completed' : 'active', updated_at: new Date().toISOString() } as any)
-      .eq('id', payload.goalId);
-  }
+      const { data: goal } = await supabase
+        .from('savings_goals')
+        .select('current_amount, target_amount')
+        .eq('id', payload.goalId)
+        .single();
+      if (goal) {
+        const newAmount = Number((goal as any).current_amount ?? 0) + payload.amount;
+        const isComplete = newAmount >= Number((goal as any).target_amount ?? 0);
+        await supabase
+          .from('savings_goals')
+          .update({ current_amount: newAmount, status: isComplete ? 'completed' : 'active', updated_at: new Date().toISOString() } as any)
+          .eq('id', payload.goalId);
+      }
 
-  return data.id;
+      return data.id as string;
+    },
+    async () => {
+      const depositId = await offlineCreate(businessId, 'savings_deposits', record as unknown as Record<string, unknown>);
+      const cachedGoal = await getCachedById<SavingsGoal>('savings_goals', businessId, payload.goalId);
+      if (cachedGoal) {
+        const newAmount = Number(cachedGoal.currentAmount ?? 0) + payload.amount;
+        const isComplete = newAmount >= Number(cachedGoal.targetAmount ?? 0);
+        await offlineUpdate(businessId, 'savings_goals', payload.goalId, {
+          currentAmount: newAmount,
+          status: isComplete ? 'completed' : 'active',
+        });
+      }
+      return depositId;
+    }
+  );
 }
 
 export async function deleteSavingsDeposit(businessId: string, depositId: string, goalId: string, amount: number) {
-  await supabase.from('savings_deposits').delete().eq('id', depositId).eq('business_id', businessId);
-  const { data: goal } = await supabase.from('savings_goals').select('current_amount').eq('id', goalId).single();
-  if (goal) {
-    const newAmount = Math.max(0, Number((goal as any).current_amount ?? 0) - amount);
-    await supabase.from('savings_goals').update({ current_amount: newAmount, status: 'active', updated_at: new Date().toISOString() } as any).eq('id', goalId);
-  }
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase.from('savings_deposits').delete().eq('id', depositId).eq('business_id', businessId);
+      if (error) throw error;
+      const { data: goal } = await supabase.from('savings_goals').select('current_amount').eq('id', goalId).single();
+      if (goal) {
+        const newAmount = Math.max(0, Number((goal as any).current_amount ?? 0) - amount);
+        await supabase.from('savings_goals').update({ current_amount: newAmount, status: 'active', updated_at: new Date().toISOString() } as any).eq('id', goalId);
+      }
+    },
+    async () => {
+      await offlineDelete(businessId, 'savings_deposits', depositId);
+      const cachedGoal = await getCachedById<SavingsGoal>('savings_goals', businessId, goalId);
+      if (cachedGoal) {
+        await offlineUpdate(businessId, 'savings_goals', goalId, {
+          currentAmount: Math.max(0, Number(cachedGoal.currentAmount ?? 0) - amount),
+          status: 'active',
+        });
+      }
+    }
+  );
 }
 
 export function listenSavingsDeposits(businessId: string, goalId: string, callback: (rows: SavingsDeposit[]) => void) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<SavingsDeposit>('savings_deposits', businessId).catch(() => []);
+    const filtered = cached.filter((d) => (d as any).goalId === goalId);
+    if (!destroyed && filtered.length > 0) callback(filtered);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('savings_deposits')
       .select('*')
       .eq('business_id', businessId)
       .eq('goal_id', goalId)
       .order('deposit_date', { ascending: false });
-    if (data && !destroyed) callback(transformArrayToCamel<SavingsDeposit>(data as Record<string, unknown>[]));
+    if (data && !destroyed) {
+      const rows = transformArrayToCamel<SavingsDeposit>(data as Record<string, unknown>[]);
+      callback(rows);
+      cacheCollection('savings_deposits', businessId, rows as unknown as Array<Record<string, unknown>>, false).catch(() => {});
+    } else if (!destroyed && error) {
+      await serveCache();
+    }
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['savings_deposits'], fetchAndCallback);
   const channel = supabase
     .channel(`savings-deposits-${businessId}-${goalId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'savings_deposits', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 // â”€â”€â”€ TRANSACTIONS â”€â”€â”€
@@ -2281,16 +3019,21 @@ export async function recordTransaction(
     notes?: string;
   }
 ) {
-  const { data, error } = await supabase
-    .from('transactions')
-    .insert(transformKeysToSnake({
-      businessId,
-      ...payload,
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to record transaction");
-  return data.id;
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert(transformKeysToSnake({
+          businessId,
+          ...payload,
+        } as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to record transaction");
+      return data.id as string;
+    },
+    () => offlineCreate(businessId, 'transactions', { businessId, ...payload } as unknown as Record<string, unknown>)
+  );
 }
 
 // â”€â”€â”€ NOTIFICATIONS â”€â”€â”€
@@ -2304,23 +3047,29 @@ export async function createNotification(input: {
   link?: string;
   metadata?: Record<string, string>;
 }) {
-  const { data, error } = await supabase
-    .from('notifications')
-    .insert(transformKeysToSnake({
-      businessId: input.businessId,
-      recipientUid: input.recipientUid,
-      type: input.type,
-      title: input.title,
-      message: input.message,
-      link: input.link ?? "",
-      read: false,
-      archived: false,
-      metadata: input.metadata ?? {},
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create notification");
-  return data.id;
+  const record = {
+    businessId: input.businessId,
+    recipientUid: input.recipientUid,
+    type: input.type,
+    title: input.title,
+    message: input.message,
+    link: input.link ?? "",
+    read: false,
+    archived: false,
+    metadata: input.metadata ?? {},
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('notifications')
+        .insert(transformKeysToSnake(record as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create notification");
+      return data.id as string;
+    },
+    () => offlineCreate(input.businessId, 'notifications', record as unknown as Record<string, unknown>, 'low')
+  );
 }
 
 export async function createNotificationForAllMembers(
@@ -2331,23 +3080,21 @@ export async function createNotificationForAllMembers(
   link?: string,
   excludeUid?: string
 ) {
-  const members = await fetchMembers(businessId);
+  // Offline: resolve the member list from cache and queue one notification each
+  const members = isOffline()
+    ? await getCachedCollection<UserProfile>('members', businessId).catch(() => [] as UserProfile[])
+    : await fetchMembers(businessId);
   for (const member of members) {
     if (member.uid === excludeUid) continue;
     if (!member.active) continue;
-    await supabase
-      .from('notifications')
-      .insert(transformKeysToSnake({
-        businessId,
-        recipientUid: member.uid,
-        type,
-        title,
-        message,
-        link: link ?? "",
-        read: false,
-        archived: false,
-        metadata: {},
-      } as unknown as Record<string, unknown>));
+    await createNotification({
+      businessId,
+      recipientUid: member.uid,
+      type,
+      title,
+      message,
+      link,
+    }).catch(() => {});
   }
 }
 
@@ -2357,9 +3104,20 @@ export function listenNotifications(
   callback: (notifications: Notification[]) => void
 ) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Notification>('notifications', businessId).catch(() => []);
+    const mine = cached
+      .filter((n) => (n as any).recipientUid === recipientUid && !(n as any).archived)
+      .sort((a, b) => String((b as any).createdAt ?? '').localeCompare(String((a as any).createdAt ?? '')));
+    if (!destroyed) callback(mine);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('notifications')
       .select('*')
       .eq('business_id', businessId)
@@ -2367,7 +3125,11 @@ export function listenNotifications(
       .eq('archived', false)
       .order('created_at', { ascending: false })
       .limit(50);
-    if (destroyed || !data) return;
+    if (destroyed) return;
+    if (!data) {
+      if (error) await serveCache();
+      return;
+    }
 
     const cutoff = Date.now() - 48 * 60 * 60 * 1000;
     const expiredIds: string[] = [];
@@ -2386,14 +3148,18 @@ export function listenNotifications(
       await supabase.from('notifications').delete().in('id', expiredIds);
     }
 
-    callback(transformArrayToCamel<Notification>(valid));
+    const rows = transformArrayToCamel<Notification>(valid);
+    callback(rows);
+    cacheCollection('notifications', businessId, rows as unknown as Array<Record<string, unknown>>, false).catch(() => {});
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['notifications'], fetchAndCallback);
   const channel = supabase
     .channel(`notifications-${businessId}-${recipientUid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export function listenUnreadCount(
@@ -2402,87 +3168,152 @@ export function listenUnreadCount(
   callback: (count: number) => void
 ) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Notification>('notifications', businessId).catch(() => []);
+    const count = cached.filter(
+      (n) => (n as any).recipientUid === recipientUid && !(n as any).read && !(n as any).archived
+    ).length;
+    if (!destroyed) callback(count);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { count } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { count, error } = await supabase
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .eq('business_id', businessId)
       .eq('recipient_uid', recipientUid)
       .eq('read', false)
       .eq('archived', false);
-    if (!destroyed) callback(count ?? 0);
+    if (destroyed) return;
+    if (error) {
+      await serveCache();
+      return;
+    }
+    callback(count ?? 0);
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['notifications'], fetchAndCallback);
   const channel = supabase
     .channel(`unread-count-${businessId}-${recipientUid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export async function markNotificationRead(businessId: string, notificationId: string) {
-  await supabase
-    .from('notifications')
-    .update({ read: true })
-    .eq('id', notificationId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'notifications', notificationId, { read: true }, 'low')
+  );
 }
 
 export async function markAllNotificationsRead(businessId: string, recipientUid: string) {
-  const { data: unread } = await supabase
-    .from('notifications')
-    .select('id')
-    .eq('business_id', businessId)
-    .eq('recipient_uid', recipientUid)
-    .eq('read', false)
-    .eq('archived', false);
-
-  if (unread) {
-    for (const n of unread) {
-      await supabase
+  return withOfflineFallback(
+    async () => {
+      const { data: unread, error } = await supabase
         .from('notifications')
-        .update({ read: true })
-        .eq('id', (n as any).id);
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('recipient_uid', recipientUid)
+        .eq('read', false)
+        .eq('archived', false);
+      if (error) throw error;
+
+      if (unread) {
+        for (const n of unread) {
+          await supabase
+            .from('notifications')
+            .update({ read: true })
+            .eq('id', (n as any).id);
+        }
+      }
+    },
+    async () => {
+      const cached = await getCachedCollection<Notification>('notifications', businessId).catch(() => [] as Notification[]);
+      const unread = cached.filter(
+        (n) => (n as any).recipientUid === recipientUid && !(n as any).read && !(n as any).archived
+      );
+      for (const n of unread) {
+        await offlineUpdate(businessId, 'notifications', n.id, { read: true }, 'low');
+      }
     }
-  }
+  );
 }
 
 export async function archiveNotification(businessId: string, notificationId: string) {
-  await supabase
-    .from('notifications')
-    .update({ archived: true })
-    .eq('id', notificationId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ archived: true })
+        .eq('id', notificationId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'notifications', notificationId, { archived: true }, 'low')
+  );
 }
 
 export async function deleteNotification(businessId: string, notificationId: string) {
-  await supabase
-    .from('notifications')
-    .delete()
-    .eq('id', notificationId)
-    .eq('business_id', businessId);
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', notificationId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'notifications', notificationId, 'low')
+  );
 }
 
 export async function bulkArchiveNotifications(businessId: string, recipientUid: string) {
-  const { data: toArchive } = await supabase
-    .from('notifications')
-    .select('id')
-    .eq('business_id', businessId)
-    .eq('recipient_uid', recipientUid)
-    .eq('archived', false);
-
-  if (toArchive) {
-    for (const n of toArchive) {
-      await supabase
+  return withOfflineFallback(
+    async () => {
+      const { data: toArchive, error } = await supabase
         .from('notifications')
-        .update({ archived: true })
-        .eq('id', (n as any).id);
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('recipient_uid', recipientUid)
+        .eq('archived', false);
+      if (error) throw error;
+
+      if (toArchive) {
+        for (const n of toArchive) {
+          await supabase
+            .from('notifications')
+            .update({ archived: true })
+            .eq('id', (n as any).id);
+        }
+      }
+    },
+    async () => {
+      const cached = await getCachedCollection<Notification>('notifications', businessId).catch(() => [] as Notification[]);
+      const toArchive = cached.filter(
+        (n) => (n as any).recipientUid === recipientUid && !(n as any).archived
+      );
+      for (const n of toArchive) {
+        await offlineUpdate(businessId, 'notifications', n.id, { archived: true }, 'low');
+      }
     }
-  }
+  );
 }
 
 export async function cleanupOldNotifications() {
+  if (isOffline()) return;
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const { data: old } = await supabase
     .from('notifications')
@@ -2509,25 +3340,31 @@ export async function createConversation(input: {
   title?: string;
   priority?: AnnouncementPriority;
 }) {
-  const { data, error } = await supabase
-    .from('conversations')
-    .insert(transformKeysToSnake({
-      businessId: input.businessId,
-      participants: input.participants,
-      participantProfiles: input.participantProfiles.map((p) => ({
-        uid: p.uid,
-        displayName: p.displayName ?? "User",
-        photoURL: p.photoURL || undefined,
-      })),
-      type: input.type,
-      title: input.title ?? "",
-      priority: input.priority ?? "normal",
-      pinned: false,
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !data) throw error || new Error("Failed to create conversation");
-  return data.id;
+  const record = {
+    businessId: input.businessId,
+    participants: input.participants,
+    participantProfiles: input.participantProfiles.map((p) => ({
+      uid: p.uid,
+      displayName: p.displayName ?? "User",
+      photoURL: p.photoURL || undefined,
+    })),
+    type: input.type,
+    title: input.title ?? "",
+    priority: input.priority ?? "normal",
+    pinned: false,
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert(transformKeysToSnake(record as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error("Failed to create conversation");
+      return data.id as string;
+    },
+    () => offlineCreate(input.businessId, 'conversations', record as unknown as Record<string, unknown>, 'high')
+  );
 }
 
 export function listenConversations(
@@ -2536,9 +3373,20 @@ export function listenConversations(
   callback: (conversations: Conversation[]) => void
 ) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Conversation>('conversations', businessId).catch(() => []);
+    const mine = cached
+      .filter((c) => (c.participants ?? []).includes(uid))
+      .sort((a, b) => String((b as any).updatedAt ?? '').localeCompare(String((a as any).updatedAt ?? '')));
+    if (!destroyed && mine.length > 0) callback(mine);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('conversations')
       .select('*')
       .eq('business_id', businessId)
@@ -2547,15 +3395,21 @@ export function listenConversations(
       .order('updated_at', { ascending: false })
       .limit(50);
     if (data && !destroyed) {
-      callback(transformArrayToCamel<Conversation>(data as Record<string, unknown>[]));
+      const rows = transformArrayToCamel<Conversation>(data as Record<string, unknown>[]);
+      callback(rows);
+      cacheCollection('conversations', businessId, rows as unknown as Array<Record<string, unknown>>, false).catch(() => {});
+    } else if (!destroyed && error) {
+      await serveCache();
     }
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['conversations'], fetchAndCallback);
   const channel = supabase
     .channel(`conversations-${businessId}-${uid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export function listenUnreadMessageCount(
@@ -2564,31 +3418,39 @@ export function listenUnreadMessageCount(
   callback: (count: number) => void
 ) {
   let destroyed = false;
+  const countUnread = (rows: Conversation[]) =>
+    rows.filter((c) => (c.participants ?? []).includes(uid) && c.lastMessage && c.lastMessage.senderUid !== uid).length;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Conversation>('conversations', businessId).catch(() => []);
+    if (!destroyed) callback(countUnread(cached));
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('conversations')
       .select('*')
       .eq('business_id', businessId)
       .contains('participants', [uid])
       .order('updated_at', { ascending: false });
-    if (destroyed || !data) return;
-
-    let total = 0;
-    for (const conv of data) {
-      const convData = transformKeysToCamel<Conversation>(conv as Record<string, unknown>);
-      if (convData.lastMessage && convData.lastMessage.senderUid !== uid) {
-        total += 1;
-      }
+    if (destroyed) return;
+    if (!data) {
+      if (error) await serveCache();
+      return;
     }
-    if (!destroyed) callback(total);
+    callback(countUnread(transformArrayToCamel<Conversation>(data as Record<string, unknown>[])));
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['conversations'], fetchAndCallback);
   const channel = supabase
     .channel(`unread-msg-${businessId}-${uid}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export async function getUnreadConversationCount(
@@ -2619,6 +3481,18 @@ export async function markConversationRead(
   conversationId: string,
   uid: string
 ) {
+  if (isOffline()) {
+    const cached = await getCachedCollection<Message>('messages', businessId).catch(() => [] as Message[]);
+    const convoMessages = cached.filter((m) => (m as any).conversationId === conversationId);
+    for (const msg of convoMessages) {
+      const readBy: string[] = ((msg as any).readBy as string[]) || [];
+      if (!readBy.includes(uid)) {
+        await offlineUpdate(businessId, 'messages', msg.id, { readBy: [...readBy, uid] }, 'low');
+      }
+    }
+    return;
+  }
+
   const { data: messages } = await supabase
     .from('messages')
     .select('id, read_by')
@@ -2652,37 +3526,56 @@ export async function sendMessage(input: {
     name?: string;
   }>;
 }) {
-  const { data: messageData, error } = await supabase
-    .from('messages')
-    .insert(transformKeysToSnake({
-      conversationId: input.conversationId,
-      businessId: input.businessId,
-      senderUid: input.senderUid,
-      senderName: input.senderName ?? "User",
-      text: input.text,
-      attachments: input.attachments ?? [],
-      readBy: [input.senderUid],
-    } as unknown as Record<string, unknown>))
-    .select('id')
-    .single();
-  if (error || !messageData) throw error || new Error("Failed to send message");
+  const record = {
+    conversationId: input.conversationId,
+    businessId: input.businessId,
+    senderUid: input.senderUid,
+    senderName: input.senderName ?? "User",
+    text: input.text,
+    attachments: input.attachments ?? [],
+    readBy: [input.senderUid],
+  };
+  return withOfflineFallback(
+    async () => {
+      const { data: messageData, error } = await supabase
+        .from('messages')
+        .insert(transformKeysToSnake(record as unknown as Record<string, unknown>))
+        .select('id')
+        .single();
+      if (error || !messageData) throw error || new Error("Failed to send message");
 
-  await supabase
-    .from('conversations')
-    .update({
-      last_message: {
-        messageId: messageData.id,
-        text: input.text,
-        senderUid: input.senderUid,
-        senderName: input.senderName ?? "User",
-        createdAt: new Date().toISOString(),
-      },
-      updated_at: new Date().toISOString(),
-    } as any)
-    .eq('id', input.conversationId)
-    .eq('business_id', input.businessId);
+      await supabase
+        .from('conversations')
+        .update({
+          last_message: {
+            messageId: messageData.id,
+            text: input.text,
+            senderUid: input.senderUid,
+            senderName: input.senderName ?? "User",
+            createdAt: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString(),
+        } as any)
+        .eq('id', input.conversationId)
+        .eq('business_id', input.businessId);
 
-  return messageData.id;
+      return messageData.id as string;
+    },
+    async () => {
+      const now = new Date().toISOString();
+      const messageId = await offlineCreate(input.businessId, 'messages', record as unknown as Record<string, unknown>, 'high');
+      await offlineUpdate(input.businessId, 'conversations', input.conversationId, {
+        lastMessage: {
+          messageId,
+          text: input.text,
+          senderUid: input.senderUid,
+          senderName: input.senderName ?? "User",
+          createdAt: now,
+        },
+      }, 'high');
+      return messageId;
+    }
+  );
 }
 
 export async function updateMessage(input: {
@@ -2695,6 +3588,20 @@ export async function updateMessage(input: {
   const text = input.text.trim();
   if (!text) {
     throw new Error("Message cannot be empty.");
+  }
+
+  if (isOffline()) {
+    const cachedMsg = await getCachedById<Message>('messages', input.businessId, input.messageId);
+    if (!cachedMsg) throw new Error("Message not found.");
+    if (cachedMsg.senderUid !== input.senderUid || (cachedMsg as any).deletedAt) {
+      throw new Error("You can only edit your own active messages.");
+    }
+    await offlineUpdate(input.businessId, 'messages', input.messageId, {
+      text,
+      editedAt: new Date().toISOString(),
+    }, 'high');
+    await syncLastMessageAfterChangeOffline(input.businessId, input.conversationId);
+    return;
   }
 
   const { data: messageData } = await supabase
@@ -2725,6 +3632,22 @@ export async function deleteMessage(input: {
   messageId: string;
   senderUid: string;
 }) {
+  if (isOffline()) {
+    const cachedMsg = await getCachedById<Message>('messages', input.businessId, input.messageId);
+    if (!cachedMsg) return;
+    if (cachedMsg.senderUid !== input.senderUid) {
+      throw new Error("You can only delete your own messages.");
+    }
+    await offlineUpdate(input.businessId, 'messages', input.messageId, {
+      text: "",
+      attachments: [],
+      deletedAt: new Date().toISOString(),
+      deletedByUid: input.senderUid,
+    }, 'high');
+    await syncLastMessageAfterChangeOffline(input.businessId, input.conversationId);
+    return;
+  }
+
   const { data: messageData } = await supabase
     .from('messages')
     .select('*')
@@ -2756,6 +3679,17 @@ export async function deleteMessagePermanently(input: {
   messageId: string;
   senderUid: string;
 }) {
+  if (isOffline()) {
+    const cachedMsg = await getCachedById<Message>('messages', input.businessId, input.messageId);
+    if (!cachedMsg) return;
+    if (cachedMsg.senderUid !== input.senderUid) {
+      throw new Error("You can only delete your own messages.");
+    }
+    await offlineDelete(input.businessId, 'messages', input.messageId, 'high');
+    await syncLastMessageAfterChangeOffline(input.businessId, input.conversationId);
+    return;
+  }
+
   const { data: messageData } = await supabase
     .from('messages')
     .select('*')
@@ -2770,6 +3704,31 @@ export async function deleteMessagePermanently(input: {
 
   await supabase.from('messages').delete().eq('id', input.messageId);
   await syncLastMessageAfterChange(input.businessId, input.conversationId);
+}
+
+// Offline counterpart of syncLastMessageAfterChange: recompute the
+// conversation's lastMessage preview from the cached message list.
+async function syncLastMessageAfterChangeOffline(
+  businessId: string,
+  conversationId: string
+) {
+  const cached = await getCachedCollection<Message>('messages', businessId).catch(() => [] as Message[]);
+  const convoMessages = cached
+    .filter((m) => (m as any).conversationId === conversationId)
+    .sort((a, b) => String((b as any).createdAt ?? '').localeCompare(String((a as any).createdAt ?? '')));
+  const latest = convoMessages[0] ?? null;
+  await offlineUpdate(businessId, 'conversations', conversationId, {
+    lastMessage: latest
+      ? {
+          text: (latest as any).deletedAt
+            ? "Message deleted"
+            : latest.text || ((latest as any).attachments?.length ? "Image" : ""),
+          senderUid: latest.senderUid,
+          senderName: latest.senderName ?? "User",
+          createdAt: (latest as any).createdAt ?? new Date().toISOString(),
+        }
+      : null,
+  }, 'high');
 }
 
 async function syncLastMessageAfterChange(
@@ -2812,24 +3771,41 @@ export function listenMessages(
   callback: (messages: Message[]) => void
 ) {
   let destroyed = false;
+  const serveCache = async () => {
+    const cached = await getCachedCollection<Message>('messages', businessId).catch(() => []);
+    const convoMessages = cached
+      .filter((m) => (m as any).conversationId === conversationId)
+      .sort((a, b) => String((a as any).createdAt ?? '').localeCompare(String((b as any).createdAt ?? '')));
+    if (!destroyed && convoMessages.length > 0) callback(convoMessages);
+  };
   const fetchAndCallback = async () => {
     if (destroyed) return;
-    const { data } = await supabase
+    if (isOffline()) {
+      await serveCache();
+      return;
+    }
+    const { data, error } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .limit(100);
     if (data && !destroyed) {
-      callback(transformArrayToCamel<Message>(data as Record<string, unknown>[]));
+      const rows = transformArrayToCamel<Message>(data as Record<string, unknown>[]);
+      callback(rows);
+      cacheCollection('messages', businessId, rows as unknown as Array<Record<string, unknown>>, false).catch(() => {});
+    } else if (!destroyed && error) {
+      await serveCache();
     }
   };
   fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['messages'], fetchAndCallback);
   const channel = supabase
     .channel(`messages-${conversationId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, fetchAndCallback)
     .subscribe();
-  return () => { destroyed = true; supabase.removeChannel(channel); };
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 // â”€â”€â”€ WEEKLY REPORTS â”€â”€â”€
@@ -2944,25 +3920,21 @@ export async function storeWeeklyReportNotification(
   actorUid: string
 ) {
   const profitLabel = report.netProfit >= 0 ? "profit" : "loss";
-  await supabase
-    .from('notifications')
-    .insert(transformKeysToSnake({
-      businessId,
-      recipientUid: actorUid,
-      type: "system",
-      title: `Weekly Financial Report - ${report.weekStart}`,
-      message: `Week ending ${report.weekEnd}: Revenue ${report.revenue.toFixed(0)} KES, ${profitLabel} of ${Math.abs(report.netProfit).toFixed(0)} KES. Margin: ${report.profitMargin.toFixed(1)}%.`,
-      link: "/finance/reports",
-      read: false,
-      archived: false,
-      metadata: {
-        reportType: "weekly",
-        weekStart: report.weekStart,
-        weekEnd: report.weekEnd,
-        revenue: report.revenue.toString(),
-        netProfit: report.netProfit.toString(),
-      },
-    } as unknown as Record<string, unknown>));
+  await createNotification({
+    businessId,
+    recipientUid: actorUid,
+    type: "system",
+    title: `Weekly Financial Report - ${report.weekStart}`,
+    message: `Week ending ${report.weekEnd}: Revenue ${report.revenue.toFixed(0)} KES, ${profitLabel} of ${Math.abs(report.netProfit).toFixed(0)} KES. Margin: ${report.profitMargin.toFixed(1)}%.`,
+    link: "/finance/reports",
+    metadata: {
+      reportType: "weekly",
+      weekStart: report.weekStart,
+      weekEnd: report.weekEnd,
+      revenue: report.revenue.toString(),
+      netProfit: report.netProfit.toString(),
+    },
+  });
 }
 
 // â”€â”€â”€ PROFILE SERVICE â”€â”€â”€
@@ -2981,9 +3953,21 @@ export async function updateProfileInfo(input: {
 
   if (Object.keys(updateData).length === 0) return;
 
-  const snakePayload = transformKeysToSnake(updateData);
-  await supabase.from('profiles').update(snakePayload as any).eq('id', input.uid);
-  await supabase.from('business_members').update(snakePayload as any).eq('profile_id', input.uid).eq('business_id', input.businessId);
+  return withOfflineFallback(
+    async () => {
+      const snakePayload = transformKeysToSnake(updateData);
+      const { error } = await supabase.from('profiles').update(snakePayload as any).eq('id', input.uid);
+      if (error) throw error;
+      await supabase.from('business_members').update(snakePayload as any).eq('profile_id', input.uid).eq('business_id', input.businessId);
+    },
+    async () => {
+      // `users` maps to the profiles table in the sync engine; the
+      // business_members mirror is reconciled by the next online update.
+      await enqueueSyncOperation(input.businessId, 'users', 'update', updateData, input.uid, 'normal');
+      await patchCachedRecord('members', input.uid, updateData).catch(() => {});
+      notifyLocalWrite('members');
+    }
+  );
 }
 
 export async function changeUserPassword(newPassword: string) {
@@ -3079,8 +4063,19 @@ export function listenAllFinanceData(
     orderDir?: 'asc' | 'desc'
   ): () => void {
     let destroyed = false;
+    const serveCache = async () => {
+      const cached = await getCachedCollection<T>(table, businessId).catch(() => [] as T[]);
+      if (!destroyed && cached.length > 0) {
+        (data as any)[key] = cached;
+        checkReady();
+      }
+    };
     const fetchAndCallback = async () => {
       if (destroyed) return;
+      if (isOffline()) {
+        await serveCache();
+        return;
+      }
       try {
         let query = supabase.from(table).select('*').eq('business_id', businessId);
         if (orderByCol) {
@@ -3088,19 +4083,30 @@ export function listenAllFinanceData(
         }
         const result = await query;
         if (result.data && !destroyed) {
-          (data as any)[key] = transformArrayToCamel<T>(result.data as Record<string, unknown>[]);
+          const rows = transformArrayToCamel<T>(result.data as Record<string, unknown>[]);
+          (data as any)[key] = rows;
           checkReady();
+          // `orders` is cached with richer rows (garments) by listenOrders —
+          // don't overwrite that snapshot with the flat finance fetch.
+          if (table !== 'orders') {
+            cacheCollection(table, businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+          }
+        } else if (result.error && !destroyed) {
+          await serveCache();
         }
       } catch (err) {
+        await serveCache();
         onError?.(err as Error);
       }
     };
     fetchAndCallback();
+    const offReconnect = refetchOnReconnect(fetchAndCallback);
+    const offLocalWrite = onLocalWrite([table], fetchAndCallback);
     const channel = supabase
       .channel(`finance-${table}-${businessId}-${crypto.randomUUID()}-${key}`)
       .on('postgres_changes', { event: '*', schema: 'public', table, filter: `business_id=eq.${businessId}` }, fetchAndCallback)
       .subscribe();
-    return () => { destroyed = true; supabase.removeChannel(channel); };
+    return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
   }
 
   const unsub1 = listenToFinanceTable<Payment>('payments', 'payments', 'recorded_at', 'desc');
