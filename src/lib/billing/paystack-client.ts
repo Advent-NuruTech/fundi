@@ -130,5 +130,8 @@ export function getAppBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   if (process.env.NEXT_PUBLIC_VERCEL_URL) return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  // Production safety net: never fall through to localhost for live payment
+  // callbacks / links. The official domain is the canonical home.
+  if (process.env.NODE_ENV === "production") return "https://www.fundiflow.co.ke";
   return "http://localhost:3000";
 }

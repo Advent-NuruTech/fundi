@@ -200,6 +200,8 @@ export interface Business {
   location: string;
   currency: string;
   country: string;
+  /** Industry preset driving terminology/navigation/dashboard. See @/lib/business-types. */
+  businessType?: import("@/lib/business-types").BusinessType;
   ownerUid: string;
   orderCounter?: number;
   employeeCounter?: number;
@@ -433,6 +435,33 @@ export interface EmployeeInvitation {
 
 export interface TenantScoped {
   businessId: string;
+}
+
+/**
+ * One business a user can access, derived from `business_members`. A single
+ * login (email) can belong to many businesses, each with its own role — the
+ * active one drives the whole app's scope.
+ */
+/**
+ * A branch (outlet) within a business. Branches fully isolate transactional
+ * data — orders, stock, customers, payments and finance are separate per
+ * branch. Every business has exactly one default branch ("Main Branch").
+ */
+export interface Branch {
+  id: string;
+  businessId: string;
+  name: string;
+  location?: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface BusinessMembership {
+  businessId: string;
+  businessName: string;
+  businessType?: import("@/lib/business-types").BusinessType;
+  role: UserRole;
+  roles: UserRole[];
 }
 
 // Finance category types (backward-compatible string aliases)

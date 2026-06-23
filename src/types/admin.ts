@@ -136,6 +136,10 @@ export interface AdminBusinessSummary {
   ownerName?: string;
   isActive: boolean;
   createdAt: string;
+  /** Industry category (tailoring, retail, wholesale, hardware, general). */
+  businessType: string;
+  /** Number of branches (outlets) this business runs. */
+  branchCount: number;
   plan: string;
   subscriptionStatus: string | null;
   subscriptionId: string | null;

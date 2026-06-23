@@ -13,6 +13,7 @@ export async function GET(request: Request) {
   const search = url.searchParams.get("search") ?? "";
   const plan = url.searchParams.get("plan") ?? "";
   const status = url.searchParams.get("status") ?? "";
+  const category = url.searchParams.get("category") ?? "";
   const sortBy = url.searchParams.get("sortBy") ?? "created_at";
   const sortDir = url.searchParams.get("sortDir") === "asc" ? true : false;
   const offset = (page - 1) * limit;
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
     .from("businesses")
     .select(
       `
-      id, name, email, phone, location, owner_uid, is_active, created_at, plan,
+      id, name, email, phone, location, owner_uid, is_active, created_at, plan, business_type,
       subscriptions!subscriptions_workspace_id_fkey (
         id, plan_slug, status, next_billing_date, installation_fee_paid
       ),
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
   }
   if (status === "active") query = query.eq("is_active", true);
   if (status === "suspended") query = query.eq("is_active", false);
+  if (category) query = query.eq("business_type", category);
 
   const allowedSorts = ["created_at", "name", "plan"];
   const safeSort = allowedSorts.includes(sortBy) ? sortBy : "created_at";
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
   // Get employee + customer counts in bulk
   const businessIds = rows.map((r) => r.id as string);
 
-  const [memberCountsRes, customerCountsRes, orderCountsRes, revenueRes, smsCountsRes] =
+  const [memberCountsRes, customerCountsRes, orderCountsRes, revenueRes, smsCountsRes, branchCountsRes] =
     await Promise.allSettled([
       db
         .from("business_members")
@@ -98,6 +100,7 @@ export async function GET(request: Request) {
         .from("sms_logs")
         .select("business_id")
         .in("business_id", businessIds),
+      db.from("branches").select("business_id").in("business_id", businessIds),
     ]);
 
   function countsByBusiness(res: PromiseSettledResult<{ data: { business_id?: string; workspace_id?: string }[] | null }>) {
@@ -124,6 +127,7 @@ export async function GET(request: Request) {
   const orderCounts = countsByBusiness(orderCountsRes as never);
   const revenues = revenueByBusiness(revenueRes as never);
   const smsCounts = countsByBusiness(smsCountsRes as never);
+  const branchCounts = countsByBusiness(branchCountsRes as never);
 
   const businesses: AdminBusinessSummary[] = rows.map((r) => {
     const sub = Array.isArray(r.subscriptions)
@@ -144,6 +148,8 @@ export async function GET(request: Request) {
       ownerName: profile?.display_name as string | undefined,
       isActive: r.is_active as boolean,
       createdAt: r.created_at as string,
+      businessType: (r.business_type as string) ?? "tailoring",
+      branchCount: branchCounts.get(id) ?? 0,
       plan: (sub?.plan_slug as string) ?? (r.plan as string) ?? "none",
       subscriptionStatus: (sub?.status as string) ?? null,
       subscriptionId: (sub?.id as string) ?? null,

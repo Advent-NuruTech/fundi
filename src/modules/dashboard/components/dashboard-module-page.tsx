@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import type { InventoryMaterial, Order, Payment, PurchaseOrder, UserProfile } from "@/types/domain";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { useBusinessType } from "@/hooks/useBusinessType";
+import { useAuth } from "@/features/auth/components/auth-context";
 import {
   dueTodayOrders,
   fetchMembers,
@@ -23,6 +25,8 @@ import { usePermissions } from "@/modules/shared/use-permissions";
 
 export function DashboardModulePage() {
   const { businessId, ready, user } = useBusinessContext();
+  const { business } = useAuth();
+  const biz = useBusinessType();
   const permissions = usePermissions();
   const [orders, setOrders] = useState<Order[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -86,11 +90,11 @@ export function DashboardModulePage() {
   if (roles.includes("inventory_manager") && !permissions.canManageWorkshop) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold">Inventory Dashboard</h1>
+        <h1 className="text-2xl font-semibold">{biz.terms.inventory} Dashboard</h1>
         <div className="grid gap-4 sm:grid-cols-3">
           <Metric label="Low stock alerts" value={lowStock.length.toString()} tone="warning" />
           <Metric label="Pending purchases" value={pendingPurchases.length.toString()} />
-          <Metric label="Materials tracked" value={materials.length.toString()} />
+          <Metric label={`${biz.terms.materials} tracked`} value={materials.length.toString()} />
         </div>
       </div>
     );
@@ -114,12 +118,17 @@ export function DashboardModulePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Business Dashboard</h1>
-        <p className="text-sm text-slate-500">Live view of production, payments, and stock health.</p>
+        <h1 className="text-2xl font-semibold">
+          <span className="mr-1">{biz.emoji}</span>
+          {business?.name ? `${business.name} Dashboard` : "Business Dashboard"}
+        </h1>
+        <p className="text-sm text-slate-500">
+          Live view of your {biz.terms.orders.toLowerCase()}, payments and {biz.terms.inventory.toLowerCase()} health.
+        </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Today urgent" value={overdue.length.toString()} tone="warning" href="/orders" />
-        <Metric label="Low stock" value={lowStock.length.toString()} tone="warning" href="/inventory" />
+        <Metric label="Needs attention today" value={overdue.length.toString()} tone="warning" href="/orders" />
+        <Metric label="Low stock" value={lowStock.length.toString()} tone="warning" href="/inventory?section=smart-reorder" />
         <Metric label="Revenue" value={formatKes(revenue)} tone="success" href="/finance" />
         <Metric label="Pending balances" value={formatKes(pendingBalances)} tone="danger" href="/payments" />
       </div>
@@ -165,7 +174,7 @@ export function DashboardModulePage() {
       </Card>
       <div className="grid gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
-          <CardHeader><CardTitle>Active Orders</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Active {biz.terms.orders}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {orders.slice(0, 8).map((order) => (
               <motion.div key={order.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>

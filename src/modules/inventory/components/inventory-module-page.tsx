@@ -12,6 +12,7 @@ import { SuppliersSection } from "@/modules/inventory/components/sections/suppli
 import { PurchaseOrdersSection } from "@/modules/inventory/components/sections/purchase-orders-section";
 import { StockMovementsSection } from "@/modules/inventory/components/sections/stock-movements-section";
 import { LowStockSection } from "@/modules/inventory/components/sections/low-stock-section";
+import { SmartReorderSection } from "@/modules/inventory/components/sections/smart-reorder-section";
 import { FabricConsumptionSection } from "@/modules/inventory/components/sections/fabric-consumption-section";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import type { DbUnit } from "@/types/domain";
@@ -36,6 +37,9 @@ function InventoryModulePageContent({ section: defaultSection }: { section?: str
     consumption,
     stockValue,
     loading,
+    insights,
+    reorderList,
+    insightByMaterialId,
   } = useInventory();
 
   return (
@@ -52,6 +56,10 @@ function InventoryModulePageContent({ section: defaultSection }: { section?: str
           stockValue={stockValue}
           loading={loading}
         />
+      )}
+
+      {activeSection === "smart-reorder" && (
+        <SmartReorderSection insights={insights} reorderList={reorderList} />
       )}
 
       {activeSection === "materials" && (
@@ -76,7 +84,7 @@ function InventoryModulePageContent({ section: defaultSection }: { section?: str
       )}
 
       {activeSection === "low-stock" && (
-        <LowStockSection lowStock={lowStock} materials={materials} />
+        <LowStockSection lowStock={lowStock} materials={materials} insightByMaterialId={insightByMaterialId} />
       )}
 
       {activeSection === "fabric-consumption" && (

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 
 const TABS = [
   { key: "overview", label: "Overview" },
+  { key: "smart-reorder", label: "Smart Reorder" },
   { key: "materials", label: "Materials" },
   { key: "suppliers", label: "Suppliers" },
   { key: "purchase-orders", label: "Purchase Orders" },

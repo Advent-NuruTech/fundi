@@ -17,6 +17,7 @@ import { canAccessSettings } from "@/lib/db";
 import { listenMembers } from "@/services/firestore.service";
 import type { UserProfile } from "@/types/domain";
 import { FinanceAccessSettings } from "./finance-access-settings";
+import { BusinessTypeSwitcher } from "./business-type-switcher";
 
 export function BusinessSettingsPage() {
   const { user, business } = useAuth();
@@ -136,6 +137,9 @@ export function BusinessSettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* Business Type — owner can re-tune the whole workspace to their industry */}
+      {user?.role === "owner" && <BusinessTypeSwitcher />}
 
       {/* Finance Access Settings */}
       <div className="rounded-3xl border bg-white p-6">

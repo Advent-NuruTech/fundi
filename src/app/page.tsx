@@ -154,7 +154,7 @@ function HeroDashboard() {
             <div className="h-2.5 w-2.5 rounded-full bg-green-400/90" />
           </div>
           <div className="flex-1 rounded-md bg-slate-600 px-3 py-1 text-center text-xs text-slate-400">
-            🔒 app.fundiflow.co.ke/dashboard
+            🔒 www.fundiflow.co.ke/dashboard
           </div>
         </div>
 

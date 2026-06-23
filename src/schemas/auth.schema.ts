@@ -9,6 +9,7 @@ export const loginSchema = z.object({
 export const registerSchema = z.object({
   displayName: z.string().min(2),
   businessName: z.string().min(2),
+  businessType: z.enum(["tailoring", "retail", "wholesale", "hardware", "general"]),
   phone: z.string().min(9).transform(formatPhone).refine(isValidKenyanPhone, {
     message: "Enter a valid Kenyan phone number, for example 254712345678",
   }),

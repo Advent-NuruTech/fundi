@@ -13,6 +13,7 @@ import {
   Store,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
+import { useBusinessType } from "@/hooks/useBusinessType";
 import { useSellerOrders } from "@/modules/globalsell/hooks/use-my-orders";
 import { useMyProducts } from "@/modules/globalsell/hooks/use-my-products";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +24,7 @@ import { formatKes } from "@/lib/utils";
 
 export default function SellOverviewPage() {
   const { user, business } = useAuth();
+  const sellCategory = useBusinessType();
   const businessId = user?.businessId ?? "";
   const { products, store, loading: productsLoading } = useMyProducts(
     businessId,
@@ -43,7 +45,15 @@ export default function SellOverviewPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Global Sell</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900">Global Sell</h1>
+            {sellCategory && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                <span>{sellCategory.emoji}</span>
+                {sellCategory.label}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-slate-500">
             {store ? `Your store: ${store.storeName}` : "Manage your marketplace store"}
           </p>

@@ -1,6 +1,6 @@
-// Public endpoint — no auth required. Returns only a boolean.
-// Checks whether a platform owner account exists.
-// Never reveals sensitive data.
+// Public endpoint — no auth required.
+// Returns whether the platform has been initialized (at least one owner exists).
+// Multiple owners are supported; registration is gated by SYSTEM_OWNER_PASSCODE.
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
@@ -17,7 +17,6 @@ export async function GET() {
   try {
     const db = getDb();
 
-    // Primary check: platform_admins table (migration 00022+)
     const { data: owner, error: paErr } = await db
       .from("platform_admins")
       .select("id")
@@ -27,10 +26,12 @@ export async function GET() {
       .maybeSingle();
 
     if (!paErr) {
-      return NextResponse.json({ ownerExists: !!owner, initialized: !!owner });
+      // System is initialized if at least one owner exists.
+      // Registration is always open (gated by passcode, not owner count).
+      return NextResponse.json({ ownerExists: !!owner, initialized: !!owner, registrationOpen: true });
     }
 
-    // Fallback: system_config (pre-migration installs where platform_admins may not exist)
+    // Fallback: system_config (pre-migration installs)
     const { data: config, error: configErr } = await db
       .from("system_config")
       .select("value")
@@ -38,7 +39,7 @@ export async function GET() {
       .maybeSingle();
 
     if (configErr) {
-      return NextResponse.json({ ownerExists: false, initialized: false });
+      return NextResponse.json({ ownerExists: false, initialized: false, registrationOpen: true });
     }
 
     const uid = config?.value;
@@ -48,8 +49,8 @@ export async function GET() {
       String(uid).replace(/^"|"$/g, "") !== "null" &&
       String(uid).replace(/^"|"$/g, "").length > 0;
 
-    return NextResponse.json({ ownerExists, initialized: ownerExists });
+    return NextResponse.json({ ownerExists, initialized: ownerExists, registrationOpen: true });
   } catch {
-    return NextResponse.json({ ownerExists: false, initialized: false });
+    return NextResponse.json({ ownerExists: false, initialized: false, registrationOpen: true });
   }
 }

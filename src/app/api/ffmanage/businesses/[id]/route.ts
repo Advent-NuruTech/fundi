@@ -86,9 +86,10 @@ export async function GET(
       ? (profileRes.value.data as Record<string, unknown> | null)
       : null;
 
-  const [empCount, custCount] = await Promise.all([
+  const [empCount, custCount, branchCount] = await Promise.all([
     db.from("business_members").select("id", { count: "exact", head: true }).eq("business_id", id).eq("active", true),
     db.from("customers").select("id", { count: "exact", head: true }).eq("business_id", id),
+    db.from("branches").select("id", { count: "exact", head: true }).eq("business_id", id),
   ]);
 
   const detail: AdminBusinessDetail = {
@@ -103,6 +104,8 @@ export async function GET(
     ownerName: profile?.display_name as string | undefined,
     isActive: biz.is_active,
     createdAt: biz.created_at,
+    businessType: (biz.business_type as string) ?? "tailoring",
+    branchCount: branchCount.count ?? 0,
     plan: (sub?.plan_slug as string) ?? biz.plan ?? "none",
     subscriptionStatus: (sub?.status as string) ?? null,
     subscriptionId: (sub?.id as string) ?? null,

@@ -85,6 +85,51 @@ function roleFromRoles(roles: UserRole[]): UserRole {
   return "cashier";
 }
 
+// â”€â”€â”€ BRANCH SCOPING â”€â”€â”€
+//
+// Branches isolate transactional data inside a business. The active branch is a
+// per-user UI choice held in the auth context and pushed here via setActiveBranch.
+// Reads on branch-scoped tables filter by it; writes stamp it. Everything is
+// guarded by `branchScopingAvailable`: the first time a branch_id query fails
+// with Postgres "column does not exist" (42703) — i.e. migration 00029 hasn't
+// been applied yet — scoping disables itself so the app keeps working untouched.
+
+const BRANCH_SCOPED_TABLES = new Set<string>([
+  'customers', 'orders', 'payments', 'inventory_materials', 'stock_movements',
+  'purchase_orders', 'suppliers', 'expenses', 'withdrawals', 'investments',
+  'savings_goals', 'savings_deposits', 'transactions', 'consumption_reports',
+  'sms_logs', 'images',
+]);
+
+let activeBranchId: string | null = null;
+let branchScopingAvailable = true;
+
+export function setActiveBranch(branchId: string | null) {
+  activeBranchId = branchId;
+}
+
+export function getActiveBranch(): string | null {
+  return activeBranchId;
+}
+
+function isBranchScoped(table: string): boolean {
+  return branchScopingAvailable && !!activeBranchId && BRANCH_SCOPED_TABLES.has(table);
+}
+
+function isMissingColumnError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === '42703';
+}
+
+/**
+ * Spread into an insert payload (camelCase, before transformKeysToSnake) to
+ * stamp the active branch when branch scoping is on. Returns nothing when
+ * scoping is off so the DB default-branch trigger fills it in instead.
+ */
+function branchFields(table: string): Record<string, unknown> {
+  return isBranchScoped(table) ? { branchId: activeBranchId } : {};
+}
+
 // â”€â”€â”€ LISTENER HELPER â”€â”€â”€
 
 // Attach a refetch to the browser's `online` event so listeners recover
@@ -122,6 +167,9 @@ function listenToTable<T>(
     }
 
     let query = supabase.from(table).select('*').eq('business_id', businessId);
+    if (isBranchScoped(table)) {
+      query = query.eq('branch_id', activeBranchId as string);
+    }
     if (options?.orderBy) {
       query = query.order(options.orderBy, { ascending: options.orderDir === 'asc' });
     }
@@ -129,6 +177,13 @@ function listenToTable<T>(
       query = query.limit(options.limit);
     }
     const { data, error } = await query;
+    if (error && isMissingColumnError(error)) {
+      // Migration 00029 not applied yet — disable branch scoping and retry
+      // unscoped so the app keeps working.
+      branchScopingAvailable = false;
+      if (!destroyed) fetchAndCallback();
+      return;
+    }
     if (data && !destroyed) {
       gotFresh = true;
       const rows = transformArrayToCamel<T>(data as Record<string, unknown>[]);
@@ -354,6 +409,43 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
   return normalizeProfilePhoto({ ...camel, uid: camel.id });
 }
 
+/**
+ * All businesses a login can access, with the role they hold in each. Backs the
+ * multi-business switcher. Falls back gracefully (empty array) when RLS hides
+ * other businesses or the user has no membership rows yet.
+ */
+export async function fetchUserMemberships(
+  uid: string,
+): Promise<import("@/types/domain").BusinessMembership[]> {
+  const { data: members } = await supabase
+    .from('business_members')
+    .select('business_id, role, roles, active')
+    .eq('profile_id', uid)
+    .eq('active', true);
+  if (!members?.length) return [];
+
+  const ids = members.map((m) => (m as { business_id: string }).business_id);
+  const { data: bizRows } = await supabase
+    .from('businesses')
+    .select('id, name, business_type')
+    .in('id', ids);
+  const bizMap = new Map(
+    (bizRows ?? []).map((b) => [(b as { id: string }).id, b as { id: string; name: string; business_type?: string }]),
+  );
+
+  return members.map((m) => {
+    const row = m as { business_id: string; role: UserRole; roles?: UserRole[] };
+    const biz = bizMap.get(row.business_id);
+    return {
+      businessId: row.business_id,
+      businessName: biz?.name ?? 'My Business',
+      businessType: biz?.business_type as import("@/lib/business-types").BusinessType | undefined,
+      role: row.role,
+      roles: row.roles?.length ? row.roles : row.role ? [row.role] : [],
+    };
+  });
+}
+
 export async function fetchUserProfileByEmail(email: string): Promise<UserProfile | null> {
   const { data } = await supabase
     .from('profiles')
@@ -386,6 +478,84 @@ export async function updateBusinessProfile(businessId: string, data: Partial<Pi
     },
     () => offlineUpdate(businessId, 'businesses', businessId, data as Record<string, unknown>)
   );
+}
+
+/**
+ * Switch an existing business to a different industry preset. Updates the
+ * `business_type` column and seeds that industry's default inventory taxonomy
+ * (idempotent). Existing materials/units/categories are never removed — only
+ * the new presets are added — so the change is fully non-destructive.
+ */
+export async function updateBusinessType(
+  businessId: string,
+  businessType: import("@/lib/business-types").BusinessType,
+) {
+  const { error } = await supabase
+    .from('businesses')
+    .update({ business_type: businessType })
+    .eq('id', businessId);
+  if (error) throw error;
+}
+
+// â”€â”€â”€ BRANCHES â”€â”€â”€
+
+/** All branches for a business, default first. Empty array if not yet migrated. */
+export async function fetchBranches(
+  businessId: string,
+): Promise<import("@/types/domain").Branch[]> {
+  const { data, error } = await supabase
+    .from('branches')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true });
+  if (error || !data) return [];
+  return transformArrayToCamel<import("@/types/domain").Branch>(data as Record<string, unknown>[]);
+}
+
+export async function createBranch(
+  businessId: string,
+  input: { name: string; location?: string },
+): Promise<import("@/types/domain").Branch> {
+  const { data, error } = await supabase
+    .from('branches')
+    .insert(transformKeysToSnake({ businessId, name: input.name, location: input.location ?? null } as Record<string, unknown>))
+    .select('*')
+    .single();
+  if (error || !data) throw error || new Error("Failed to create branch");
+  return transformKeysToCamel<import("@/types/domain").Branch>(data as Record<string, unknown>);
+}
+
+export async function renameBranch(branchId: string, name: string, location?: string) {
+  const { error } = await supabase
+    .from('branches')
+    .update(transformKeysToSnake({ name, location: location ?? null } as Record<string, unknown>))
+    .eq('id', branchId);
+  if (error) throw error;
+}
+
+/** Upsert default categories/units for a business (idempotent, never deletes). */
+export async function seedInventoryTaxonomy(
+  businessId: string,
+  categories: string[],
+  units: string[],
+) {
+  await Promise.allSettled([
+    ...units.map((name) =>
+      supabase
+        .from('inventory_units')
+        .upsert(transformKeysToSnake({ businessId, name } as Record<string, unknown>), {
+          onConflict: 'business_id,name',
+        })
+    ),
+    ...categories.map((name) =>
+      supabase
+        .from('inventory_categories')
+        .upsert(transformKeysToSnake({ businessId, name } as Record<string, unknown>), {
+          onConflict: 'business_id,name',
+        })
+    ),
+  ]);
 }
 
 export async function updateFinanceAccess(businessId: string, settings: import("@/types/domain").FinanceAccessSettings) {
@@ -456,6 +626,7 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
     .insert(transformKeysToSnake({
       ...customerData,
       outstandingBalance: 0,
+      ...branchFields('customers'),
     } as Record<string, unknown>))
     .select('id')
     .single();
@@ -1019,6 +1190,7 @@ export async function createOrder(
     .insert(transformKeysToSnake({
       ...orderFields,
       businessId,
+      ...branchFields('orders'),
       orderNumber,
       trackingToken,
       stage: "cutting",
@@ -1068,6 +1240,7 @@ export async function createOrder(
       .from('payments')
       .insert(transformKeysToSnake({
         businessId,
+        ...branchFields('payments'),
         customerId: payload.customerId,
         customerName: payload.customerName,
         orderId,
@@ -1101,11 +1274,19 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
       return;
     }
 
-    const { data, error } = await supabase
+    let ordersQuery = supabase
       .from('orders')
       .select('*, order_garments(name, quantity, agreed_price, sort_order)')
-      .eq('business_id', businessId)
-      .order('updated_at', { ascending: false });
+      .eq('business_id', businessId);
+    if (isBranchScoped('orders')) {
+      ordersQuery = ordersQuery.eq('branch_id', activeBranchId as string);
+    }
+    const { data, error } = await ordersQuery.order('updated_at', { ascending: false });
+    if (error && isMissingColumnError(error)) {
+      branchScopingAvailable = false;
+      if (!destroyed) fetchAndCallback();
+      return;
+    }
     if (data && !destroyed) {
       const rows = (data as Record<string, unknown>[]).map((row) => {
         const garmentRows = (row.order_garments as Record<string, unknown>[] | null) ?? [];
@@ -1476,6 +1657,7 @@ export async function recordMaterialUsage(
         await offlineUpdate(businessId, 'inventory_materials', record.materialId, { quantity: newQty });
         await offlineCreate(businessId, 'stock_movements', {
           businessId,
+          ...branchFields('stock_movements'),
           movementType: "used_in_order",
           materialId: record.materialId,
           materialName: record.materialName,
@@ -1549,6 +1731,7 @@ export async function recordMaterialUsage(
         .from('stock_movements')
         .insert(transformKeysToSnake({
           businessId,
+          ...branchFields('stock_movements'),
           movementType: "used_in_order",
           materialId: record.materialId,
           materialName: record.materialName,
@@ -1599,11 +1782,19 @@ export function listenMaterials(businessId: string, callback: (rows: InventoryMa
       await serveCache(true);
       return;
     }
-    const { data, error } = await supabase
+    let matQuery = supabase
       .from('inventory_materials')
       .select('*, inventory_material_images(url, public_id, sort_order)')
-      .eq('business_id', businessId)
-      .order('updated_at', { ascending: false });
+      .eq('business_id', businessId);
+    if (isBranchScoped('inventory_materials')) {
+      matQuery = matQuery.eq('branch_id', activeBranchId as string);
+    }
+    const { data, error } = await matQuery.order('updated_at', { ascending: false });
+    if (error && isMissingColumnError(error)) {
+      branchScopingAvailable = false;
+      if (!destroyed) fetchAndCallback();
+      return;
+    }
     if (data && !destroyed) {
       gotFresh = true;
       const rows = (data as Record<string, unknown>[]).map(assembleMaterialImages);
@@ -1649,7 +1840,7 @@ export async function createMaterial(
     async () => {
       const { data, error } = await supabase
         .from('inventory_materials')
-        .insert(transformKeysToSnake({ ...rest, businessId } as unknown as Record<string, unknown>))
+        .insert(transformKeysToSnake({ ...rest, businessId, ...branchFields('inventory_materials') } as unknown as Record<string, unknown>))
         .select('id')
         .single();
       if (error || !data) throw error || new Error("Failed to create material");
@@ -1743,6 +1934,7 @@ export async function adjustMaterialStock(
 ) {
   const movement = {
     businessId,
+    ...branchFields('stock_movements'),
     movementType: "adjustment",
     materialId: payload.materialId,
     materialName: payload.materialName,
@@ -1793,7 +1985,7 @@ export async function createSupplier(
     async () => {
       const { data, error } = await supabase
         .from('suppliers')
-        .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
+        .insert(transformKeysToSnake({ ...payload, businessId, ...branchFields('suppliers') } as unknown as Record<string, unknown>))
         .select('id')
         .single();
       if (error || !data) throw error || new Error("Failed to create supplier");
@@ -1866,7 +2058,7 @@ export async function createPurchaseOrder(
     async () => {
       const { data, error } = await supabase
         .from('purchase_orders')
-        .insert(transformKeysToSnake({ ...payload, businessId } as unknown as Record<string, unknown>))
+        .insert(transformKeysToSnake({ ...payload, businessId, ...branchFields('purchase_orders') } as unknown as Record<string, unknown>))
         .select('id')
         .single();
       if (error || !data) throw error || new Error("Failed to create purchase order");
@@ -1999,6 +2191,7 @@ export async function receiveStockFromPurchaseOrder(
     });
     await offlineCreate(businessId, 'stock_movements', {
       businessId,
+      ...branchFields('stock_movements'),
       movementType: "stock_in",
       materialId,
       materialName: payload.materialName,
@@ -2130,6 +2323,7 @@ export async function receiveStockFromPurchaseOrder(
     .from('stock_movements')
     .insert(transformKeysToSnake({
       businessId,
+      ...branchFields('stock_movements'),
       movementType: "stock_in",
       materialId,
       materialName: payload.materialName,
@@ -2309,6 +2503,7 @@ export async function createExpense(
     .from('expenses')
     .insert(transformKeysToSnake({
       businessId,
+      ...branchFields('expenses'),
       category: payload.category,
       amount: payload.amount,
       description: payload.description,
@@ -2329,6 +2524,7 @@ export async function createExpense(
     .from('transactions')
     .insert(transformKeysToSnake({
       businessId,
+      ...branchFields('transactions'),
       type: "expense",
       amount: -Math.abs(payload.amount),
       description: `Expense: ${payload.description}`,
@@ -2546,6 +2742,7 @@ export async function createWithdrawal(
     .from('withdrawals')
     .insert(transformKeysToSnake({
       businessId,
+      ...branchFields('withdrawals'),
       amount: payload.amount,
       reason: payload.reason,
       category: payload.category,
@@ -2563,6 +2760,7 @@ export async function createWithdrawal(
     .from('transactions')
     .insert(transformKeysToSnake({
       businessId,
+      ...branchFields('transactions'),
       type: "withdrawal",
       amount: -Math.abs(payload.amount),
       description: `Withdrawal: ${payload.reason}`,

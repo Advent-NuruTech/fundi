@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { cn, formatKes, formatDateLabel } from "@/lib/utils";
-import { Search, Building2, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { Search, Building2, ChevronLeft, ChevronRight, Filter, Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { BUSINESS_TYPES, getBusinessTypeConfig } from "@/lib/business-types";
 import type { AdminBusinessSummary } from "@/types/admin";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -24,6 +25,7 @@ export function BusinessesTable() {
   const [search, setSearch] = useState("");
   const [planFilter, setPlanFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const LIMIT = 20;
 
@@ -35,13 +37,14 @@ export function BusinessesTable() {
       search,
       plan: planFilter,
       status: statusFilter,
+      category: categoryFilter,
     });
     const res = await fetch(`/api/ffmanage/businesses?${params}`);
     const data = await res.json();
     setBusinesses(data.businesses ?? []);
     setTotal(data.total ?? 0);
     setLoading(false);
-  }, [page, search, planFilter, statusFilter]);
+  }, [page, search, planFilter, statusFilter, categoryFilter]);
 
   useEffect(() => { fetchBusinesses(); }, [fetchBusinesses]);
 
@@ -87,6 +90,16 @@ export function BusinessesTable() {
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
           </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+            className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:border-violet-500 focus:outline-none"
+          >
+            <option value="">All categories</option>
+            {BUSINESS_TYPES.map((bt) => (
+              <option key={bt.id} value={bt.id}>{bt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -97,7 +110,9 @@ export function BusinessesTable() {
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/60">
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Business</th>
+                <th className="hidden px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 lg:table-cell">Category</th>
                 <th className="hidden px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 md:table-cell">Plan</th>
+                <th className="hidden px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-slate-500 lg:table-cell">Branches</th>
                 <th className="hidden px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 lg:table-cell">Subscription</th>
                 <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500 xl:table-cell">Revenue</th>
                 <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500 xl:table-cell">Employees</th>
@@ -109,7 +124,7 @@ export function BusinessesTable() {
               {loading
                 ? Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} className="bg-slate-900">
-                      <td colSpan={7} className="px-4 py-3">
+                      <td colSpan={9} className="px-4 py-3">
                         <div className="h-4 animate-pulse rounded bg-slate-800" />
                       </td>
                     </tr>
@@ -117,7 +132,7 @@ export function BusinessesTable() {
                 : businesses.length === 0
                 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center">
+                      <td colSpan={9} className="px-4 py-12 text-center">
                         <Building2 className="mx-auto h-8 w-8 text-slate-700" />
                         <p className="mt-2 text-sm text-slate-500">No businesses found</p>
                       </td>
@@ -135,9 +150,26 @@ export function BusinessesTable() {
                           <p className="text-xs text-slate-500">{biz.ownerEmail ?? biz.email ?? "—"}</p>
                         </div>
                       </td>
+                      <td className="hidden px-4 py-3 lg:table-cell">
+                        {(() => {
+                          const cfg = getBusinessTypeConfig(biz.businessType);
+                          return (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
+                              <span className="text-sm leading-none">{cfg.emoji}</span>
+                              {cfg.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="hidden px-4 py-3 md:table-cell">
                         <span className="rounded-md bg-violet-900/30 px-2 py-0.5 text-xs font-medium text-violet-300">
                           {PLAN_LABELS[biz.plan] ?? biz.plan}
+                        </span>
+                      </td>
+                      <td className="hidden px-4 py-3 text-center lg:table-cell">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                          <Store className="h-3.5 w-3.5 text-slate-600" />
+                          {biz.branchCount}
                         </span>
                       </td>
                       <td className="hidden px-4 py-3 lg:table-cell">

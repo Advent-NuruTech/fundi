@@ -9,13 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import type { InventoryMaterial } from "@/types/domain";
+import { coverLabel, reorderPoHref, type InventoryInsight } from "@/lib/inventory-intelligence";
 
 export function LowStockSection({
   lowStock,
   materials,
+  insightByMaterialId,
 }: {
   lowStock: InventoryMaterial[];
   materials: InventoryMaterial[];
+  insightByMaterialId?: Map<string, InventoryInsight>;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -169,6 +172,12 @@ export function LowStockSection({
                 const isOut =
                   material.quantity <= 0;
 
+                const insight = insightByMaterialId?.get(material.id);
+                const suggestedQty = insight?.suggestedReorderQty ?? Math.max(deficit, 0);
+                const poHref = insight
+                  ? reorderPoHref(insight)
+                  : `/inventory?section=purchase-orders&reorderMaterialId=${material.id}&materialName=${encodeURIComponent(material.name)}&reorderUnit=${encodeURIComponent(material.unitName)}&reorderQuantity=${suggestedQty || material.reorderLevel || 1}`;
+
                 return (
                   <div
                     key={material.id}
@@ -248,10 +257,10 @@ export function LowStockSection({
                           </div>
                         </div>
 
-                        <div className="rounded-xl bg-white/70 p-3">
+                        <div className="rounded-xl bg-white/70 p-3 space-y-2">
                           <div className="flex items-center justify-between gap-4">
                             <span className="text-sm text-slate-500">
-                              Stock Shortage
+                              Suggested order
                             </span>
 
                             <span
@@ -261,10 +270,18 @@ export function LowStockSection({
                                   : "text-amber-700"
                               }`}
                             >
-                              {deficit}{" "}
-                              {material.unitName} needed
+                              {suggestedQty}{" "}
+                              {material.unitName}
                             </span>
                           </div>
+                          {insight && insight.avgDailyUsage > 0 && (
+                            <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-2">
+                              <span className="text-xs text-slate-500">Selling pace</span>
+                              <span className="text-xs font-medium text-slate-700">
+                                ~{insight.avgDailyUsage.toFixed(1)} {material.unitName}/day · {coverLabel(insight.daysOfCover)}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div
@@ -281,9 +298,7 @@ export function LowStockSection({
                       </div>
 
                       <div className="flex items-center justify-between gap-2">
-                        <Link
-                          href={`/inventory/purchase-orders?section=purchase-orders&materialId=${material.id}&materialName=${encodeURIComponent(material.name)}&unit=${encodeURIComponent(material.unitName)}`}
-                        >
+                        <Link href={poHref}>
                           <Button
                             size="sm"
                             variant={isOut ? "default" : "outline"}

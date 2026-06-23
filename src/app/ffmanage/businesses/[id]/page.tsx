@@ -16,6 +16,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import type { AdminBusinessDetail } from "@/types/admin";
+import { getBusinessTypeConfig } from "@/lib/business-types";
 
 type ActionType = "suspend" | "reactivate" | "change_plan" | "extend_subscription" | "cancel_subscription" | "add_manual_subscription";
 
@@ -103,6 +104,10 @@ export default function AdminBusinessDetailPage() {
               <Badge variant={business.isActive ? "success" : "danger"}>
                 {business.isActive ? "Active" : "Suspended"}
               </Badge>
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
+                <span className="text-sm leading-none">{getBusinessTypeConfig(business.businessType).emoji}</span>
+                {getBusinessTypeConfig(business.businessType).label}
+              </span>
             </div>
             <p className="mt-1 text-sm text-slate-500">
               {business.ownerEmail} • Created {formatDateLabel(business.createdAt)}
@@ -160,7 +165,7 @@ export default function AdminBusinessDetailPage() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
             { label: "Employees", value: business.employeeCount, icon: Users },
-            { label: "Customers", value: business.customerCount, icon: Users },
+            { label: "Branches", value: business.branchCount, icon: Building2 },
             { label: "Plan", value: business.plan?.toUpperCase() ?? "—", icon: CreditCard },
             { label: "Subscription", value: business.subscriptionStatus ?? "None", icon: CheckCircle2 },
           ].map(({ label, value, icon: Icon }) => (
@@ -226,6 +231,8 @@ export default function AdminBusinessDetailPage() {
               <dl className="space-y-2.5">
                 {[
                   ["ID", business.id.slice(0, 8) + "…"],
+                  ["Category", getBusinessTypeConfig(business.businessType).label],
+                  ["Branches", String(business.branchCount)],
                   ["Owner", business.ownerName ?? "—"],
                   ["Email", business.email ?? "—"],
                   ["Phone", business.phone],

@@ -1,5 +1,8 @@
 /**
- * Bootstrap the platform system owner account.
+ * Register a new platform system owner.
+ *
+ * Anyone who knows the SYSTEM_OWNER_PASSCODE (set in .env.local) can register
+ * as a platform owner. Multiple owners are supported.
  *
  * PLATFORM DOMAIN ONLY — creates:
  *   - auth.users entry
@@ -8,17 +11,11 @@
  *   - admin_session + httpOnly cookie
  *
  * DOES NOT CREATE:
- *   - profiles (tenant table)
- *   - businesses (tenant table)
- *   - business_members (tenant table)
- *   - inventory defaults (tenant data)
- *
- * The platform owner is NOT a tenant. They operate the SaaS itself.
- * Tenants sign up separately through the regular registration flow.
+ *   - profiles, businesses, business_members (tenant tables)
  *
  * Security:
- *   - Only runs when platform_admins table has no 'owner' role entries
- *   - Rate-limited: 3 attempts per IP per hour
+ *   - SYSTEM_OWNER_PASSCODE env var must match the submitted passcode
+ *   - Rate-limited: 5 attempts per IP per hour
  *   - Password policy enforced server-side
  *   - Audit log written on success
  *   - Auth user deleted on any failure (rollback)
@@ -32,9 +29,8 @@ import { signAdminToken, SESSION_COOKIE, TOKEN_TTL_SECONDS } from "@/lib/admin/s
 
 export const dynamic = "force-dynamic";
 
-// Rate limiting: 3 attempts per IP per hour
 const bootstrapAttempts = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 3;
+const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 
 function checkRateLimit(ip: string): boolean {
@@ -57,6 +53,7 @@ const bodySchema = z.object({
     { message: "Password must contain at least one uppercase letter, one number, and one special character" }
   ),
   confirmPassword: z.string(),
+  passcode: z.string().min(1),
 }).refine((d) => d.password === d.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"],
@@ -77,52 +74,8 @@ export async function POST(request: Request) {
 
   if (!checkRateLimit(ip)) {
     return NextResponse.json(
-      { error: "Too many setup attempts. Try again in 1 hour." },
+      { error: "Too many attempts. Try again in 1 hour." },
       { status: 429 }
-    );
-  }
-
-  const db = getDb();
-
-  // Guard: only runs when no active platform owner exists.
-  // Check platform_admins table first (migration 00022+), then fall back to system_config.
-  let ownerAlreadyExists = false;
-
-  const platformOwnerResult = await db
-    .from("platform_admins")
-    .select("id")
-    .eq("role", "owner")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  const existingOwner = platformOwnerResult?.data ?? null;
-
-  if (existingOwner) {
-    ownerAlreadyExists = true;
-  } else if (!platformOwnerResult?.error) {
-    // platform_admins table exists but no owner row — check is complete, no owner
-  } else {
-    // platform_admins table may not exist yet (pre-00022) — fall back to system_config
-    const { data: ownerConfig } = await db
-      .from("system_config")
-      .select("value")
-      .eq("key", "system_owner_uid")
-      .maybeSingle();
-
-    const rawUid = ownerConfig?.value
-      ? String(ownerConfig.value).replace(/^"|"$/g, "")
-      : null;
-
-    if (rawUid && rawUid !== "null" && rawUid.length > 10) {
-      ownerAlreadyExists = true;
-    }
-  }
-
-  if (ownerAlreadyExists) {
-    return NextResponse.json(
-      { error: "Platform owner already exists. Use the sign-in form." },
-      { status: 409 }
     );
   }
 
@@ -134,7 +87,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: first?.message ?? "Invalid input" }, { status: 400 });
   }
 
-  const { fullName, email, password } = parsed.data;
+  const { fullName, email, password, passcode } = parsed.data;
+
+  // Validate system owner passcode
+  const systemPasscode = process.env.SYSTEM_OWNER_PASSCODE ?? "";
+  if (!systemPasscode) {
+    return NextResponse.json(
+      { error: "System owner passcode is not configured. Set SYSTEM_OWNER_PASSCODE in .env.local." },
+      { status: 500 }
+    );
+  }
+  if (passcode !== systemPasscode) {
+    return NextResponse.json(
+      { error: "Invalid system owner passcode." },
+      { status: 403 }
+    );
+  }
+
+  const db = getDb();
 
   // Create Supabase Auth user (email auto-confirmed — owner needs immediate access)
   const { data: authData, error: authErr } = await db.auth.admin.createUser({
@@ -154,9 +124,8 @@ export async function POST(request: Request) {
   const userId = authData.user.id;
 
   try {
-    // Create platform_admins entry.
-    // This is the ONLY record we create for the platform owner.
-    // The platform owner is NOT a tenant — no profile, business, or members record.
+    // Create platform_admins entry (role = owner).
+    // Multiple owners are allowed — each registered with the correct passcode.
     const { error: paErr } = await db.from("platform_admins").insert({
       user_id: userId,
       role: "owner",
@@ -166,7 +135,7 @@ export async function POST(request: Request) {
     });
     if (paErr) throw new Error(`Platform admin record: ${paErr.message}`);
 
-    // Set system_config flags (kept for backward compat with pre-00022 queries)
+    // Keep system_config flags in sync (backward compat)
     await Promise.all([
       db.from("system_config").upsert(
         { key: "system_owner_uid", value: JSON.stringify(userId) },
@@ -203,7 +172,7 @@ export async function POST(request: Request) {
     await db.from("admin_audit_logs").insert({
       admin_uid: userId,
       admin_email: email,
-      action: "bootstrap_platform_owner",
+      action: "register_platform_owner",
       resource_type: "platform",
       metadata: { ip, fullName, domain: "platform" },
       ip_address: ip,
@@ -223,7 +192,6 @@ export async function POST(request: Request) {
     return response;
 
   } catch (err) {
-    // Rollback: delete the auth user to keep DB consistent
     await db.auth.admin.deleteUser(userId).catch(() => {});
     const msg = err instanceof Error ? err.message : "Setup failed";
     return NextResponse.json({ error: msg }, { status: 500 });

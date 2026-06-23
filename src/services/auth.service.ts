@@ -48,6 +48,7 @@ export async function registerOwner(input: {
   phone: string;
   businessName: string;
   location: string;
+  businessType?: import("@/lib/business-types").BusinessType;
 }) {
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
@@ -58,6 +59,7 @@ export async function registerOwner(input: {
         phone: input.phone,
         business_name: input.businessName,
         location: input.location,
+        business_type: input.businessType,
       },
     },
   });
@@ -80,7 +82,37 @@ export async function registerOwner(input: {
     phone: input.phone,
     businessName: input.businessName,
     location: input.location,
+    businessType: input.businessType,
   });
+}
+
+/**
+ * Create an additional business for the currently signed-in user (multi-business).
+ * Returns the new business id so the caller can switch to it.
+ */
+export async function registerAdditionalBusiness(input: {
+  businessName: string;
+  location?: string;
+  phone?: string;
+  businessType: import("@/lib/business-types").BusinessType;
+}): Promise<string> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) throw new Error("Not authenticated");
+
+  const res = await fetch("/api/auth/create-business", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? "Could not create business.");
+  }
+  const data = await res.json();
+  return data.businessId as string;
 }
 
 export async function resolveProfile(user: User) {
@@ -109,6 +141,9 @@ export async function ensureProfileExists(user: User): Promise<boolean> {
       phone: meta.phone,
       businessName: meta.business_name,
       location: meta.location,
+      // Thread the industry chosen at sign-up so the email-confirmation path
+      // creates the business with the right category (not just the default).
+      businessType: meta.business_type,
     });
     return true;
   } catch {

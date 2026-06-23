@@ -19,6 +19,7 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
       maxOrdersPerMonth: 80,
       maxInventoryItems: 50,
       smsPerMonth: 50,
+      maxBranches: 1,
     },
     features: {
       analytics: false,
@@ -45,6 +46,7 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
       maxOrdersPerMonth: null,
       maxInventoryItems: null,
       smsPerMonth: 700,
+      maxBranches: 4,
     },
     features: {
       analytics: true,
@@ -71,6 +73,7 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
       maxOrdersPerMonth: null,
       maxInventoryItems: null,
       smsPerMonth: null,
+      maxBranches: 9,
     },
     features: {
       analytics: true,
@@ -98,6 +101,26 @@ export const PAYSTACK_FEE_CAP_KES = 2_000;
 
 /** Subscription statuses that grant full dashboard access */
 export const ACTIVE_SUBSCRIPTION_STATUSES: readonly string[] = ["active"] as const;
+
+// ─── Branch (outlet) limits ───────────────────────────────────────────────────
+// Maximum branches per plan, INCLUDING the auto-created main branch.
+// Must mirror business_branch_limit() in migration 00030 (the DB backstop).
+
+export const PLAN_BRANCH_LIMITS: Record<Exclude<PlanSlug, "custom">, number> = {
+  sindano: 1, // main outlet only — no extra branches
+  fundi: 4,
+  dhahabu: 9,
+};
+
+/**
+ * Resolve how many branches a workspace may run from its active plan slug.
+ * No / unknown subscription falls back to the Sindano limit (1); "custom"
+ * (enterprise, arranged with sales) is unlimited.
+ */
+export function branchLimitForPlan(slug?: string | null): number {
+  if (slug === "custom") return Number.POSITIVE_INFINITY;
+  return PLAN_BRANCH_LIMITS[slug as Exclude<PlanSlug, "custom">] ?? PLAN_BRANCH_LIMITS.sindano;
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

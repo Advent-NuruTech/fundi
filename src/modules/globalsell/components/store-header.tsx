@@ -3,12 +3,14 @@
 import Image from "next/image";
 import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";
+import { getBusinessTypeConfig } from "@/lib/business-types";
 
 interface StoreHeaderProps {
   store: EcommerceStore;
 }
 
 export function StoreHeader({ store }: StoreHeaderProps) {
+  const category = store.storeType ? getBusinessTypeConfig(store.storeType) : null;
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Banner */}
@@ -47,10 +49,16 @@ export function StoreHeader({ store }: StoreHeaderProps) {
           </div>
 
           <div className="pb-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <h1 className="text-xl font-bold text-slate-900">{store.storeName}</h1>
               {store.isVerified && (
                 <BadgeCheck className="h-5 w-5 text-emerald-500" />
+              )}
+              {category && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  <span>{category.emoji}</span>
+                  {category.label}
+                </span>
               )}
             </div>
             {/* Rating placeholder */}

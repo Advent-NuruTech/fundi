@@ -37,4 +37,4 @@ Disallow: /
 User-agent: FacebookBot
 Disallow: /api/
 
-Sitemap: https://fundiflow.co.ke/sitemap.xml
+Sitemap: https://www.fundiflow.co.ke/sitemap.xml

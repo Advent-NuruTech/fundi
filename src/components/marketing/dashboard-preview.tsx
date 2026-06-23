@@ -389,7 +389,7 @@ export function DashboardPreview({ defaultTab = "orders" }: { defaultTab?: TabId
           <div className="h-3 w-3 rounded-full bg-green-400" />
         </div>
         <div className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1 text-center text-xs text-slate-400">
-          🔒 app.fundiflow.co.ke/dashboard
+          🔒 www.fundiflow.co.ke/dashboard
         </div>
       </div>
 

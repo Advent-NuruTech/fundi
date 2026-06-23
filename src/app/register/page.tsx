@@ -14,18 +14,26 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE, isBusinessType } from "@/lib/business-types";
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") ?? "/pricing";
+  // Pre-select the industry chosen on the pricing page (?category=…).
+  const categoryParam = searchParams.get("category");
+  const initialType = isBusinessType(categoryParam) ? categoryParam : DEFAULT_BUSINESS_TYPE;
   const { registerOwner } = useAuth();
   const [step, setStep] = useState<"idle" | "creating" | "redirecting">("idle");
   const [error, setError] = useState("");
 
-  const { register, handleSubmit } = useForm<RegisterValues>({
+  const { register, handleSubmit, setValue, watch } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
+    defaultValues: { businessType: initialType },
   });
+
+  const selectedType = watch("businessType") ?? DEFAULT_BUSINESS_TYPE;
 
   const onSubmit = async (values: RegisterValues) => {
     if (step !== "idle") return;
@@ -65,13 +73,41 @@ function RegisterForm() {
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
+      <div className="md:col-span-2">
+        <Label>What kind of business do you run?</Label>
+        <p className="mt-0.5 text-xs text-slate-500">Pick one — we&apos;ll set up the right dashboard, stock list and words for you.</p>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {BUSINESS_TYPES.map((type) => {
+            const active = selectedType === type.id;
+            return (
+              <button
+                type="button"
+                key={type.id}
+                onClick={() => setValue("businessType", type.id, { shouldValidate: true })}
+                disabled={isBusy}
+                className={cn(
+                  "flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition",
+                  active
+                    ? "border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600"
+                    : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/40"
+                )}
+              >
+                <span className="text-xl leading-none">{type.emoji}</span>
+                <span className="text-sm font-semibold text-slate-800">{type.label}</span>
+                <span className="text-[11px] leading-tight text-slate-500">{type.painSolved}</span>
+              </button>
+            );
+          })}
+        </div>
+        <input type="hidden" {...register("businessType")} />
+      </div>
       <div>
         <Label htmlFor="displayName">Your name</Label>
-        <Input id="displayName" placeholder="Jane Tailor" {...register("displayName")} disabled={isBusy} />
+        <Input id="displayName" placeholder="e.g. Jane Wanjiru" {...register("displayName")} disabled={isBusy} />
       </div>
       <div>
         <Label htmlFor="businessName">Business name</Label>
-        <Input id="businessName" placeholder="ABC Tailoring" {...register("businessName")} disabled={isBusy} />
+        <Input id="businessName" placeholder="e.g. Mama Njeri Stores" {...register("businessName")} disabled={isBusy} />
       </div>
       <div>
         <Label htmlFor="phone">Phone number</Label>
@@ -133,9 +169,9 @@ export default function RegisterPage() {
     priority
   />
 </div>
-          <h1 className="mt-3 text-xl font-bold text-slate-900">Create your tailoring workspace</h1>
+          <h1 className="mt-3 text-xl font-bold text-slate-900">Create your business workspace</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Set up your business in minutes. Invite your team and start managing orders.
+            Built for Kenyan & African SMEs. Manage stock, sales, customers and money — in minutes.
           </p>
         </div>
 

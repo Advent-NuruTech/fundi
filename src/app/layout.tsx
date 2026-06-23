@@ -20,8 +20,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FundiFlow | Kenyan Tailoring SaaS",
-  description: "Production, orders, payments, and inventory in one tailoring-first workflow.",
+  metadataBase: new URL("https://www.fundiflow.co.ke"),
+  title: "FundiFlow | Business OS for African SMEs",
+  description: "Inventory, sales, customers, finance and multi-branch management for tailors, retailers, wholesalers, hardware stores and more.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

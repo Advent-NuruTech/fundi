@@ -11,6 +11,7 @@ import {
   materialConsumptionFromMovements,
 } from "@/services/firestore.service";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { computeInventoryInsights, reorderSuggestions } from "@/lib/inventory-intelligence";
 
 export function useInventory() {
   const { businessId, ready } = useBusinessContext();
@@ -41,6 +42,17 @@ export function useInventory() {
 
   const lowStock = useMemo(() => lowStockMaterials(materials), [materials]);
   const consumption = useMemo(() => materialConsumptionFromMovements(movements), [movements]);
+
+  // Velocity-aware insights: days of cover + suggested reorder qty per material.
+  const insights = useMemo(
+    () => computeInventoryInsights(materials, movements),
+    [materials, movements]
+  );
+  const reorderList = useMemo(() => reorderSuggestions(insights), [insights]);
+  const insightByMaterialId = useMemo(
+    () => new Map(insights.map((i) => [i.material.id, i])),
+    [insights]
+  );
   const stockValue = useMemo(
     () => materials.reduce((sum, m) => sum + m.quantity * m.averageUnitCost, 0),
     [materials]
@@ -67,5 +79,8 @@ export function useInventory() {
     loading,
     pendingPOs,
     movementsByType,
+    insights,
+    reorderList,
+    insightByMaterialId,
   };
 }

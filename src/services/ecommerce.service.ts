@@ -102,10 +102,20 @@ export async function createStore(
     slug = `${baseSlug}-${attempt}`;
   }
 
+  // Mirror the owning business's industry so the marketplace can categorise
+  // this store and pick sensible channel defaults. Best-effort: a missing
+  // value simply leaves the store uncategorised.
+  const { data: bizRow } = await supabase
+    .from("businesses")
+    .select("business_type")
+    .eq("id", businessId)
+    .maybeSingle();
+
   const payload = {
     business_id: businessId,
     slug,
     store_name: input.storeName ?? businessName,
+    store_type: (bizRow as { business_type?: string } | null)?.business_type ?? null,
     description: input.description ?? null,
     banner_url: input.bannerUrl ?? null,
     logo_url: input.logoUrl ?? null,

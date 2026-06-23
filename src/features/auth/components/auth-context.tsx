@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import type { Business, UserProfile } from "@/types/domain";
+import type { Branch, Business, BusinessMembership, UserProfile } from "@/types/domain";
 import { canAccessRoute } from "@/lib/permissions";
 import {
   authStateListener,
@@ -10,14 +10,29 @@ import {
   loginWithEmail,
   loginWithGoogle,
   logoutUser,
+  registerAdditionalBusiness,
   registerOwner,
   resolveProfile,
 } from "@/services/auth.service";
-import { fetchBusinessProfile, fetchUserProfile } from "@/services/firestore.service";
+import {
+  fetchBusinessProfile,
+  fetchBranches,
+  fetchUserMemberships,
+  fetchUserProfile,
+  createBranch,
+  setActiveBranch,
+} from "@/services/firestore.service";
 import { supabase } from "@/lib/supabase";
-import { useSessionStore } from "@/store/session-store";
+import {
+  useSessionStore,
+  readStoredActiveBusiness,
+  writeStoredActiveBusiness,
+  readStoredBranch,
+  writeStoredBranch,
+} from "@/store/session-store";
 import { getAppState, setAppState } from "@/lib/local-db";
 import { isOffline } from "@/lib/offline-write";
+import type { BusinessType } from "@/lib/business-types";
 
 export type OnboardingStep = "idle" | "authenticating" | "setting_up" | "redirecting" | "complete" | "error";
 
@@ -36,26 +51,137 @@ interface AuthContextValue {
     phone: string;
     businessName: string;
     location: string;
+    businessType?: import("@/lib/business-types").BusinessType;
   }) => Promise<void>;
   logout: () => Promise<void>;
   isOwner: boolean;
   isTailor: boolean;
   isAdmin: boolean;
   refreshProfile: () => Promise<void>;
+  /** Every business this login can access, with the role held in each. */
+  memberships: BusinessMembership[];
+  /** The currently active business id (drives the whole app's scope). */
+  activeBusinessId: string | null;
+  /** Switch the active business. No-op if the id isn't one the user belongs to. */
+  switchBusiness: (businessId: string) => Promise<void>;
+  /** Create a new business for this login and switch to it. Returns its id. */
+  addBusiness: (input: {
+    businessName: string;
+    location?: string;
+    phone?: string;
+    businessType: BusinessType;
+  }) => Promise<string>;
+  /** Branches (outlets) within the active business. */
+  branches: Branch[];
+  /** The active branch id (scopes transactional data inside the business). */
+  activeBranchId: string | null;
+  /** Switch the active branch. Reloads to re-scope all data cleanly. */
+  switchBranch: (branchId: string) => void;
+  /** Create a new branch in the active business and switch to it. */
+  addBranch: (input: { name: string; location?: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { profile, loading, setLoading, setProfile } = useSessionStore();
+  const { profile, loading, setLoading, setProfile, activeBusinessId, setActiveBusinessId } = useSessionStore();
   const [business, setBusiness] = useState<Business | null>(null);
+  const [memberships, setMemberships] = useState<BusinessMembership[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [activeBranchId, setActiveBranchIdState] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("idle");
+
+  // Resolve the active branch for a business: last chosen (if still present) →
+  // the default branch → the first branch. Pushes it to the service layer so
+  // every query scopes to it, and persists the choice per (user, business).
+  const loadBranches = useCallback(async (uid: string, businessId: string) => {
+    const rows = isOffline() ? [] : await fetchBranches(businessId).catch(() => []);
+    setBranches(rows);
+    const stored = readStoredBranch(uid, businessId);
+    const ids = new Set(rows.map((r) => r.id));
+    const active =
+      (stored && ids.has(stored) && stored) ||
+      rows.find((r) => r.isDefault)?.id ||
+      rows[0]?.id ||
+      null;
+    setActiveBranchIdState(active);
+    setActiveBranch(active);
+    writeStoredBranch(uid, businessId, active);
+    return active;
+  }, []);
+
+  // Load the business profile for a given id (+ its branches), falling back to
+  // the offline cache for the business profile.
+  const loadBusiness = useCallback(
+    async (uid: string, businessId: string) => {
+      let businessProfile = await fetchBusinessProfile(businessId).catch(() => null);
+      if (!businessProfile) {
+        businessProfile = await getAppState<Business>(`cached_business_${businessId}`).catch(() => null);
+      }
+      setBusiness(businessProfile);
+      if (businessProfile && !isOffline()) {
+        setAppState(`cached_business_${businessId}`, businessProfile).catch(() => {});
+      }
+      await loadBranches(uid, businessId);
+      return businessProfile;
+    },
+    [loadBranches],
+  );
+
+  // Resolve memberships + decide which business is active, then load it.
+  // Active business = last chosen (if still a member) → primary profile
+  // business → first membership. Synthesizes a membership from the profile
+  // when business_members is empty, so single-business accounts keep working.
+  const resolveActiveContext = useCallback(
+    async (uid: string, resolved: UserProfile) => {
+      let rows: BusinessMembership[] = [];
+      if (!isOffline()) {
+        rows = await fetchUserMemberships(uid).catch(() => []);
+      }
+      if (!rows.length && resolved.businessId) {
+        rows = [
+          {
+            businessId: resolved.businessId,
+            businessName: "My Business",
+            role: resolved.role,
+            roles: resolved.roles?.length ? resolved.roles : resolved.role ? [resolved.role] : [],
+          },
+        ];
+      }
+      setMemberships(rows);
+
+      const stored = readStoredActiveBusiness(uid);
+      const ids = new Set(rows.map((r) => r.businessId));
+      const active =
+        (stored && ids.has(stored) && stored) ||
+        (resolved.businessId && ids.has(resolved.businessId) && resolved.businessId) ||
+        rows[0]?.businessId ||
+        resolved.businessId ||
+        null;
+
+      setActiveBusinessId(active);
+      writeStoredActiveBusiness(uid, active);
+      if (active) await loadBusiness(uid, active);
+      else {
+        setBusiness(null);
+        setBranches([]);
+        setActiveBranchIdState(null);
+        setActiveBranch(null);
+      }
+    },
+    [loadBusiness, setActiveBusinessId],
+  );
 
   useEffect(() => {
     const unsub = authStateListener(async (authUser, event) => {
       if (!authUser) {
         setProfile(null);
         setBusiness(null);
+        setMemberships([]);
+        setActiveBusinessId(null);
+        setBranches([]);
+        setActiveBranchIdState(null);
+        setActiveBranch(null);
         setLoading(false);
         return;
       }
@@ -83,27 +209,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setProfile(resolved);
-      if (resolved?.businessId) {
-        let businessProfile = await fetchBusinessProfile(resolved.businessId).catch(() => null);
-        if (!businessProfile) {
-          businessProfile = await getAppState<Business>(`cached_business_${resolved.businessId}`).catch(() => null);
-        }
-        setBusiness(businessProfile);
-        // Persist for the next offline boot (fire-and-forget)
-        if (!isOffline()) {
+      if (resolved?.businessId || resolved) {
+        if (!isOffline() && resolved) {
           setAppState(`cached_profile_${authUser.id}`, resolved).catch(() => {});
-          if (businessProfile) {
-            setAppState(`cached_business_${resolved.businessId}`, businessProfile).catch(() => {});
-          }
         }
+        if (resolved) await resolveActiveContext(authUser.id, resolved);
       } else {
         setBusiness(null);
+        setMemberships([]);
+        setActiveBusinessId(null);
       }
       setLoading(false);
     });
 
     return unsub;
-  }, [setLoading, setProfile]);
+  }, [setLoading, setProfile, setActiveBusinessId, resolveActiveContext]);
 
   const refreshProfile = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
@@ -111,23 +231,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const resolved = await resolveProfile(data.user);
     if (resolved) {
       setProfile(resolved);
-      if (resolved.businessId) {
-        const businessProfile = await fetchBusinessProfile(resolved.businessId);
-        setBusiness(businessProfile);
-      }
+      await resolveActiveContext(data.user.id, resolved);
     }
-  }, [setProfile]);
+  }, [setProfile, resolveActiveContext]);
+
+  const switchBusiness = useCallback(
+    async (businessId: string) => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data.user?.id;
+      if (!uid || !memberships.some((m) => m.businessId === businessId)) return;
+      // Persist and hard-reload: on boot, resolveActiveContext sets the active
+      // business + branch (and the service-layer scope) before any data
+      // listener mounts, so there's no window where queries run with a stale
+      // branch from the previous business.
+      writeStoredActiveBusiness(uid, businessId);
+      if (typeof window !== "undefined") window.location.reload();
+    },
+    [memberships],
+  );
+
+  const switchBranch = useCallback(
+    (branchId: string) => {
+      if (!branches.some((b) => b.id === branchId) || branchId === activeBranchId) return;
+      // Persist for the active business, then hard-reload so every listener
+      // re-subscribes under the new branch scope (same business id, so a soft
+      // re-render wouldn't re-run the data effects).
+      const uid = profile?.uid;
+      const bizId = activeBusinessId;
+      if (uid && bizId) writeStoredBranch(uid, bizId, branchId);
+      setActiveBranch(branchId);
+      if (typeof window !== "undefined") window.location.reload();
+    },
+    [branches, activeBranchId, profile?.uid, activeBusinessId],
+  );
+
+  const addBranch = useCallback(
+    async (input: { name: string; location?: string }) => {
+      if (!activeBusinessId) return;
+      const branch = await createBranch(activeBusinessId, input);
+      const uid = profile?.uid;
+      if (uid) writeStoredBranch(uid, activeBusinessId, branch.id);
+      setActiveBranch(branch.id);
+      if (typeof window !== "undefined") window.location.reload();
+    },
+    [activeBusinessId, profile?.uid],
+  );
+
+  const addBusiness = useCallback(
+    async (input: { businessName: string; location?: string; phone?: string; businessType: BusinessType }) => {
+      const newId = await registerAdditionalBusiness(input);
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        // Make the new business active, then hard-reload so the whole app
+        // (scope, branches, navigation) re-resolves cleanly to it.
+        writeStoredActiveBusiness(data.user.id, newId);
+        if (typeof window !== "undefined") window.location.reload();
+      }
+      return newId;
+    },
+    [],
+  );
+
+  // The active membership overrides the raw profile's businessId/role/roles so
+  // a user who is, say, owner of shop A and cashier of shop B sees the correct
+  // scope and permissions for whichever business is currently active.
+  const activeMembership = useMemo(
+    () => memberships.find((m) => m.businessId === activeBusinessId) ?? null,
+    [memberships, activeBusinessId],
+  );
+
+  const effectiveUser = useMemo(() => {
+    if (!profile) return null;
+    return {
+      ...profile,
+      businessId: activeBusinessId ?? profile.businessId,
+      role: activeMembership?.role ?? profile.role,
+      roles: activeMembership?.roles ?? profile.roles,
+      name: profile.displayName,
+    };
+  }, [profile, activeBusinessId, activeMembership]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user: profile
-        ? {
-            ...profile,
-            name: profile.displayName,
-          }
-        : null,
+      user: effectiveUser,
       business,
       loading,
+      memberships,
+      activeBusinessId,
+      switchBusiness,
+      addBusiness,
+      branches,
+      activeBranchId,
+      switchBranch,
+      addBranch,
       onboardingStep,
       setOnboardingStep,
       login: async (email, password) => {
@@ -150,12 +346,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout: async () => {
         await logoutUser();
       },
-      isOwner: profile?.role === "owner",
-      isTailor: profile?.role === "tailor",
-      isAdmin: profile?.role === "admin_manager",
+      isOwner: effectiveUser?.role === "owner",
+      isTailor: effectiveUser?.role === "tailor",
+      isAdmin: effectiveUser?.role === "admin_manager",
       refreshProfile,
     }),
-    [profile, loading, business, onboardingStep, refreshProfile, setLoading]
+    [
+      effectiveUser,
+      loading,
+      business,
+      memberships,
+      activeBusinessId,
+      switchBusiness,
+      addBusiness,
+      branches,
+      activeBranchId,
+      switchBranch,
+      addBranch,
+      onboardingStep,
+      refreshProfile,
+      setLoading,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

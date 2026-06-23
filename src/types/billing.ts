@@ -48,6 +48,13 @@ export interface PlanLimits {
   maxOrdersPerMonth: number | null;
   maxInventoryItems: number | null;
   smsPerMonth: number | null;    // null = unlimited
+  /**
+   * Maximum number of branches (outlets) the business may run, INCLUDING the
+   * auto-created main branch. 1 = main only (no extra outlets). null =
+   * unlimited (custom / enterprise). Enforced both in the UI and by the DB
+   * trigger in migration 00030.
+   */
+  maxBranches: number | null;
 }
 
 export interface PlanConfig {

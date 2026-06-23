@@ -17,11 +17,16 @@ import {
   Landmark,
   Receipt,
   Globe,
+  Store,
+  Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/components/auth-context";
+import { useBusinessType } from "@/hooks/useBusinessType";
+import { BusinessSwitcher } from "@/components/dashboard/business-switcher";
+import { BranchSwitcher } from "@/components/dashboard/branch-switcher";
 import { hasCapability } from "@/lib/permissions";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { MessageBell } from "@/components/messaging/message-bell";
@@ -45,9 +50,32 @@ const navigation = [
 export function Sidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { user, business, logout } = useAuth();
+  const { user, business, memberships, logout } = useAuth();
+  const biz = useBusinessType();
+  const isOwner = user?.role === "owner";
+  const hasMultipleBusinesses = memberships.length > 1;
 
-  const visibleNavigation = navigation.filter((item) => {
+  // Industry-aware labels so a duka owner sees "Sales/Stock" while a tailor
+  // keeps "Orders/Production". Defaults to the static label when unmapped.
+  const labelFor = (href: string, fallback: string) => {
+    switch (href) {
+      case "/orders":
+        return biz.terms.orders;
+      case "/customers":
+        return biz.terms.customers;
+      case "/inventory":
+        return biz.terms.inventory;
+      case "/production":
+        return biz.terms.production;
+      default:
+        return fallback;
+    }
+  };
+
+  const visibleNavigation = navigation
+    .filter((item) => !biz.hiddenNav.includes(item.href))
+    .map((item) => ({ ...item, label: labelFor(item.href, item.label) }))
+    .filter((item) => {
     if (item.href.startsWith("/inventory")) return hasCapability(user, "inventory.read");
     if (item.href.startsWith("/payments")) return hasCapability(user, "payments.read");
     if (item.href.startsWith("/analytics")) return hasCapability(user, "analytics.read");
@@ -58,6 +86,13 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     if (item.href.startsWith("/production")) return hasCapability(user, "production.read");
     return true;
   });
+
+  // Owner-only management tabs: branch management, and (when they run more than
+  // one business) a portfolio overview.
+  const extraNav = [
+    ...(isOwner ? [{ label: "Branches", href: "/branches", icon: Store }] : []),
+    ...(isOwner && hasMultipleBusinesses ? [{ label: "My Businesses", href: "/businesses", icon: Building2 }] : []),
+  ];
 
   const navItem = (item: { label: string; href: string; icon: React.ComponentType<{ className?: string }> }) => {
     const Icon = item.icon;
@@ -80,17 +115,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   const Drawer = (
     <div className="flex h-full flex-col">
-      <div className="border-b border-slate-200 px-5 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-lg font-bold text-emerald-700">{business?.name || "FundiFlow"}</div>
-            <p className="text-xs text-slate-500">Kenyan Tailoring OS</p>
-          </div>
-        </div>
+      <div className="border-b border-slate-200 px-4 py-4">
+        <BusinessSwitcher />
+        <BranchSwitcher />
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {visibleNavigation.map(navItem)}
+        {extraNav.map(navItem)}
         <Link
           href="/settings/role-permissions"
           onClick={() => setOpen(false)}
@@ -159,13 +191,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         {/* Desktop sidebar - no notification icons here */}
         <aside className="hidden h-screen w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
           <div className="flex h-full flex-col">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <div className="text-lg font-bold text-emerald-700">{business?.name || "FundiFlow"}</div>
-              <p className="text-xs text-slate-500">Kenyan Tailoring OS</p>
+            <div className="border-b border-slate-200 px-4 py-4">
+              <BusinessSwitcher />
+              <BranchSwitcher />
             </div>
 
             <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
               {visibleNavigation.map(navItem)}
+              {extraNav.map(navItem)}
               <Link
                 href="/settings/role-permissions"
                 className={cn(

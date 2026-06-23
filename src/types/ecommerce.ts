@@ -40,6 +40,8 @@ export interface EcommerceStore {
   businessId: string;
   slug: string;
   storeName: string;
+  /** Seller industry category, mirrored from the business's businessType. */
+  storeType?: import("@/lib/business-types").BusinessType;
   description?: string;
   bannerUrl?: string;
   logoUrl?: string;
