@@ -6,7 +6,7 @@ import {
   BarChart3,
   MessageCircle,
   MessageSquare,
-  Bot,
+  Lightbulb,
   CheckCircle2,
   ArrowRight,
   Smartphone,
@@ -72,12 +72,12 @@ const FEATURES = [
   },
 ];
 
-const AI_FEATURES = [
-  "Intelligent business insights tailored to your shop",
-  "Customer preference recommendations",
-  "Stock reorder suggestions before you run out",
-  "Productivity tips based on your order patterns",
-  "Instant answers to your business questions",
+const INSIGHTS_FEATURES = [
+  "Performance summaries tailored to your shop",
+  "Customer preference and repeat-order recommendations",
+  "Stock reorder alerts before you run out",
+  "Productivity trends based on your order patterns",
+  "Clear answers to your key business questions",
 ];
 
 const HOW_IT_WORKS = [
@@ -94,7 +94,7 @@ const HOW_IT_WORKS = [
   {
     step: "03",
     title: "Watch Your Business Grow",
-    desc: "Use the finance dashboard and AI insights to make smarter decisions, reduce waste and grow revenue month over month.",
+    desc: "Use the finance dashboard and built-in business insights to make smarter decisions, reduce waste and grow revenue month over month.",
   },
 ];
 
@@ -315,15 +315,15 @@ export default function HomePage() {
               <h1 className="mb-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
                 The Complete{" "}
                 <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-                  Tailor
+                  Business
                 </span>{" "}
                 Operating System
               </h1>
 
               <p className="mb-4 text-lg leading-relaxed text-slate-300">
-                Manage customers, measurements, orders, staff, finances, reports and communications from{" "}
-                <span className="font-semibold text-white">one intelligent platform.</span>{" "}
-                Built specifically for Kenyan tailoring businesses.
+                Manage sales, stock, customers, staff, finances, reports and communications from{" "}
+                <span className="font-semibold text-white">one connected platform.</span>{" "}
+                Built for Kenyan shops, wholesalers, hardwares, tailors and every SME in between.
               </p>
 
               <p className="mb-8 flex items-center gap-2 text-sm font-medium text-emerald-300">
@@ -380,7 +380,7 @@ export default function HomePage() {
               "Finance Dashboard",
               "Team Management",
               "SMS Notifications",
-              "AI Assistant",
+              "Business Insights",
               "Global Sell Marketplace",
               "POS & Payments",
             ].map((f) => (
@@ -414,6 +414,52 @@ export default function HomePage() {
               View all plans →
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════════
+          BUILT FOR EVERY BUSINESS — industries grid
+      ══════════════════════════════════════════════ */}
+      <section className="py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="mb-12 text-center">
+            <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
+              One Platform, Every Industry
+            </span>
+            <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
+              Built for how <span className="text-emerald-600">you</span> do business
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-500">
+              Pick your business type and FundiFlow speaks your language — the right terms, modules and stock setup from day one. Run one shop or many, across multiple branches.
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { emoji: "🏪", title: "Retail Shops & Dukas", desc: "Minimarts, kiosks and shops selling over the counter. Know what's selling, what's running out and how much you really made today." },
+              { emoji: "📦", title: "Wholesale & Distribution", desc: "Move stock in bulk to shops and traders. Track bulk stock, credit clients and supplier debts without a single notebook." },
+              { emoji: "🔧", title: "Hardware Stores", desc: "Building, plumbing, electrical and tools. Stop stock-outs on fast movers and track every shilling across thousands of SKUs." },
+              { emoji: "✂️", title: "Tailoring & Fashion", desc: "Dressmakers and designers tracking measurements, fabric and production — never lose a customer's measurements or due date again." },
+              { emoji: "🏬", title: "Other SMEs", desc: "Services, agribusiness, salons and more. Run inventory, finance and customers in one simple place built for SMEs." },
+              { emoji: "🌍", title: "Sell Online Too", desc: "Every business can list on Global Sell — Kenya's built-in retail & wholesale marketplace. No extra tools, no separate accounts." },
+            ].map(({ emoji, title, desc }) => (
+              <div
+                key={title}
+                className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-emerald-200 hover:shadow-md"
+              >
+                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-2xl">
+                  {emoji}
+                </div>
+                <h3 className="mb-2 text-lg font-bold text-slate-900">{title}</h3>
+                <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-10 text-center text-sm text-slate-500">
+            <strong className="text-slate-900">Multi-business &amp; multi-branch built in.</strong>{" "}
+            Own several businesses or branches? Switch between them in one tap — each kept fully separate.
+          </p>
         </div>
       </section>
 
@@ -456,7 +502,7 @@ export default function HomePage() {
               <br className="hidden sm:block" /> of your business.
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-lg text-slate-500">
-              Stop juggling notebooks, spreadsheets and phone messages. FundiFlow brings your entire tailoring operation into one clean, fast app.
+              Stop juggling notebooks, spreadsheets and phone messages. FundiFlow brings your entire business into one clean, fast app — whatever you sell.
             </p>
           </div>
 
@@ -474,19 +520,19 @@ export default function HomePage() {
               </div>
             ))}
 
-            {/* AI card */}
+            {/* Business Insights card */}
             <div className="group relative col-span-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-emerald-950 p-6 text-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md sm:col-span-2 lg:col-span-1 lg:col-start-3">
               <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-500/10" />
               <div className="relative">
                 <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-amber-400/20">
-                  <Bot className="h-6 w-6 text-amber-300" />
+                  <Lightbulb className="h-6 w-6 text-amber-300" />
                 </div>
                 <span className="mb-2 inline-block rounded-full bg-amber-400/20 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-300">
-                  New — AI Assistant
+                  Built In — Business Insights
                 </span>
-                <h3 className="mb-2 text-lg font-bold">AI Business Insights</h3>
+                <h3 className="mb-2 text-lg font-bold">Smart Business Insights</h3>
                 <p className="text-sm leading-relaxed text-slate-300">
-                  Get intelligent recommendations, stock suggestions and instant answers powered by AI. Your smart business partner, always available.
+                  Your data, turned into clear recommendations — revenue trends, best-selling styles and stock reorder alerts surfaced automatically, the moment they matter.
                 </p>
               </div>
             </div>
@@ -729,27 +775,27 @@ export default function HomePage() {
       </section>
 
       {/* ══════════════════════════════════════════════
-          AI ASSISTANT & SMS COMMUNICATIONS
+          BUSINESS INSIGHTS & SMS COMMUNICATIONS
       ══════════════════════════════════════════════ */}
       <section className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 py-20 text-white sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
 
-          {/* AI Section */}
+          {/* Business Insights Section */}
           <div className="mb-20">
             <div className="grid items-center gap-12 lg:grid-cols-2">
               <div>
                 <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-amber-300">
-                  <Bot className="h-3.5 w-3.5" /> New — AI Assistant
+                  <Lightbulb className="h-3.5 w-3.5" /> Built-In Business Insights
                 </span>
                 <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
-                  Your intelligent{" "}
-                  <span className="text-amber-300">business partner</span>
+                  Decisions backed by{" "}
+                  <span className="text-amber-300">your own numbers</span>
                 </h2>
                 <p className="mb-8 text-lg leading-relaxed text-slate-300">
-                  FundiFlow&apos;s AI assistant analyses your business data and gives you actionable insights, recommendations and answers — all personalised to your workshop.
+                  FundiFlow reads the data you already capture — orders, payments, stock and staff activity — and turns it into clear, actionable insights for your workshop. No spreadsheets, no guesswork.
                 </p>
                 <ul className="space-y-3">
-                  {AI_FEATURES.map((f) => (
+                  {INSIGHTS_FEATURES.map((f) => (
                     <li key={f} className="flex items-start gap-3 text-sm">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
                       <span className="text-slate-300">{f}</span>
@@ -761,31 +807,29 @@ export default function HomePage() {
               <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm">
                 <div className="mb-4 flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/20">
-                    <Bot className="h-4 w-4 text-amber-300" />
+                    <Lightbulb className="h-4 w-4 text-amber-300" />
                   </div>
-                  <span className="font-semibold text-white">AI Assistant</span>
+                  <span className="font-semibold text-white">This Week&apos;s Insights</span>
                   <span className="ml-auto rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
-                    Interactive
+                    Updated daily
                   </span>
                 </div>
                 <div className="space-y-3">
                   {[
-                    { type: "ai", msg: "Your revenue is up 23% vs last month. Best-selling style: 3-piece suits. You have 3 low-stock fabrics — reorder now?" },
-                    { type: "user", msg: "Yes, which fabrics should I reorder?" },
-                    { type: "ai", msg: "I recommend: Black Suiting (2.5m left), Navy Linen (1m), White Cotton Poplin (0.5m). Based on this month's orders you'll need at least 12m of each." },
+                    { tag: "Revenue", tagColor: "bg-emerald-500/20 text-emerald-300", msg: "Revenue is up 23% vs last month. Your best-selling style is the 3-piece suit." },
+                    { tag: "Stock Alert", tagColor: "bg-amber-500/20 text-amber-300", msg: "3 fabrics are running low: Black Suiting (2.5m), Navy Linen (1m), White Cotton Poplin (0.5m)." },
+                    { tag: "Reorder", tagColor: "bg-blue-500/20 text-blue-300", msg: "Based on this month's orders, reorder at least 12m of each to avoid delays next week." },
                   ].map((m, i) => (
-                    <div
-                      key={i}
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                        m.type === "ai" ? "bg-slate-700 text-slate-200" : "ml-auto bg-emerald-600 text-white"
-                      }`}
-                    >
-                      {m.msg}
+                    <div key={i} className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
+                      <span className={`mb-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${m.tagColor}`}>
+                        {m.tag}
+                      </span>
+                      <p>{m.msg}</p>
                     </div>
                   ))}
                 </div>
                 <div className="mt-3 text-right text-xs text-slate-400">
-                  💬 Two-way conversation · Ask follow-up questions
+                  📊 Surfaced automatically from your live business data
                 </div>
               </div>
             </div>
@@ -800,7 +844,7 @@ export default function HomePage() {
               <h3 className="text-2xl font-bold text-white sm:text-3xl">
                 Keep customers informed with <span className="text-blue-300">automated SMS</span>
               </h3>
-              <p className="mt-2 text-slate-400">One-way notifications · Order updates · No AI confusion</p>
+              <p className="mt-2 text-slate-400">One-way notifications · Order updates · Sent automatically</p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
@@ -844,14 +888,14 @@ export default function HomePage() {
             <div className="mt-8 rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
               <div className="flex flex-wrap justify-center gap-6 text-sm">
                 <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-amber-300" />
-                  <span className="text-slate-300">AI Assistant:</span>
-                  <span className="text-slate-400">Two-way chat · Answers questions · Gives insights</span>
+                  <Lightbulb className="h-4 w-4 text-amber-300" />
+                  <span className="text-slate-300">Business Insights:</span>
+                  <span className="text-slate-400">Trends · Recommendations · Stock alerts from your data</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-blue-300" />
                   <span className="text-slate-300">SMS Alerts:</span>
-                  <span className="text-slate-400">One-way notifications · Order updates only · No AI</span>
+                  <span className="text-slate-400">One-way notifications · Order updates · Sent automatically</span>
                 </div>
               </div>
             </div>
@@ -1048,7 +1092,7 @@ export default function HomePage() {
             <span className="text-amber-300">Grow Faster.</span>
           </h2>
           <p className="mx-auto mb-10 max-w-lg text-lg text-slate-300">
-            Technology built specifically for modern tailoring businesses. Join the tailors already running their workshops with FundiFlow.
+            Technology built for modern African businesses. Join the shops, wholesalers, hardwares and tailors already running their operations with FundiFlow.
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
