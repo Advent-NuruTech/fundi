@@ -14,7 +14,7 @@ const FAQS = [
   },
   {
     q: "Is there a free trial?",
-    a: "Yes — we offer a guided demo session via Google Meet before you commit. Contact us to schedule your demo and we will walk you through the platform live.",
+    a: "Yes — every plan starts with a 14-day free trial. No card required. You pick the plan you want to try and get full access to it, so the data and workflow you set up carry over exactly when you continue. We remind you 5 days before it ends, and you only pay if you choose to keep using FundiFlow.",
   },
   {
     q: "Can I run more than one branch?",

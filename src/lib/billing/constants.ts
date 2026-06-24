@@ -88,6 +88,30 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
   },
 };
 
+// ─── Free trial ───────────────────────────────────────────────────────────────
+
+/** Length of the free trial, in days. "Get started for free" → 14 days. */
+export const TRIAL_DAYS = 14;
+
+/** Start nudging the owner when the trial has this many days (or fewer) left. */
+export const TRIAL_REMINDER_DAYS = 5;
+
+/**
+ * Days remaining in a trial (rounded up). Returns null when there is no trial
+ * deadline, and can be negative once the trial has lapsed.
+ */
+export function getTrialDaysLeft(trialEndsAt?: string | null): number | null {
+  if (!trialEndsAt) return null;
+  const diffMs = new Date(trialEndsAt).getTime() - Date.now();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/** True when a trialing subscription's deadline has passed. */
+export function isTrialExpired(trialEndsAt?: string | null): boolean {
+  if (!trialEndsAt) return false;
+  return new Date(trialEndsAt).getTime() <= Date.now();
+}
+
 // ─── Billing rules ──────────────────────────────────────────────────────────
 
 /** Days after installation fee payment before first recurring charge */

@@ -164,12 +164,23 @@ function LoginForm() {
               </Button>
             </form>
 
-            {!inviteToken && (
-              <Button className="mt-3 w-full gap-2" type="button" variant="outline" onClick={handleGoogleLogin} disabled={isBusy}>
-                <Mail className="h-4 w-4" />
-                Continue with Google
-              </Button>
-            )}
+            
+           
+           
+{/* {!inviteToken && (
+  <Button
+    className="mt-3 w-full gap-2"
+    type="button"
+    variant="outline"
+    onClick={handleGoogleLogin}
+    disabled={isBusy}
+  >
+    <Mail className="h-4 w-4" />
+    Continue with Google
+  </Button>
+)} */}
+
+
 
             <div className="mt-6 space-y-3 text-center text-sm">
               <p className="text-slate-600">

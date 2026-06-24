@@ -4,7 +4,7 @@ import { CheckoutClient } from "./checkout-client";
 import type { PlanSlug } from "@/types/billing";
 
 interface PageProps {
-  searchParams: Promise<{ plan?: string }>;
+  searchParams: Promise<{ plan?: string; expired?: string }>;
 }
 
 export default async function CheckoutPage({ searchParams }: PageProps) {
@@ -15,7 +15,12 @@ export default async function CheckoutPage({ searchParams }: PageProps) {
     redirect("/pricing");
   }
 
-  return <CheckoutClient planSlug={plan as PlanSlug} />;
+  return (
+    <CheckoutClient
+      planSlug={plan as PlanSlug}
+      trialExpired={params.expired === "trial"}
+    />
+  );
 }
 
 export function generateMetadata() {

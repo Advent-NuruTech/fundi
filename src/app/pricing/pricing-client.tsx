@@ -153,9 +153,9 @@ export function PricingClient() {
                 <p className="mb-6 text-sm leading-relaxed text-slate-600">{plan.description}</p>
 
                 <Link
-                  href={`/checkout?plan=${plan.id}&category=${category}`}
+                  href={`/register?category=${category}&plan=${plan.id}`}
                   className={cn(
-                    "mb-8 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold transition-all",
+                    "mb-2 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold transition-all",
                     plan.id === "dhahabu"
                       ? "bg-amber-500 text-white hover:bg-amber-400"
                       : plan.highlight
@@ -163,9 +163,12 @@ export function PricingClient() {
                         : "bg-slate-900 text-white hover:bg-slate-800",
                   )}
                 >
-                  {plan.cta}
+                  Start 14-day free trial
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+                <p className="mb-8 text-center text-xs text-slate-400">
+                  No card required · then {plan.cta.toLowerCase().includes("contact") ? "contact us" : `KES ${plan.monthlyPrice.toLocaleString()}/mo`}
+                </p>
 
                 <div className="flex-1 space-y-2.5">
                   {plan.features.map(({ text, included, note }) => (

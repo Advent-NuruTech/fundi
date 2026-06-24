@@ -4,18 +4,31 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useAuth } from "@/features/auth/components/auth-context";
-import { ACTIVE_SUBSCRIPTION_STATUSES } from "@/lib/billing/constants";
+import { ACTIVE_SUBSCRIPTION_STATUSES, isTrialExpired } from "@/lib/billing/constants";
+import type { Subscription } from "@/types/billing";
 
 interface SubscriptionGuardProps {
   children: React.ReactNode;
 }
 
 /**
- * Wraps dashboard content. If the workspace has no active subscription the
- * owner is redirected to /pricing; team members see the dashboard (their
- * access depends on the owner's subscription being active).
- *
- * Non-owner roles bypass the subscription check — they can't pay anyway.
+ * Decide whether an owner's subscription grants dashboard access right now.
+ * A `trialing` subscription is full access until its deadline passes; an
+ * expired trial counts as no access (the owner must pay to continue).
+ */
+function ownerHasAccess(subscription: Subscription | null): boolean {
+  if (!subscription) return false;
+  if (subscription.status === "trialing") {
+    return !isTrialExpired(subscription.trialEndsAt);
+  }
+  return ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status);
+}
+
+/**
+ * Wraps dashboard content. Routes owners without access to the right place:
+ * no subscription → start a free trial; pending payment → pending screen;
+ * lapsed trial → checkout to pay; otherwise → pricing. Team members bypass
+ * the check (their access rides on the owner's subscription).
  */
 export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
   const { user, loading: authLoading } = useAuth();
@@ -29,8 +42,8 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
     if (!isOwner) return; // non-owners bypass subscription enforcement
 
     if (subscription === null) {
-      // No subscription record at all → must pay
-      router.replace("/pricing");
+      // Brand-new workspace → offer the free trial first
+      router.replace("/start-trial");
       return;
     }
 
@@ -39,7 +52,16 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
       return;
     }
 
-    if (!ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status)) {
+    // Trial that has run out → must pay to continue
+    if (
+      subscription.status === "trialing" &&
+      isTrialExpired(subscription.trialEndsAt)
+    ) {
+      router.replace(`/checkout?plan=${subscription.planSlug}&expired=trial`);
+      return;
+    }
+
+    if (!ownerHasAccess(subscription)) {
       router.replace("/pricing");
     }
   }, [authLoading, subLoading, subscription, isOwner, router]);
@@ -56,12 +78,8 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
     );
   }
 
-  // Owner with non-active subscription — redirect is in-flight; hide content
-  if (
-    isOwner &&
-    subscription !== null &&
-    !ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status)
-  ) {
+  // Owner without access — redirect is in-flight; hide content
+  if (isOwner && !ownerHasAccess(subscription)) {
     return null;
   }
 

@@ -20,7 +20,11 @@ import { BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE, isBusinessType } from "@/lib/bus
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect") ?? "/pricing";
+  // After sign-up, send new owners straight into the free-trial chooser.
+  // A ?plan= hint from the pricing page is forwarded so it's pre-selected.
+  const planParam = searchParams.get("plan");
+  const defaultRedirect = planParam ? `/start-trial?plan=${planParam}` : "/start-trial";
+  const redirectTo = searchParams.get("redirect") ?? defaultRedirect;
   // Pre-select the industry chosen on the pricing page (?category=…).
   const categoryParam = searchParams.get("category");
   const initialType = isBusinessType(categoryParam) ? categoryParam : DEFAULT_BUSINESS_TYPE;

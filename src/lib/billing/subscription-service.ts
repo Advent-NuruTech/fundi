@@ -2,7 +2,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlanSlug, Subscription, BillingAuditLog } from "@/types/billing";
-import { NEXT_BILLING_DAYS } from "./constants";
+import { NEXT_BILLING_DAYS, TRIAL_DAYS } from "./constants";
 import { koboToKes } from "./fees";
 
 function addDays(date: Date, days: number): Date {
@@ -129,6 +129,73 @@ export async function activateSubscription(
     newState: { plan_slug: planSlug, status: "active" },
     performedByRole: "owner",
   });
+}
+
+// ─── Start a free trial ──────────────────────────────────────────────────────
+
+export interface StartTrialInput {
+  workspaceId: string;
+  userId: string;
+  planSlug: PlanSlug;
+}
+
+export interface StartTrialResult {
+  trialEndsAt: string;
+}
+
+/**
+ * Create a `trialing` subscription on the chosen plan. The trial behaves
+ * exactly like the paid plan (same plan_slug → same features/limits) so there
+ * is no data discontinuity when the owner pays. Idempotent: if the workspace
+ * already has ANY subscription (trial, active, expired, cancelled…), the trial
+ * is refused so it can't be restarted to dodge payment.
+ */
+export async function startTrial(
+  admin: SupabaseClient,
+  input: StartTrialInput
+): Promise<StartTrialResult> {
+  const { workspaceId, userId, planSlug } = input;
+
+  const { data: existing } = await admin
+    .from("subscriptions")
+    .select("id, status, trial_ends_at")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (existing) {
+    throw new Error("This workspace has already started a trial or subscription.");
+  }
+
+  const now = new Date();
+  const trialEndsAt = addDays(now, TRIAL_DAYS);
+
+  const { error } = await admin.from("subscriptions").insert({
+    workspace_id: workspaceId,
+    user_id: userId,
+    plan_slug: planSlug,
+    status: "trialing",
+    installation_fee_paid: false,
+    trial_started_at: now.toISOString(),
+    trial_ends_at: trialEndsAt.toISOString(),
+    current_period_start: now.toISOString(),
+    current_period_end: trialEndsAt.toISOString(),
+    metadata: { trial: true },
+  });
+
+  if (error) {
+    throw new Error(`Could not start trial: ${error.message}`);
+  }
+
+  await logBillingAction(admin, {
+    workspaceId,
+    userId,
+    action: "trial_started",
+    previousState: null,
+    newState: { plan_slug: planSlug, status: "trialing", trial_ends_at: trialEndsAt.toISOString() },
+    performedByRole: "owner",
+  });
+
+  return { trialEndsAt: trialEndsAt.toISOString() };
 }
 
 // ─── Process plan upgrade ────────────────────────────────────────────────────
@@ -600,6 +667,8 @@ export function mapDbToSubscription(row: DbRow): Subscription {
     nextBillingDate: row.next_billing_date ?? null,
     currentPeriodStart: row.current_period_start ?? null,
     currentPeriodEnd: row.current_period_end ?? null,
+    trialStartedAt: row.trial_started_at ?? null,
+    trialEndsAt: row.trial_ends_at ?? null,
     installationFeePaid: row.installation_fee_paid,
     smsSenderIdEnabled: row.sms_sender_id_enabled,
     smsSenderIdPaid: row.sms_sender_id_paid,

@@ -40,6 +40,7 @@ import type { BillingPortalData, PlanSlug, Subscription } from "@/types/billing"
 
 const STATUS_CONFIG = {
   active:          { label: "Active",          color: "text-emerald-700 bg-emerald-100 border-emerald-200",  icon: CheckCircle2 },
+  trialing:        { label: "Free Trial",      color: "text-sky-700     bg-sky-100     border-sky-200",      icon: Clock },
   pending_payment: { label: "Pending Payment", color: "text-amber-700   bg-amber-100   border-amber-200",    icon: Clock },
   past_due:        { label: "Past Due",        color: "text-rose-700    bg-rose-100    border-rose-200",     icon: AlertCircle },
   cancelled:       { label: "Cancelled",       color: "text-slate-600   bg-slate-100   border-slate-200",    icon: XCircle },

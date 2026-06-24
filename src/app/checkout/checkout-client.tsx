@@ -74,9 +74,10 @@ const PLAN_FEATURES: Record<string, string[]> = {
 
 interface Props {
   planSlug: PlanSlug;
+  trialExpired?: boolean;
 }
 
-export function CheckoutClient({ planSlug }: Props) {
+export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
   const router = useRouter();
   const plan = getPlanConfig(planSlug);
   const [addSenderId, setAddSenderId] = useState(false);
@@ -166,6 +167,21 @@ export function CheckoutClient({ planSlug }: Props) {
           <ChevronRight className="h-3.5 w-3.5" />
           <span className="font-semibold text-slate-900">Checkout — {plan.name}</span>
         </nav>
+
+        {/* Trial-ended notice */}
+        {trialExpired && (
+          <div className="mb-8 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+            <div>
+              <p className="font-bold text-slate-900">Your free trial has ended</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Pay to continue using FundiFlow. Your {plan.name} workspace, customers,
+                orders and settings are safe and stay exactly as you left them — complete
+                the one-time installation payment below to pick up right where you stopped.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-8 lg:grid-cols-[1fr_420px]">
 

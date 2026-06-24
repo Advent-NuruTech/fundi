@@ -4,6 +4,7 @@ export type PlanSlug = "sindano" | "fundi" | "dhahabu" | "custom";
 
 export type SubscriptionStatus =
   | "pending_payment"
+  | "trialing"
   | "active"
   | "past_due"
   | "cancelled"
@@ -78,6 +79,8 @@ export interface Subscription {
   nextBillingDate: string | null;
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
+  trialStartedAt: string | null;
+  trialEndsAt: string | null;
   installationFeePaid: boolean;
   smsSenderIdEnabled: boolean;
   smsSenderIdPaid: boolean;
