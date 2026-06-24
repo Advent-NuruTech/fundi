@@ -467,7 +467,26 @@ export async function fetchBusinessProfile(businessId: string): Promise<Business
   return transformKeysToCamel<Business>(data as Record<string, unknown>);
 }
 
-export async function updateBusinessProfile(businessId: string, data: Partial<Pick<Business, "name" | "phone" | "location" | "smsSenderId">>) {
+export async function updateBusinessProfile(
+  businessId: string,
+  data: Partial<
+    Pick<
+      Business,
+      | "name"
+      | "email"
+      | "phone"
+      | "address"
+      | "location"
+      | "smsSenderId"
+      | "logoUrl"
+      | "receiptFooter"
+      | "taxEnabled"
+      | "taxRate"
+      | "taxMode"
+      | "taxLabel"
+    >
+  >,
+) {
   return withOfflineFallback(
     async () => {
       const { error } = await supabase

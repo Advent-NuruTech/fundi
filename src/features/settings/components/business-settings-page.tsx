@@ -2,28 +2,34 @@
 
 import { useEffect, useState } from "react";
 import {
-  Settings,
   Building2,
   Users,
-  Link2,
   Copy,
   Check,
   Shield,
   ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { canAccessSettings } from "@/lib/db";
-import { listenMembers } from "@/services/firestore.service";
+import { listenMembers, updateBusinessProfile } from "@/services/firestore.service";
 import type { UserProfile } from "@/types/domain";
 import { FinanceAccessSettings } from "./finance-access-settings";
 import { BusinessTypeSwitcher } from "./business-type-switcher";
+import { ReceiptSettings } from "./receipt-settings";
 
 export function BusinessSettingsPage() {
-  const { user, business } = useAuth();
+  const { user, business, refreshProfile } = useAuth();
   const [copied, setCopied] = useState(false);
   const [members, setMembers] = useState<UserProfile[]>([]);
   const canAccess = canAccessSettings(user?.role || "");
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const inviteLink = `https://fundiflow.app/join/${user?.businessId || "BIZ-001"}`;
 
@@ -31,6 +37,37 @@ export function BusinessSettingsPage() {
     if (!user?.businessId) return;
     return listenMembers(user.businessId, setMembers);
   }, [user?.businessId]);
+
+  useEffect(() => {
+    if (!business) return;
+    setName(business.name ?? "");
+    setPhone(business.phone ?? "");
+    setEmail(business.email ?? "");
+    setAddress(business.location ?? "");
+  }, [business]);
+
+  const handleSaveProfile = async () => {
+    if (!business) return;
+    if (!name.trim()) {
+      toast.error("Business name is required");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await updateBusinessProfile(business.id, {
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        location: address.trim(),
+      });
+      await refreshProfile();
+      toast.success("Business profile saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save profile");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const copyLink = () => {
     navigator.clipboard.writeText(inviteLink);
@@ -52,6 +89,7 @@ export function BusinessSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
         <p className="text-gray-500">
@@ -69,7 +107,8 @@ export function BusinessSettingsPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Business Name</label>
             <input
-              defaultValue={business?.name || "FundiFlow"}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
@@ -84,32 +123,42 @@ export function BusinessSettingsPage() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Phone</label>
             <input
-              defaultValue={business?.phone || ""}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Email</label>
             <input
-              defaultValue={user?.email || ""}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-medium">Address</label>
             <input
-              defaultValue={business?.location || ""}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
               className="h-12 w-full rounded-2xl border px-4 text-sm outline-none focus:border-black"
             />
           </div>
         </div>
 
         <div className="mt-6 flex justify-end">
-          <button className="rounded-2xl bg-black px-8 py-3 font-semibold text-white transition hover:bg-neutral-800">
-            Save Changes
+          <button
+            onClick={handleSaveProfile}
+            disabled={savingProfile}
+            className="rounded-2xl bg-black px-8 py-3 font-semibold text-white transition hover:bg-neutral-800 disabled:opacity-60"
+          >
+            {savingProfile ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>
+
+      {/* Receipts & Tax (VAT toggle, branding, preview) */}
+      <ReceiptSettings />
 
       <div className="rounded-3xl border bg-white p-6">
         <div className="flex items-center gap-3">

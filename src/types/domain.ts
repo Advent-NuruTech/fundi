@@ -193,10 +193,14 @@ export const DEFAULT_FINANCE_ACCESS: FinanceAccessSettings = {
   managerPermissions: {},
 };
 
+export type TaxMode = "inclusive" | "exclusive";
+
 export interface Business {
   id: string;
   name: string;
+  email?: string;
   phone: string;
+  address?: string;
   location: string;
   currency: string;
   country: string;
@@ -206,6 +210,18 @@ export interface Business {
   orderCounter?: number;
   employeeCounter?: number;
   smsSenderId?: string;
+  /** Receipt branding — shown at the top of printed receipts when set. */
+  logoUrl?: string;
+  /** Optional custom line printed in the receipt footer (e.g. return policy). */
+  receiptFooter?: string;
+  /** Whether VAT/tax appears on receipts at all. OFF → no tax trace anywhere. */
+  taxEnabled?: boolean;
+  /** Tax percentage (e.g. 16 for 16% VAT). */
+  taxRate?: number;
+  /** Inclusive: agreed price already contains VAT. Exclusive: VAT added on top. */
+  taxMode?: TaxMode;
+  /** Label shown for the tax line (e.g. "VAT"). */
+  taxLabel?: string;
   createdAt: string;
   financeAccess?: FinanceAccessSettings;
 }

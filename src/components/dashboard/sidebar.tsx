@@ -19,6 +19,7 @@ import {
   Globe,
   Store,
   Building2,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -124,6 +125,19 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         {visibleNavigation.map(navItem)}
         {extraNav.map(navItem)}
         <Link
+          href="/settings"
+          onClick={() => setOpen(false)}
+          className={cn(
+            "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
+            pathname === "/settings"
+              ? "bg-emerald-600 text-white"
+              : "text-slate-700 hover:bg-slate-100"
+          )}
+        >
+          <Settings className="h-4 w-4 shrink-0" />
+          Settings
+        </Link>
+        <Link
           href="/settings/role-permissions"
           onClick={() => setOpen(false)}
           className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
@@ -199,6 +213,18 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
               {visibleNavigation.map(navItem)}
               {extraNav.map(navItem)}
+              <Link
+                href="/settings"
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
+                  pathname === "/settings"
+                    ? "bg-emerald-600 text-white"
+                    : "text-slate-700 hover:bg-slate-100"
+                )}
+              >
+                <Settings className="h-4 w-4 shrink-0" />
+                Settings
+              </Link>
               <Link
                 href="/settings/role-permissions"
                 className={cn(

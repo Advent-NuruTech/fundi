@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronUp, Edit2, Save, X, Plus, Trash2,
   ImageIcon, Package, Scissors, User, FileText, Layers,
   CheckCircle2, Circle, Clock, ArrowLeft, Phone, Mail,
-  ClipboardList, Shirt, AlertTriangle,
+  ClipboardList, Shirt, AlertTriangle, Receipt as ReceiptIcon,
 } from "lucide-react";
 import type { Order, Customer, InventoryMaterial, OrderGarmentItem } from "@/types/domain";
 import {
@@ -25,6 +25,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
+import { Dialog } from "@/components/ui/dialog";
+import { OrderReceipt } from "@/components/receipt/order-receipt";
 import { formatKes, cn } from "@/lib/utils";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -225,6 +227,9 @@ export function OrderDetailModulePage() {
 
   // Stage
   const [stageLoading, setStageLoading] = useState<string | null>(null);
+
+  // Receipt
+  const [showReceipt, setShowReceipt] = useState(false);
 
   // Delay SMS
   const [delaySmsLoading, setDelaySmsLoading] = useState(false);
@@ -494,6 +499,13 @@ export function OrderDetailModulePage() {
         />
       )}
 
+      {/* Printable receipt */}
+      {showReceipt && business && (
+        <Dialog open={showReceipt} onClose={() => setShowReceipt(false)} className="max-w-xl p-0">
+          <OrderReceipt order={order} business={business} onClose={() => setShowReceipt(false)} />
+        </Dialog>
+      )}
+
       <div className="space-y-4 pb-10">
         {/* ── Page Header ── */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -511,7 +523,14 @@ export function OrderDetailModulePage() {
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">Order {order.orderNumber}</p>
           </div>
-          <div className="flex flex-wrap gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowReceipt(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#16265c] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#0f1c46]"
+            >
+              <ReceiptIcon className="h-3.5 w-3.5" />
+              Receipt
+            </button>
             <Badge className={cn("capitalize text-white border-0", stageColor(order.stage))}>
               {order.stage.replaceAll("_", " ")}
             </Badge>

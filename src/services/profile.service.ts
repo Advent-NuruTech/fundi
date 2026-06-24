@@ -19,6 +19,37 @@ export async function updateProfileInfo(input: {
   await supabase.from("business_members").update(snakeData).eq("profile_id", input.uid).eq("business_id", input.businessId);
 }
 
+export async function uploadToCloudinary(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Please select a valid image file.");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("Image must be 10MB or smaller.");
+  }
+  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  if (!uploadPreset || !cloudName) {
+    throw new Error("Missing Cloudinary configuration.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", uploadPreset);
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Unknown error");
+    throw new Error(`Image upload failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.secure_url as string;
+}
+
 export async function changeUserPassword(newPassword: string) {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) {
