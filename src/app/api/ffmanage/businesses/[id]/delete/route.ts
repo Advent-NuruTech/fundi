@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateAdminRequest, writeAuditLog } from "@/lib/admin/validate";
+import { verifyPassword } from "@/lib/admin/verify-password";
 import { z } from "zod";
 
 const bodySchema = z.object({
@@ -35,16 +36,15 @@ export async function POST(
     return NextResponse.json({ error: "Business name does not match" }, { status: 400 });
   }
 
-  // Re-verify admin password
+  // Re-verify admin password on an ISOLATED client. Signing in on `db` would
+  // demote it to the `authenticated` role and break every privileged
+  // delete/query below (see verifyPassword for the full explanation).
   const { data: adminUser } = await db.auth.admin.getUserById(uid);
   const adminEmail = adminUser?.user?.email;
   if (!adminEmail) return NextResponse.json({ error: "Admin user not found" }, { status: 500 });
 
-  const { error: pwErr } = await db.auth.signInWithPassword({
-    email: adminEmail,
-    password: ownerPassword,
-  });
-  if (pwErr) {
+  const verified = await verifyPassword(adminEmail, ownerPassword);
+  if (!verified) {
     return NextResponse.json({ error: "Incorrect password" }, { status: 403 });
   }
 

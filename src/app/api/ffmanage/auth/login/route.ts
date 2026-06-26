@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash, randomUUID } from "crypto";
 import { z } from "zod";
 import { signAdminToken, SESSION_COOKIE, TOKEN_TTL_SECONDS } from "@/lib/admin/session";
+import { verifyPassword } from "@/lib/admin/verify-password";
 
 export const dynamic = "force-dynamic";
 
@@ -56,13 +57,16 @@ export async function POST(request: Request) {
   const { email, password } = parsed.data;
   const db = getDb();
 
-  // Step 1: Authenticate via Supabase Auth
-  const { data: authData, error: authErr } = await db.auth.signInWithPassword({ email, password });
-  if (authErr || !authData?.user) {
+  // Step 1: Authenticate via Supabase Auth.
+  // IMPORTANT: verify on an isolated client (verifyPassword). signing in on `db`
+  // would switch its Authorization header to the user's token, demoting every
+  // subsequent platform-table query to the `authenticated` role — which is
+  // REVOKED from platform_admins (migration 00026) and produces a false
+  // "not registered as a platform administrator" denial. Keep `db` service-role.
+  const user = await verifyPassword(email, password);
+  if (!user) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
-
-  const user = authData.user;
 
   // Step 2: Verify the user is an active platform admin (explicit platform identity check).
   //         This is intentionally separate from the tenant domain (profiles/businesses).
