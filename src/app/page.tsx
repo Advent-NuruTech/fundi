@@ -26,6 +26,8 @@ import {
   Truck,
   Tag,
   PackageCheck,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
@@ -68,7 +70,7 @@ const FEATURES = [
     icon: Globe,
     color: "bg-teal-100 text-teal-700",
     title: "Global Sell Marketplace",
-    desc: "List your products on Kenya's tailoring marketplace. Sell retail or wholesale to customers and businesses nationwide.",
+    desc: "List your products on the global tailoring marketplace. Sell retail or wholesale to customers and businesses worldwide.",
   },
 ];
 
@@ -110,7 +112,7 @@ const ROLES = [
 const TESTIMONIALS = [
   {
     name: "Mama Wanjiku",
-    role: "Sole tailor, Nairobi",
+    role: "Sole tailor",
     quote:
       "Before FundiFlow I was losing track of measurements and customers were upset. Now everything is in my phone. My orders are up 40% this year.",
     stars: 5,
@@ -124,7 +126,7 @@ const TESTIMONIALS = [
   },
   {
     name: "Fatuma Abdi",
-    role: "Boutique owner, Mombasa",
+    role: "Boutique owner",
     quote:
       "The SMS notifications are a game changer. Customers know when their clothes are ready without me calling. So professional.",
     stars: 5,
@@ -154,7 +156,7 @@ function HeroDashboard() {
             <div className="h-2.5 w-2.5 rounded-full bg-green-400/90" />
           </div>
           <div className="flex-1 rounded-md bg-slate-600 px-3 py-1 text-center text-xs text-slate-400">
-            🔒 www.fundiflow.co.ke/dashboard
+            🔒 www.fundiflow.com/dashboard
           </div>
         </div>
 
@@ -290,6 +292,7 @@ function MarketplacePreview() {
 export default function HomePage() {
   return (
     <MarketingShell>
+
       {/* ══════════════════════════════════════════════
           HERO — split layout with live dashboard preview
       ══════════════════════════════════════════════ */}
@@ -309,28 +312,23 @@ export default function HomePage() {
           <div className="grid items-center gap-12 lg:grid-cols-2">
             {/* Left — copy */}
             <div>
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-semibold text-emerald-300">
-                <Scissors className="h-4 w-4" />
-                Built for Kenyan Tailors & Fashion Designers
-              </div>
-
               <h1 className="mb-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
                 The Complete{" "}
                 <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-                  Tailoring
+                  Business
                 </span>{" "}
-                Business OS
+                Operating System
               </h1>
 
               <p className="mb-4 text-lg leading-relaxed text-slate-300">
-                Manage customer measurements, fabric inventory, production workflow, finances, staff and communications from{" "}
+                Manage sales, stock, customers, staff, finances, reports and communications from{" "}
                 <span className="font-semibold text-white">one connected platform.</span>{" "}
-                Built specifically for Kenyan tailors, fashion designers, and garment manufacturers.
+                Built for shops, wholesalers, hardwares, tailors and every SME in between.
               </p>
 
               <p className="mb-8 flex items-center gap-2 text-sm font-medium text-emerald-300">
                 <Globe className="h-4 w-4" />
-                <strong className="text-white">Global Sell</strong> — Kenya&apos;s dedicated tailoring marketplace, built-in.
+              <strong className="text-white">Global Sell</strong> — dedicated tailoring marketplace, built in.
               </p>
 
               <div className="flex flex-col items-start gap-4 sm:flex-row">
@@ -378,7 +376,7 @@ export default function HomePage() {
               "Customer Records",
               "Measurements & Fittings",
               "Production Workflow",
-              "Fabric & Material Tracking",
+              "Inventory Tracking",
               "Finance Dashboard",
               "Team Management",
               "SMS Notifications",
@@ -420,30 +418,30 @@ export default function HomePage() {
       </section>
 
       {/* ══════════════════════════════════════════════
-          TAILORING & FASHION FOCUSED INDUSTRIES
+          BUILT FOR EVERY BUSINESS — industries grid
       ══════════════════════════════════════════════ */}
       <section className="py-20 sm:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-12 text-center">
             <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
-              Made for Tailoring Professionals
+              One Platform, Every Industry
             </span>
             <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              Every part of your <span className="text-emerald-600">tailoring business</span> covered
+              Built for how <span className="text-emerald-600">you</span> do business
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-500">
-              Whether you're a solo tailor, a boutique dressmaker, or a large garment manufacturer — FundiFlow adapts to how you work.
+              Pick your business type and FundiFlow speaks your language — the right terms, modules and stock setup from day one. Run one shop or many, across multiple branches.
             </p>
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              { emoji: "✂️", title: "Solo Tailors", desc: "Manage your customers, measurements, and orders in one place. Never lose a fitting date or customer preference again." },
-              { emoji: "👗", title: "Fashion Designers", desc: "Track designs, fabric sourcing, sample production, and customer orders from concept to delivery. Build your brand with confidence." },
-              { emoji: "🏭", title: "Garment Manufacturers", desc: "Manage bulk production runs, material sourcing, quality control, and delivery schedules. Scale your operations seamlessly." },
-              { emoji: "👔", title: "Bespoke & Formal Wear", desc: "Perfect for wedding suits, corporate wear, and custom designs. Track every measurement and fitting with precision." },
-              { emoji: "👘", title: "Cultural & Traditional Wear", desc: "Manage orders for traditional attire, Kanzu, Kitenge, and cultural garments. Preserve craftsmanship with digital precision." },
-              { emoji: "🏪", title: "Boutique & Retail", desc: "Sell ready-to-wear garments alongside your custom designs. Manage inventory, sales, and customer loyalty all in one place." },
+              { emoji: "🏪", title: "Retail Shops & Dukas", desc: "Minimarts, kiosks and shops selling over the counter. Know what's selling, what's running out and how much you really made today." },
+              { emoji: "📦", title: "Wholesale & Distribution", desc: "Move stock in bulk to shops and traders. Track bulk stock, credit clients and supplier debts without a single notebook." },
+              { emoji: "🔧", title: "Hardware Stores", desc: "Building, plumbing, electrical and tools. Stop stock-outs on fast movers and track every shilling across thousands of SKUs." },
+              { emoji: "✂️", title: "Tailoring & Fashion", desc: "Dressmakers and designers tracking measurements, fabric and production — never lose a customer's measurements or due date again." },
+              { emoji: "🏬", title: "Other SMEs", desc: "Services, agribusiness, salons and more. Run inventory, finance and customers in one simple place built for SMEs." },
+              { emoji: "🌍", title: "Sell Online Too", desc: "Every business can list on Global Sell — built-in retail & wholesale marketplace. No extra tools, no separate accounts." },
             ].map(({ emoji, title, desc }) => (
               <div
                 key={title}
@@ -457,6 +455,11 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+
+          <p className="mt-10 text-center text-sm text-slate-500">
+            <strong className="text-slate-900">Multi-business &amp; multi-branch built in.</strong>{" "}
+            Own several businesses or branches? Switch between them in one tap — each kept fully separate.
+          </p>
         </div>
       </section>
 
@@ -480,6 +483,8 @@ export default function HomePage() {
           </div>
 
           <DashboardPreview />
+
+          
         </div>
       </section>
 
@@ -494,10 +499,10 @@ export default function HomePage() {
             </span>
             <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
               One platform. Every part
-              <br className="hidden sm:block" /> of your tailoring business.
+              <br className="hidden sm:block" /> of your business.
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-lg text-slate-500">
-              Stop juggling notebooks, spreadsheets and phone messages. FundiFlow brings your entire tailoring operation into one clean, fast app.
+              Stop juggling notebooks, spreadsheets and phone messages. FundiFlow brings your entire business into one clean, fast app — whatever you sell.
             </p>
           </div>
 
@@ -527,7 +532,7 @@ export default function HomePage() {
                 </span>
                 <h3 className="mb-2 text-lg font-bold">Smart Business Insights</h3>
                 <p className="text-sm leading-relaxed text-slate-300">
-                  Your tailoring data, turned into clear recommendations — revenue trends, best-selling styles and fabric reorder alerts surfaced automatically, the moment they matter.
+                  Your data, turned into clear recommendations — revenue trends, best-selling styles and stock reorder alerts surfaced automatically, the moment they matter.
                 </p>
               </div>
             </div>
@@ -536,16 +541,16 @@ export default function HomePage() {
       </section>
 
       {/* ══════════════════════════════════════════════
-          TAILORING ORDER PIPELINE — visual workflow strip
+          ORDER PIPELINE — visual workflow strip
       ══════════════════════════════════════════════ */}
       <section className="bg-slate-50 py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-10 text-center">
             <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
-              Track every garment, every step of the way
+              Track every order, every step of the way
             </h2>
             <p className="mt-3 text-slate-500">
-              From first measurement to final delivery — full visibility across your tailoring production pipeline.
+              From first measurement to final delivery — full visibility across your production pipeline.
             </p>
           </div>
 
@@ -633,22 +638,23 @@ export default function HomePage() {
       <section className="overflow-hidden bg-gradient-to-br from-emerald-950 to-slate-900 py-20 text-white sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid items-center gap-12 lg:grid-cols-2">
+
             {/* Left — explanation */}
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-semibold text-emerald-300">
                 <Globe className="h-4 w-4" />
-                Global Sell — Built-in Marketplace for Tailors
+                Global Sell — Built-in Marketplace
               </div>
 
               <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
                 Your workshop.{" "}
                 <span className="text-emerald-400">Online.</span>
                 <br />
-                Nationwide.
+                Worldwide.
               </h2>
 
               <p className="mb-6 text-lg leading-relaxed text-slate-300">
-                <strong className="text-white">Global Sell</strong> is FundiFlow&apos;s built-in B2C and B2B marketplace — purpose-built for Kenyan tailoring businesses. Set up your verified seller store, list your garments and fabrics, and start reaching customers and wholesale buyers across Kenya. No extra tools, no separate accounts.
+                <strong className="text-white">Global Sell</strong> is FundiFlow&apos;s built-in B2C and B2B marketplace — purpose-built for tailoring businesses. Set up your verified seller store, list your products, and start reaching customers and wholesale buyers across the globe. No extra tools, no separate accounts.
               </p>
 
               <div className="mb-8 grid gap-6 sm:grid-cols-2">
@@ -687,12 +693,12 @@ export default function HomePage() {
                   </div>
                   <ul className="space-y-1.5 text-sm text-slate-300">
                     {[
-                      "Browse verified Kenyan tailors",
+                      "Browse verified tailors worldwide",
                       "Retail & Wholesale channels",
                       "Product variants (size, colour, etc.)",
                       "Secure cart & checkout",
                       "Real-time order tracking",
-                      "M-Pesa & bank payment options",
+                      "Multiple payment options",
                     ].map((f) => (
                       <li key={f} className="flex items-start gap-2">
                         <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />
@@ -754,7 +760,7 @@ export default function HomePage() {
                   {[
                     { icon: Tag, label: "Retail & Wholesale" },
                     { icon: Shield, label: "Verified Sellers" },
-                    { icon: Truck, label: "Nationwide Delivery" },
+                    { icon: Truck, label: "Worldwide Delivery" },
                   ].map(({ icon: Icon, label }) => (
                     <div key={label} className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-slate-300">
                       <Icon className="h-3.5 w-3.5 text-emerald-400" />
@@ -769,12 +775,13 @@ export default function HomePage() {
       </section>
 
       {/* ══════════════════════════════════════════════
-          BUSINESS INSIGHTS & SMS COMMUNICATIONS
+          BUSINESS INSIGHTS, PERSONAL AI ASSISTANT & SMS COMMUNICATIONS
       ══════════════════════════════════════════════ */}
       <section className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 py-20 text-white sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
+
           {/* Business Insights Section */}
-          <div className="mb-20">
+          <div className="mb-16">
             <div className="grid items-center gap-12 lg:grid-cols-2">
               <div>
                 <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-amber-300">
@@ -785,7 +792,7 @@ export default function HomePage() {
                   <span className="text-amber-300">your own numbers</span>
                 </h2>
                 <p className="mb-8 text-lg leading-relaxed text-slate-300">
-                  FundiFlow reads the data you already capture — orders, payments, fabric inventory and staff activity — and turns it into clear, actionable insights for your tailoring business. No spreadsheets, no guesswork.
+                  FundiFlow reads the data you already capture — orders, payments, stock and staff activity — and turns it into clear, actionable insights for your business. No spreadsheets, no guesswork.
                 </p>
                 <ul className="space-y-3">
                   {INSIGHTS_FEATURES.map((f) => (
@@ -822,8 +829,77 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-3 text-right text-xs text-slate-400">
-                  📊 Surfaced automatically from your live tailoring data
+                  📊 Surfaced automatically from your live business data
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Personal AI Assistant Section */}
+          <div className="mb-16 border-t border-slate-700/50 pt-16">
+            <div className="grid items-center gap-12 lg:grid-cols-2">
+              <div className="order-2 lg:order-1">
+                <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm">
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-400/20">
+                      <Bot className="h-4 w-4 text-purple-300" />
+                    </div>
+                    <span className="font-semibold text-white">Your AI Assistant</span>
+                    <span className="ml-auto rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-400">
+                      Always available
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/20">
+                          <Sparkles className="h-3 w-3 text-purple-300" />
+                        </div>
+                        <span className="text-xs text-purple-300 font-semibold">AI Assistant</span>
+                      </div>
+                      <p>&quot;I notice you have 5 orders due this week and your team is at 80% capacity. Would you like me to recommend which orders to prioritize and suggest hiring temporary help?&quot;</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/20">
+                          <Sparkles className="h-3 w-3 text-purple-300" />
+                        </div>
+                        <span className="text-xs text-purple-300 font-semibold">AI Assistant</span>
+                      </div>
+                      <p>&quot;Your most profitable service is custom tailoring at KES 12,500 average. Consider promoting this service to boost margins by 15%.&quot;</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-right text-xs text-slate-400">
+                    🤖 Personalized recommendations from your business data
+                  </div>
+                </div>
+              </div>
+
+              <div className="order-1 lg:order-2">
+                <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-purple-300">
+                  <Bot className="h-3.5 w-3.5" /> Personal AI Assistant
+                </span>
+                <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
+                  Your AI-Powered{" "}
+                  <span className="text-purple-300">Business Coach</span>
+                </h2>
+                <p className="mb-8 text-lg leading-relaxed text-slate-300">
+                  FundiFlow&apos;s AI assistant analyzes your business data to provide personalized recommendations, answer questions about your performance, and surface opportunities you might have missed. Like having a business consultant on your team 24/7.
+                </p>
+                <ul className="space-y-3">
+                  {[
+                    "Analyze revenue trends and identify growth opportunities",
+                    "Detect operational bottlenecks before they impact delivery",
+                    "Suggest optimal staffing levels based on order volume",
+                    "Recommend product mix adjustments for better profitability",
+                    "Answer questions about your business performance instantly",
+                  ].map((f) => (
+                    <li key={f} className="flex items-start gap-3 text-sm">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-purple-400" />
+                      <span className="text-slate-300">{f}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
@@ -883,7 +959,12 @@ export default function HomePage() {
                 <div className="flex items-center gap-2">
                   <Lightbulb className="h-4 w-4 text-amber-300" />
                   <span className="text-slate-300">Business Insights:</span>
-                  <span className="text-slate-400">Trends · Recommendations · Stock alerts from your tailoring data</span>
+                  <span className="text-slate-400">Trends · Recommendations · Stock alerts from your data</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-purple-300" />
+                  <span className="text-slate-300">AI Assistant:</span>
+                  <span className="text-slate-400">Personalized business coaching · Instant answers</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-blue-300" />
@@ -937,7 +1018,7 @@ export default function HomePage() {
                 The right access for every role
               </h2>
               <p className="mb-6 text-lg text-slate-500">
-                From solo tailors to large tailoring workshops with 50+ staff — FundiFlow&apos;s role-based access ensures everyone sees exactly what they need, nothing more.
+                From solo tailors to large workshops with 50+ staff — FundiFlow&apos;s role-based access ensures everyone sees exactly what they need, nothing more.
               </p>
               <p className="text-sm text-slate-500">
                 <strong className="text-slate-900">Owner privacy built in.</strong>{" "}
@@ -971,10 +1052,10 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-14 text-center">
             <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              Trusted by Kenyan tailors
+              Trusted by tailors worldwide
             </h2>
             <p className="mt-3 text-slate-500">
-              Real tailoring businesses. Real results. Hear from tailors who transformed their operations with FundiFlow.
+              Real businesses. Real results. Hear from tailors who transformed their operations with FundiFlow.
             </p>
           </div>
           <div className="grid gap-6 sm:grid-cols-3">
@@ -1009,9 +1090,9 @@ export default function HomePage() {
           <span className="mb-3 inline-block rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
             Pricing
           </span>
-          <h2 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
-            Simple, honest pricing for tailors
-          </h2>
+          <h6 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
+            Simple, honest pricing
+          </h6>
           <p className="mx-auto mb-10 max-w-lg text-lg text-slate-500">
             Three plans built for every stage of your tailoring journey — from solo needle to full enterprise workshop.
           </p>
@@ -1056,8 +1137,8 @@ export default function HomePage() {
           <div className="grid gap-6 sm:grid-cols-3">
             {[
               { icon: Smartphone, title: "Works Offline", desc: "No internet? No problem. FundiFlow syncs in the background and works fully offline on any device." },
-              { icon: Clock, title: "Real-Time Sync", desc: "All your tailoring data syncs instantly across devices. Your tailor updates an order — you see it immediately." },
-              { icon: TrendingUp, title: "Grows With You", desc: "Start solo and scale to 50+ staff. FundiFlow's plans and features grow as your tailoring business grows." },
+              { icon: Clock, title: "Real-Time Sync", desc: "All your data syncs instantly across devices. Your tailor updates an order — you see it immediately." },
+              { icon: TrendingUp, title: "Grows With You", desc: "Start solo and scale to 50+ staff. FundiFlow's plans and features grow as your business grows." },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex gap-4">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
@@ -1085,7 +1166,7 @@ export default function HomePage() {
             <span className="text-amber-300">Grow Faster.</span>
           </h2>
           <p className="mx-auto mb-10 max-w-lg text-lg text-slate-300">
-            Technology built for modern tailoring businesses. Join the tailors, fashion designers, and garment manufacturers already running their operations with FundiFlow.
+            Technology built for modern African businesses. Join the shops, wholesalers, hardwares and tailors already running their operations with FundiFlow.
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
