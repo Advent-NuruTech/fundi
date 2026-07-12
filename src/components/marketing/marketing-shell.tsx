@@ -77,12 +77,15 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
             >
               Log In
             </Link>
+
+            {/*
             <Link
               href="/register"
               className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500"
             >
               Get Started Free
             </Link>
+*/}
           </div>
 
           {/* Mobile toggle */}
@@ -128,13 +131,15 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
               >
                 Log In
               </Link>
-              <Link
-                href="/register"
-                onClick={() => setOpen(false)}
-                className="rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-emerald-500"
-              >
-                Get Started Free
-              </Link>
+             {/*
+<Link
+  href="/register"
+  onClick={() => setOpen(false)}
+  className="rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-emerald-500"
+>
+  Get Started Free
+</Link>
+*/}
             </div>
           </div>
         )}
