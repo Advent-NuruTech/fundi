@@ -237,6 +237,7 @@ export interface MeasurementSet {
   neck?: number;
   thigh?: number;
   notes?: string;
+  [key: string]: number | string | null | undefined;
 }
 
 export interface Customer {
@@ -245,6 +246,7 @@ export interface Customer {
   fullName: string;
   phone: string;
   email?: string;
+  gender?: 'male' | 'female';
   preferences?: string;
   notes?: string;
   outstandingBalance: number;
@@ -416,6 +418,20 @@ export interface Payment {
   recordedAt: string;
   recordedByUid: string;
   recordedByName: string;
+}
+
+export interface CustomerChangeEntry {
+  id: string;
+  customerId: string;
+  businessId: string;
+  changedByUid: string;
+  changedByName: string;
+  changes: Array<{
+    field: string;
+    oldValue: unknown;
+    newValue: unknown;
+  }>;
+  createdAt: string;
 }
 
 export interface ImageMeta {

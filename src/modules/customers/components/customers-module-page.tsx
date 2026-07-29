@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { useForm, type SubmitHandler } from "react-hook-form";
+import { useForm, useFieldArray, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Search } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 
 import type { Customer } from "@/types/domain";
 import {
@@ -43,7 +43,7 @@ export function CustomersModulePage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
 
-  const { register, handleSubmit, reset, formState } = useForm<
+  const { register, handleSubmit, reset, formState, control } = useForm<
     CustomerInput,
     undefined,
     CustomerValues
@@ -53,9 +53,16 @@ export function CustomersModulePage() {
       fullName: "",
       phone: "",
       email: "",
+      gender: undefined,
       preferences: "",
       notes: "",
+      measurements: [],
     },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "measurements",
   });
 
   useEffect(() => {
@@ -99,25 +106,20 @@ export function CustomersModulePage() {
     return [...optimistic, ...list];
   }, [customers, realCustomers, search, filter]);
 
-  const cleanMeasurements = (values: CustomerValues) => {
-    const measurements = {
-      bust: values.bust ?? null,
-      waist: values.waist ?? null,
-      hips: values.hips ?? null,
-      shoulder: values.shoulder ?? null,
-      sleeve: values.sleeve ?? null,
-      inseam: values.inseam ?? null,
-      length: values.length ?? null,
-    };
-    return Object.fromEntries(
-      Object.entries(measurements).filter(([, value]) => value !== null && value !== undefined)
-    );
+  const buildMeasurements = (values: CustomerValues): Record<string, number> => {
+    const measurements: Record<string, number> = {};
+    for (const m of values.measurements ?? []) {
+      if (m.name && (m.value || m.value === 0)) {
+        measurements[m.name] = m.value;
+      }
+    }
+    return measurements;
   };
 
   const onSubmit: SubmitHandler<CustomerValues> = async (values) => {
     if (!user || !businessId) return;
 
-    const measurements = cleanMeasurements(values);
+    const measurements = buildMeasurements(values);
     const optimisticId = `tmp-${Date.now()}`;
 
     const optimisticCustomer: Customer = {
@@ -126,6 +128,7 @@ export function CustomersModulePage() {
       fullName: values.fullName,
       phone: values.phone,
       email: values.email || undefined,
+      gender: values.gender || undefined,
       preferences: values.preferences || "",
       notes: values.notes || "",
       measurements,
@@ -143,6 +146,7 @@ export function CustomersModulePage() {
         fullName: values.fullName,
         phone: values.phone,
         email: values.email || undefined,
+        gender: values.gender || undefined,
         preferences: values.preferences || "",
         notes: values.notes || "",
         measurements,
@@ -320,6 +324,18 @@ export function CustomersModulePage() {
               </div>
 
               <div>
+                <Label>Gender</Label>
+                <select
+                  {...register("gender")}
+                  className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="">Select gender</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+
+              <div>
                 <Label>Phone *</Label>
                 <Input
                   type="tel"
@@ -348,46 +364,50 @@ export function CustomersModulePage() {
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-slate-600 mb-2 mt-1">
-                  Measurements (cm)
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    placeholder="Bust"
-                    type="number"
-                    {...register("bust", { valueAsNumber: true })}
-                  />
-                  <Input
-                    placeholder="Waist"
-                    type="number"
-                    {...register("waist", { valueAsNumber: true })}
-                  />
-                  <Input
-                    placeholder="Hips"
-                    type="number"
-                    {...register("hips", { valueAsNumber: true })}
-                  />
-                  <Input
-                    placeholder="Shoulder"
-                    type="number"
-                    {...register("shoulder", { valueAsNumber: true })}
-                  />
-                  <Input
-                    placeholder="Sleeve"
-                    type="number"
-                    {...register("sleeve", { valueAsNumber: true })}
-                  />
-                  <Input
-                    placeholder="Inseam"
-                    type="number"
-                    {...register("inseam", { valueAsNumber: true })}
-                  />
-                  <Input
-                    placeholder="Length"
-                    type="number"
-                    {...register("length", { valueAsNumber: true })}
-                    className="col-span-2"
-                  />
+                <div className="flex items-center justify-between mb-2 mt-1">
+                  <p className="text-xs font-semibold text-slate-600">
+                    Measurements (cm)
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => append({ name: "", value: "" as unknown as number })}
+                    className="h-7 text-xs gap-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {fields.map((field, index) => (
+                    <div key={field.id} className="flex gap-2 items-start">
+                      <Input
+                        placeholder="e.g. Bust"
+                        {...register(`measurements.${index}.name`)}
+                        className="flex-1"
+                      />
+                      <Input
+                        placeholder="cm"
+                        type="number"
+                        step="0.1"
+                        {...register(`measurements.${index}.value`, { valueAsNumber: true })}
+                        className="w-24"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => remove(index)}
+                        className="mt-2 text-rose-400 hover:text-rose-600 transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {fields.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-2">
+                      No measurements yet. Click &quot;Add&quot; to add one.
+                    </p>
+                  )}
                 </div>
               </div>
 

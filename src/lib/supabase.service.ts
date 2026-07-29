@@ -1,5 +1,5 @@
 ﻿import { supabase } from "@/lib/supabase";
-import { transformKeysToCamel, transformKeysToSnake, transformArrayToCamel, toDate } from "@/lib/case-utils";
+import { transformKeysToCamel, transformKeysToSnake, transformArrayToCamel, toDate, snakeToCamel } from "@/lib/case-utils";
 import { formatKes } from "@/lib/utils";
 import {
   getCachedCollection,
@@ -52,6 +52,7 @@ import type {
   Transaction,
   FinanceAlert,
   ConsumptionReport,
+  CustomerChangeEntry,
   SmsLog,
   Investment,
   SavingsGoal,
@@ -608,7 +609,7 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
         businessId,
         'customer_measurements',
         'create',
-        { customerId, ...measurements },
+        { customerId, values: measurements },
         generateId(),
         'normal'
       ).catch(() => {});
@@ -655,7 +656,7 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
   if (measurements && Object.values(measurements).some((v) => v !== null && v !== undefined)) {
     await supabase
       .from('customer_measurements')
-      .insert(transformKeysToSnake({ customerId: insertData.id, ...measurements } as Record<string, unknown>));
+      .insert(transformKeysToSnake({ customerId: insertData.id, values: measurements } as Record<string, unknown>));
   }
 
   return insertData.id;
@@ -698,10 +699,13 @@ export function listenCustomer(businessId: string, customerId: string, callback:
       const latest = [...measurementRows].sort((a, b) =>
         String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
       )[0];
-      // strip metadata columns, keep only measurement values
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id: _mid, customer_id: _cid, created_at: _mcat, recorded_by: _rb, ...measureValues } = latest;
-      customer.measurements = measureValues as MeasurementSet;
+      // Read from the JSONB `values` column (single source of truth for unlimited measurements)
+      const rawValues = (latest.values as Record<string, unknown>) ?? {};
+      const camelValues: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rawValues)) {
+        camelValues[snakeToCamel(k)] = v;
+      }
+      customer.measurements = camelValues as MeasurementSet;
     } else {
       customer.measurements = {};
     }
@@ -717,7 +721,141 @@ export function listenCustomer(businessId: string, customerId: string, callback:
   return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
-// â”€â”€â”€ MEMBERS â”€â”€â”€
+// --- CUSTOMER UPDATE / AUDIT LOG -------------------------------------------
+
+function computeDiff(oldData: Partial<Customer>, newData: Partial<Customer>): Array<{ field: string; oldValue: unknown; newValue: unknown }> {
+  const changes: Array<{ field: string; oldValue: unknown; newValue: unknown }> = [];
+  const fields: (keyof Customer)[] = ["fullName", "phone", "email", "gender", "preferences", "notes"];
+  for (const key of fields) {
+    const oldVal = oldData[key];
+    const newVal = newData[key];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      changes.push({ field: key, oldValue: oldVal, newValue: newVal });
+    }
+  }
+  const oldMeas = oldData.measurements ?? {};
+  const newMeas = newData.measurements ?? {};
+  const allMeasKeys = [...new Set([...Object.keys(oldMeas), ...Object.keys(newMeas)])];
+  for (const key of allMeasKeys) {
+    const oldVal = oldMeas[key];
+    const newVal = newMeas[key];
+    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+      changes.push({ field: `measurements.${key}`, oldValue: oldVal ?? null, newValue: newVal ?? null });
+    }
+  }
+  return changes;
+}
+
+export async function updateCustomer(
+  businessId: string,
+  customerId: string,
+  payload: Partial<Omit<Customer, "id" | "businessId" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">>,
+  user: { uid: string; displayName: string }
+) {
+  const { measurements, ...customerFields } = payload as typeof payload & { measurements?: Record<string, unknown> };
+
+  if (isOffline()) {
+    await enqueueSyncOperation(businessId, 'customers', 'update', customerFields, customerId, 'normal');
+    if (measurements && Object.keys(measurements).length > 0) {
+      await enqueueSyncOperation(businessId, 'customer_measurements', 'create', { customerId, values: measurements }, generateId(), 'normal');
+    }
+    const updated: Partial<Customer> = { ...customerFields };
+    if (measurements) updated.measurements = measurements;
+    await patchCachedRecord('customers', customerId, updated).catch(() => {});
+    return;
+  }
+
+  const { data: currentData } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('id', customerId)
+    .maybeSingle();
+
+  if (!currentData) throw new Error("Customer not found");
+
+  const current = transformKeysToCamel<Customer>(currentData as Record<string, unknown>);
+
+  if (customerFields.phone && customerFields.phone !== current.phone) {
+    const { data: phoneExisting } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('business_id', businessId)
+      .eq('phone', customerFields.phone)
+      .maybeSingle();
+    if (phoneExisting) throw new Error("A customer with this phone number already exists.");
+  }
+
+  if (customerFields.email && customerFields.email !== current.email) {
+    const { data: emailExisting } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('business_id', businessId)
+      .eq('email', customerFields.email)
+      .maybeSingle();
+    if (emailExisting) throw new Error("A customer with this email already exists.");
+  }
+
+  const { error: updateError } = await supabase
+    .from('customers')
+    .update(transformKeysToSnake({ ...customerFields, updatedAt: new Date().toISOString() } as Record<string, unknown>))
+    .eq('id', customerId);
+
+  if (updateError) throw updateError;
+
+  if (measurements && Object.keys(measurements).length > 0) {
+    const { error: measError } = await supabase
+      .from('customer_measurements')
+      .insert(transformKeysToSnake({ customerId, values: measurements } as Record<string, unknown>));
+    if (measError) throw measError;
+  }
+
+  const mergedNew = { ...current, ...customerFields, ...(measurements ? { measurements } : {}) };
+  const changes = computeDiff(current, mergedNew);
+
+  if (changes.length > 0) {
+    await supabase
+      .from('customer_changes')
+      .insert({
+        customer_id: customerId,
+        business_id: businessId,
+        changed_by_uid: user.uid,
+        changed_by_name: user.displayName,
+        changes: changes as unknown as string,
+      });
+  }
+}
+
+export function listenCustomerChanges(
+  businessId: string,
+  customerId: string,
+  callback: (rows: CustomerChangeEntry[]) => void
+): () => void {
+  let destroyed = false;
+
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    const { data, error } = await supabase
+      .from('customer_changes')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!destroyed && data) {
+      callback(transformArrayToCamel<CustomerChangeEntry>(data as Record<string, unknown>[]));
+    }
+  };
+  fetchAndCallback();
+
+  const channel = supabase
+    .channel(`customer-changes-${customerId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'customer_changes', filter: `customer_id=eq.${customerId}` }, fetchAndCallback)
+    .subscribe();
+
+  return () => { destroyed = true; supabase.removeChannel(channel); };
+}
+
+// --- MEMBERS -----------------------------------------------------------------
 
 function normalizeProfilePhoto<T extends { photoURL?: string }>(profile: T & { photoUrl?: string }): T {
   if (!profile.photoURL && profile.photoUrl) {
