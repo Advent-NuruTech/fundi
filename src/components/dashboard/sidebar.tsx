@@ -45,7 +45,7 @@ const navigation = [
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Employees", href: "/employees", icon: Users },
   { label: "Messages", href: "/messages", icon: MessageSquare },
-  { label: "Global Sell", href: "/sell", icon: Globe },
+ // { label: "Global Sell", href: "/sell", icon: Globe },
 ];
 
 export function Sidebar({ children }: { children: React.ReactNode }) {

@@ -1,11 +1,13 @@
+"use client";
+
 import Link from "next/link";
+import { motion, useInView, useScroll, useTransform, useMotionValue, useSpring } from "framer-motion";
 import {
   Scissors,
   Users,
   Package,
   BarChart3,
   MessageCircle,
-  MessageSquare,
   Lightbulb,
   CheckCircle2,
   ArrowRight,
@@ -22,15 +24,209 @@ import {
   ShoppingCart,
   LayoutDashboard,
   DollarSign,
-  MapPin,
-  Truck,
-  Tag,
-  PackageCheck,
   Bot,
   Sparkles,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
+import { useRef, useEffect, useState, type ReactNode } from "react";
+
+const EASE_CUBIC = [0.22, 1, 0.36, 1] as const;
+
+// ─── Animation Variants ───────────────────────────────────────────────────────
+
+const fadeInUp = {
+  hidden: { opacity: 0, y: 40 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE_CUBIC } },
+};
+
+const fadeInDown = {
+  hidden: { opacity: 0, y: -30 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE_CUBIC } },
+};
+
+const fadeInLeft = {
+  hidden: { opacity: 0, x: -50 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE_CUBIC } },
+};
+
+const fadeInRight = {
+  hidden: { opacity: 0, x: 50 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE_CUBIC } },
+};
+
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.85 },
+  visible: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: EASE_CUBIC } },
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+      delayChildren: 0.1,
+    },
+  },
+};
+
+const staggerItem = {
+  hidden: { opacity: 0, y: 30 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.55, ease: EASE_CUBIC },
+  },
+};
+
+// ─── Wrapper Components ───────────────────────────────────────────────────────
+
+function AnimatedSection({
+  children,
+  className = "",
+  delay = 0,
+  direction = "up",
+}: {
+  children: ReactNode;
+  className?: string;
+  delay?: number;
+  direction?: "up" | "down" | "left" | "right" | "scale";
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { margin: "-80px", once: true, amount: 0.15 });
+  const variants =
+    direction === "left"
+      ? fadeInLeft
+      : direction === "right"
+        ? fadeInRight
+        : direction === "scale"
+          ? scaleIn
+          : direction === "down"
+            ? fadeInDown
+            : fadeInUp;
+
+  return (
+    <motion.div
+      ref={ref}
+      initial="hidden"
+      animate={isInView ? "visible" : "hidden"}
+      variants={variants}
+      transition={{ delay, ...variants.visible.transition }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function StaggerContainer({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const isInView = useInView(ref, { margin: "-60px", once: true, amount: 0.1 });
+  return (
+    <motion.div
+      ref={ref}
+      initial="hidden"
+      animate={isInView ? "visible" : "hidden"}
+      variants={staggerContainer}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function StaggerChild({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <motion.div variants={staggerItem} className={className}>
+      {children}
+    </motion.div>
+  );
+}
+
+// ─── Animated Counter ─────────────────────────────────────────────────────────
+
+function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const isInView = useInView(ref, { once: true, margin: "-50px" });
+  const motionValue = useMotionValue(0);
+  const springValue = useSpring(motionValue, { damping: 40, stiffness: 80 });
+  const displayValue = useTransform(springValue, (v) => `${prefix}${Math.round(v).toLocaleString()}${suffix}`);
+
+  useEffect(() => {
+    if (isInView) {
+      motionValue.set(value);
+    }
+  }, [isInView, value, motionValue]);
+
+  return (
+    <motion.span ref={ref}>
+      {displayValue}
+    </motion.span>
+  );
+}
+
+// ─── Floating Badge Animation ─────────────────────────────────────────────────
+
+function FloatingBadge({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
+  return (
+    <motion.span
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.6, ease: EASE_CUBIC }}
+      whileHover={{ y: -3, transition: { duration: 0.2 } }}
+    >
+      {children}
+    </motion.span>
+  );
+}
+
+// ─── Magnetic Button Effect ───────────────────────────────────────────────────
+
+function MagneticButton({ children, className = "", ...props }: any) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  useInView(ref, { once: true });
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const springX = useSpring(x, { stiffness: 150, damping: 15 });
+  const springY = useSpring(y, { stiffness: 150, damping: 15 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    x.set((e.clientX - centerX) * 0.15);
+    y.set((e.clientY - centerY) * 0.15);
+  };
+
+  const handleMouseLeave = () => {
+    x.set(0);
+    y.set(0);
+  };
+
+  return (
+    <motion.a
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ x: springX, y: springY }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.97 }}
+      className={className}
+      {...props}
+    >
+      {children}
+    </motion.a>
+  );
+}
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
 
 const DEMO_URL =
   "https://wa.me/254142225233?text=Hi%2C%20I'd%20like%20to%20request%20a%20demo%20of%20FundiFlow";
@@ -45,8 +241,8 @@ const FEATURES = [
   {
     icon: Package,
     color: "bg-blue-100 text-blue-700",
-    title: "Material Inventory",
-    desc: "Track fabrics, trims and accessories in real time. Instant low-stock alerts before you disappoint a customer.",
+    title: "Fabric Inventory",
+    desc: "Track fabrics, zippers, buttons and threads in real time. Instant low-stock alerts before you disappoint a customer.",
   },
   {
     icon: Ruler,
@@ -86,7 +282,7 @@ const HOW_IT_WORKS = [
   {
     step: "01",
     title: "Set Up Your Workshop",
-    desc: "Register your business, add team members with the right roles and set up your inventory. Takes less than 15 minutes.",
+    desc: "Register your tailoring business, add team members with the right roles and set up your inventory. Takes less than 15 minutes.",
   },
   {
     step: "02",
@@ -112,28 +308,67 @@ const ROLES = [
 const TESTIMONIALS = [
   {
     name: "Mama Wanjiku",
-    role: "Sole tailor",
+    role: "Sole Tailor",
     quote:
       "Before FundiFlow I was losing track of measurements and customers were upset. Now everything is in my phone. My orders are up 40% this year.",
     stars: 5,
   },
   {
     name: "Kevin Otieno",
-    role: "Workshop owner, 8 tailors",
+    role: "Workshop Owner, 8 Tailors",
     quote:
-      "The finance dashboard alone is worth every shilling. I finally know exactly how much profit I make each week. My manager only sees what I allow.",
+      "The finance dashboard alone is worth every shilling. I finally know exactly how much profit I make each week.",
     stars: 5,
   },
   {
     name: "Fatuma Abdi",
-    role: "Boutique owner",
+    role: "Boutique Owner",
     quote:
       "The SMS notifications are a game changer. Customers know when their clothes are ready without me calling. So professional.",
     stars: 5,
   },
 ];
 
-// Static mini dashboard for hero — no client state needed
+const PIPELINE_STEPS = [
+  { label: "New Order", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { label: "Cutting", color: "bg-violet-100 text-violet-700 border-violet-200" },
+  { label: "Stitching", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { label: "Fitting", color: "bg-orange-100 text-orange-700 border-orange-200" },
+  { label: "Finishing", color: "bg-teal-100 text-teal-700 border-teal-200" },
+  { label: "Ready for Pickup", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { label: "Delivered", color: "bg-slate-100 text-slate-700 border-slate-200" },
+];
+
+const BADGE_TAGS = [
+  "Customer Records",
+  "Measurements & Fittings",
+  "Production Workflow",
+  "Fabric Inventory",
+  "Finance Dashboard",
+  "Team Management",
+  "SMS Notifications",
+  "Business Insights",
+  "Global Sell Marketplace",
+  "POS & Payments",
+];
+
+const MARKETPLACE_PRODUCTS = [
+  { name: "Men's 3-Piece Suit", store: "Smart Fabrics", price: "6,500", rating: 4.8, color: "bg-slate-700", badge: null },
+  { name: "School Uniform Set", store: "Prestige Tailors", price: "1,800", rating: 4.6, color: "bg-blue-700", badge: "Bestseller" },
+  { name: "Ladies Office Dress", store: "Elegant Stitch", price: "3,200", rating: 4.9, color: "bg-rose-600", badge: null },
+  { name: "Traditional Kanzu", store: "Coastal Threads", price: "2,400", rating: 4.7, color: "bg-amber-700", badge: null },
+  { name: "Kids Party Dress", store: "Little Angels", price: "2,800", rating: 4.5, color: "bg-pink-500", badge: null },
+  { name: "Bridal Gown", store: "Wedding Belle", price: "18,500", rating: 5.0, color: "bg-emerald-800", badge: "Premium" },
+];
+
+const PRICING_PLANS = [
+  { name: "Sindano", swahili: "The Needle", price: "690", color: "border-slate-200", badge: null },
+  { name: "Fundi", swahili: "The Craftsman", price: "3,690", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
+  { name: "Dhahabu", swahili: "Golden Standard", price: "9,990", color: "border-slate-200", badge: null },
+];
+
+// ─── Hero Dashboard with Animations ───────────────────────────────────────────
+
 function HeroDashboard() {
   const miniOrders = [
     { id: "ON-001", customer: "Wanjiku Kamau", status: "Stitching", color: "bg-amber-100 text-amber-700" },
@@ -143,108 +378,144 @@ function HeroDashboard() {
   ];
 
   return (
-    <div className="relative hidden lg:block">
-      {/* Ambient glow */}
-      <div className="absolute -inset-6 rounded-3xl bg-emerald-500/10 blur-2xl" />
-
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-800 shadow-2xl">
-        {/* Browser bar */}
+    <motion.div
+      initial={{ opacity: 0, scale: 0.92, y: 30 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.9, delay: 0.3, ease: EASE_CUBIC }}
+      className="relative hidden lg:block"
+    >
+      <motion.div
+        className="absolute -inset-6 rounded-3xl bg-emerald-500/10 blur-2xl"
+        animate={{ scale: [1, 1.05, 1], opacity: [0.6, 1, 0.6] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.div
+        className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-800 shadow-2xl"
+        whileHover={{ y: -4, transition: { duration: 0.3 } }}
+      >
         <div className="flex items-center gap-3 bg-slate-700 px-4 py-2.5">
           <div className="flex shrink-0 gap-1.5">
-            <div className="h-2.5 w-2.5 rounded-full bg-red-400/90" />
-            <div className="h-2.5 w-2.5 rounded-full bg-yellow-400/90" />
-            <div className="h-2.5 w-2.5 rounded-full bg-green-400/90" />
+            <motion.div
+              className="h-2.5 w-2.5 rounded-full bg-red-400/90"
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+            <motion.div
+              className="h-2.5 w-2.5 rounded-full bg-yellow-400/90"
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+            />
+            <motion.div
+              className="h-2.5 w-2.5 rounded-full bg-green-400/90"
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+            />
           </div>
           <div className="flex-1 rounded-md bg-slate-600 px-3 py-1 text-center text-xs text-slate-400">
             🔒 www.fundiflow.com/dashboard
           </div>
         </div>
 
-        {/* App */}
         <div className="flex" style={{ height: "400px" }}>
-          {/* Mini sidebar */}
           <div className="flex w-11 shrink-0 flex-col items-center gap-1.5 bg-slate-900 py-4">
             <div className="mb-2.5 flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600">
               <Scissors className="h-3.5 w-3.5 text-white" />
             </div>
             {[LayoutDashboard, ShoppingCart, Users, Package, DollarSign, BarChart3, Globe].map((Icon, i) => (
-              <div
+              <motion.div
                 key={i}
                 className={`flex h-8 w-8 items-center justify-center rounded-xl ${
                   i === 0 ? "bg-emerald-600" : "text-slate-500"
                 }`}
+                whileHover={{ scale: 1.15, backgroundColor: "rgba(5, 150, 105, 0.3)" }}
+                transition={{ type: "spring", stiffness: 300 }}
               >
                 <Icon className="h-3.5 w-3.5 text-slate-300" />
-              </div>
+              </motion.div>
             ))}
           </div>
 
-          {/* Main */}
           <div className="flex-1 overflow-hidden bg-slate-50 p-3">
-            {/* Header */}
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-slate-900">Smart Fabrics Ltd</p>
                 <p className="text-[10px] text-slate-400">Dashboard · June 2026</p>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                <motion.div
+                  className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                />
                 <span className="text-[10px] font-semibold text-emerald-600">Live</span>
               </div>
             </div>
 
-            {/* Stat cards */}
             <div className="mb-3 grid grid-cols-2 gap-2">
               {[
                 { label: "Revenue", value: "KES 142K", sub: "+8.8%" },
                 { label: "Active Orders", value: "23", sub: "47 total" },
                 { label: "Customers", value: "186", sub: "4 new today" },
                 { label: "Low Stock", value: "3 items", sub: "reorder now" },
-              ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-2">
+              ].map((s, i) => (
+                <motion.div
+                  key={s.label}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 + i * 0.1, duration: 0.4 }}
+                  className="rounded-xl border border-slate-200 bg-white p-2"
+                  whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+                >
                   <p className="text-[9px] text-slate-400">{s.label}</p>
                   <p className="text-xs font-black text-slate-900">{s.value}</p>
                   <p className="text-[9px] font-medium text-emerald-600">{s.sub}</p>
-                </div>
+                </motion.div>
               ))}
             </div>
 
-            {/* Mini orders table */}
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5">
                 <p className="text-[10px] font-semibold text-slate-600">Recent Orders</p>
               </div>
-              {miniOrders.map((o) => (
-                <div key={o.id} className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 last:border-0">
+              {miniOrders.map((o, i) => (
+                <motion.div
+                  key={o.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.7 + i * 0.12, duration: 0.4 }}
+                  className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 last:border-0"
+                  whileHover={{ backgroundColor: "rgba(241,245,249,1)" }}
+                >
                   <span className="w-12 shrink-0 font-mono text-[10px] text-slate-500">{o.id}</span>
                   <span className="flex-1 truncate text-[10px] font-medium text-slate-800">{o.customer}</span>
-                  <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${o.color}`}>
+                  <motion.span
+                    className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${o.color}`}
+                    animate={{ scale: [1, 1.05, 1] }}
+                    transition={{ duration: 3, repeat: Infinity, delay: i * 0.5 }}
+                  >
                     {o.status}
-                  </span>
-                </div>
+                  </motion.span>
+                </motion.div>
               ))}
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
-// Static marketplace mini-preview for the GlobalSell section
-function MarketplacePreview() {
-  const products = [
-    { name: "Men's 3-Piece Suit", store: "Smart Fabrics", price: "6,500", rating: 4.8, color: "bg-slate-700", badge: null },
-    { name: "School Uniform Set", store: "Prestige Tailors", price: "1,800", rating: 4.6, color: "bg-blue-700", badge: "Bestseller" },
-    { name: "Ladies Office Dress", store: "Elegant Stitch", price: "3,200", rating: 4.9, color: "bg-rose-600", badge: null },
-    { name: "Traditional Kanzu", store: "Coastal Threads", price: "2,400", rating: 4.7, color: "bg-amber-700", badge: null },
-    { name: "Kids Party Dress", store: "Little Angels", price: "2,800", rating: 4.5, color: "bg-pink-500", badge: null },
-    { name: "Bridal Gown", store: "Wedding Belle", price: "18,500", rating: 5.0, color: "bg-emerald-800", badge: "Premium" },
-  ];
+// ─── Marketplace Preview with Animations ──────────────────────────────────────
 
+function MarketplacePreview() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-      {/* Marketplace header */}
+    <motion.div
+      initial={{ opacity: 0, y: 40 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.7, ease: EASE_CUBIC }}
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+    >
       <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-600">
           <Globe className="h-4 w-4 text-white" />
@@ -254,21 +525,39 @@ function MarketplacePreview() {
           <p className="text-xs text-slate-400">by FundiFlow</p>
         </div>
         <div className="ml-auto flex gap-2 text-xs">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">All</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">Retail</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">Wholesale</span>
+          {["All", "Retail", "Wholesale"].map((tab) => (
+            <motion.span
+              key={tab}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600 cursor-pointer"
+              whileHover={{ backgroundColor: "#ecfdf5", borderColor: "#6ee7b7" }}
+            >
+              {tab}
+            </motion.span>
+          ))}
         </div>
       </div>
 
-      {/* Products grid */}
       <div className="grid grid-cols-3 gap-3 p-4">
-        {products.map((p) => (
-          <div key={p.name} className="overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
+        {MARKETPLACE_PRODUCTS.map((p, i) => (
+          <motion.div
+            key={p.name}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.08, duration: 0.4 }}
+            className="overflow-hidden rounded-xl border border-slate-100 bg-slate-50"
+            whileHover={{ y: -4, boxShadow: "0 8px 25px rgba(0,0,0,0.1)", transition: { duration: 0.25 } }}
+          >
             <div className={`relative h-20 ${p.color}`}>
               {p.badge && (
-                <span className="absolute left-1.5 top-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-slate-800">
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.5 + i * 0.1, type: "spring", stiffness: 200 }}
+                  className="absolute left-1.5 top-1.5 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-slate-800"
+                >
                   {p.badge}
-                </span>
+                </motion.span>
               )}
             </div>
             <div className="p-2">
@@ -282,22 +571,97 @@ function MarketplacePreview() {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
+// ─── Scroll Progress Bar ──────────────────────────────────────────────────────
+
+function ScrollProgressBar() {
+  const { scrollYProgress } = useScroll();
+  const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30, restDelta: 0.001 });
+
+  return (
+    <motion.div
+      style={{ scaleX }}
+      className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 origin-left z-50"
+    />
+  );
+}
+
+// ─── Parallax Background ──────────────────────────────────────────────────────
+
+function ParallaxHeroBg() {
+  const { scrollY } = useScroll();
+  const y1 = useTransform(scrollY, [0, 600], [0, -100]);
+  const y2 = useTransform(scrollY, [0, 600], [0, -50]);
+
+  return (
+    <>
+      <motion.div
+        style={{ y: y1 }}
+        className="absolute top-20 left-10 h-72 w-72 rounded-full bg-emerald-500/5 blur-3xl"
+      />
+      <motion.div
+        style={{ y: y2 }}
+        className="absolute bottom-20 right-10 h-96 w-96 rounded-full bg-teal-500/5 blur-3xl"
+      />
+    </>
+  );
+}
+
+// ─── Main Page Component ──────────────────────────────────────────────────────
+
 export default function HomePage() {
+  const [displayText, setDisplayText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [loopIndex, setLoopIndex] = useState(0);
+  const [typingSpeed, setTypingSpeed] = useState(80);
+  const words = [
+    "Track customer measurements & orders",
+    "Manage fabric & ready-made inventory",
+    "Automate SMS pickup & delay reminders",
+    "Manage staff payouts & performance",
+    "Get real-time business reports",
+    "Unlock AI-powered insights",
+    "only in fundiflow ",
+  ];
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    const handleTyping = () => {
+      const currentWord = words[loopIndex % words.length];
+      if (!isDeleting) {
+        setDisplayText(currentWord.substring(0, displayText.length + 1));
+        setTypingSpeed(80);
+        if (displayText.length === currentWord.length) {
+          setTypingSpeed(2000);
+          setIsDeleting(true);
+        }
+      } else {
+        setDisplayText(currentWord.substring(0, displayText.length - 1));
+        setTypingSpeed(40);
+        if (displayText.length === 0) {
+          setIsDeleting(false);
+          setLoopIndex((prev) => prev + 1);
+          setTypingSpeed(80);
+        }
+      }
+    };
+    timer = setTimeout(handleTyping, typingSpeed);
+    return () => clearTimeout(timer);
+  }, [displayText, isDeleting, loopIndex, typingSpeed, words]);
+
   return (
     <MarketingShell>
+      <ScrollProgressBar />
 
-      {/* ══════════════════════════════════════════════
-          HERO — split layout with live dashboard preview
-      ══════════════════════════════════════════════ */}
+      {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-white">
-        {/* Dot-grid texture */}
+        <ParallaxHeroBg />
         <div
           className="absolute inset-0 opacity-10"
           style={{
@@ -310,36 +674,80 @@ export default function HomePage() {
 
         <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
           <div className="grid items-center gap-12 lg:grid-cols-2">
-            {/* Left — copy */}
             <div>
-              <h1 className="mb-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+              {/* Typing animation (register page colors) */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.15, ease: EASE_CUBIC }}
+                className="mb-1 min-h-[40px] flex items-center justify-center"
+              >
+                <div className="text-base text-slate-300 font-mono text-center">
+                  <span className="inline-block bg-gradient-to-r from-emerald-600 to-amber-600 bg-clip-text text-transparent font-medium">
+                    {displayText}
+                  </span>
+                  <span className="inline-block w-[2px] h-5 bg-emerald-500 ml-0.5 animate-pulse align-text-bottom"></span>
+                </div>
+              </motion.div>
+
+              <motion.h1
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.25, ease: EASE_CUBIC }}
+                className="mb-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl"
+              >
                 The Complete{" "}
                 <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-                  Business
+                  Tailoring
                 </span>{" "}
-                Operating System
-              </h1>
+                Business OS
+              </motion.h1>
 
-              <p className="mb-4 text-lg leading-relaxed text-slate-300">
-                Manage sales, stock, customers, staff, finances, reports and communications from{" "}
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.35, ease: EASE_CUBIC }}
+                className="mb-4 text-lg leading-relaxed text-slate-300"
+              >
+                Manage customers, measurements, orders, inventory, finances, staff and communications from{" "}
                 <span className="font-semibold text-white">one connected platform.</span>{" "}
-                Built for shops, wholesalers, hardwares, tailors and every SME in between.
-              </p>
+                Built for tailors, fashion designers and garment businesses.
+              </motion.p>
 
-              <p className="mb-8 flex items-center gap-2 text-sm font-medium text-emerald-300">
-                <Globe className="h-4 w-4" />
-              <strong className="text-white">Global Sell</strong> — dedicated tailoring marketplace, built in.
-              </p>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.45, ease: EASE_CUBIC }}
+                className="mb-8 flex items-center gap-2 text-sm font-medium text-emerald-300"
+              >
+                <motion.span
+                  animate={{ rotate: [0, 360] }}
+                  transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                >
+                  <Globe className="h-4 w-4" />
+                </motion.span>
+                <strong className="text-white">Global Sell</strong> — dedicated tailoring marketplace, built in.
+              </motion.p>
 
-              <div className="flex flex-col items-start gap-4 sm:flex-row">
-                <Link
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.55 }}
+                className="flex flex-col items-start gap-4 sm:flex-row"
+              >
+                <MagneticButton
                   href="/register"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:scale-105 hover:bg-emerald-400"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400"
                 >
                   Get Started Free Trial
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
-                <a
+                  <motion.span
+                    animate={{ x: [0, 5, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  >
+                    <ArrowRight className="h-5 w-5" />
+                  </motion.span>
+                </MagneticButton>
+                <MagneticButton
                   href={DEMO_URL}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -347,60 +755,60 @@ export default function HomePage() {
                 >
                   <MessageCircle className="h-5 w-5" />
                   Request a Demo
-                </a>
-              </div>
+                </MagneticButton>
+              </motion.div>
 
-              {/* Trust badges */}
-              <div className="mt-8 flex flex-wrap gap-5 text-sm text-slate-400">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.7, delay: 0.5 }}
+                className="mt-8 flex flex-wrap gap-5 text-sm text-slate-400"
+              >
                 {[
                   { Icon: Smartphone, text: "Works Offline" },
                   { Icon: MessageCircle, text: "SMS & WhatsApp" },
                   { Icon: Shield, text: "Secure & Private" },
                   { Icon: Zap, text: "Instant Setup" },
                 ].map(({ Icon, text }) => (
-                  <div key={text} className="flex items-center gap-2">
+                  <motion.div
+                    key={text}
+                    className="flex items-center gap-2"
+                    whileHover={{ scale: 1.05, color: "#10b981" }}
+                    transition={{ type: "spring", stiffness: 300 }}
+                  >
                     <Icon className="h-4 w-4 text-emerald-400" />
                     {text}
-                  </div>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </div>
 
-            {/* Right — live dashboard preview */}
             <HeroDashboard />
           </div>
 
-          {/* Feature pills */}
-          <div className="mt-12 flex flex-wrap justify-center gap-2.5">
-            {[
-              "Customer Records",
-              "Measurements & Fittings",
-              "Production Workflow",
-              "Inventory Tracking",
-              "Finance Dashboard",
-              "Team Management",
-              "SMS Notifications",
-              "Business Insights",
-              "Global Sell Marketplace",
-              "POS & Payments",
-            ].map((f) => (
-              <span
-                key={f}
-                className="rounded-full border border-slate-700 bg-slate-800/60 px-4 py-1.5 text-sm font-medium text-slate-300"
-              >
-                {f}
-              </span>
+          {/* Feature Badge Tags with Stagger */}
+          <StaggerContainer className="mt-12 flex flex-wrap justify-center gap-2.5">
+            {BADGE_TAGS.map((f) => (
+              <StaggerChild key={f}>
+                <span className="rounded-full border border-slate-700 bg-slate-800/60 px-4 py-1.5 text-sm font-medium text-slate-300 inline-block">
+                  {f}
+                </span>
+              </StaggerChild>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          TRUST STRIP
-      ══════════════════════════════════════════════ */}
+      {/* Trust Strip */}
       <section className="border-y border-emerald-100 bg-emerald-50 py-5">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:justify-between sm:text-left">
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center gap-2 text-center sm:flex-row sm:justify-between sm:text-left"
+          >
             <p className="text-sm font-semibold text-emerald-800">
               Built for Tailors. Designed for Growth.
             </p>
@@ -413,171 +821,122 @@ export default function HomePage() {
             >
               View all plans →
             </Link>
-          </div>
+          </motion.div>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          BUILT FOR EVERY BUSINESS — industries grid
-      ══════════════════════════════════════════════ */}
+      {/* Tailoring Focus / Features */}
       <section className="py-20 sm:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-12 text-center">
-            <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
-              One Platform, Every Industry
-            </span>
-            <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              Built for how <span className="text-emerald-600">you</span> do business
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-500">
-              Pick your business type and FundiFlow speaks your language — the right terms, modules and stock setup from day one. Run one shop or many, across multiple branches.
-            </p>
+            <AnimatedSection>
+              <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
+                Tailoring-Specific Features
+              </span>
+            </AnimatedSection>
+            <AnimatedSection delay={0.1}>
+              <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
+                Everything a tailor needs
+              </h2>
+            </AnimatedSection>
+            <AnimatedSection delay={0.2}>
+              <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-500">
+                From measurements to delivery — FundiFlow is built specifically for the tailoring industry.
+              </p>
+            </AnimatedSection>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { emoji: "🏪", title: "Retail Shops & Dukas", desc: "Minimarts, kiosks and shops selling over the counter. Know what's selling, what's running out and how much you really made today." },
-              { emoji: "📦", title: "Wholesale & Distribution", desc: "Move stock in bulk to shops and traders. Track bulk stock, credit clients and supplier debts without a single notebook." },
-              { emoji: "🔧", title: "Hardware Stores", desc: "Building, plumbing, electrical and tools. Stop stock-outs on fast movers and track every shilling across thousands of SKUs." },
-              { emoji: "✂️", title: "Tailoring & Fashion", desc: "Dressmakers and designers tracking measurements, fabric and production — never lose a customer's measurements or due date again." },
-              { emoji: "🏬", title: "Other SMEs", desc: "Services, agribusiness, salons and more. Run inventory, finance and customers in one simple place built for SMEs." },
-              { emoji: "🌍", title: "Sell Online Too", desc: "Every business can list on Global Sell — built-in retail & wholesale marketplace. No extra tools, no separate accounts." },
-            ].map(({ emoji, title, desc }) => (
-              <div
-                key={title}
-                className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-emerald-200 hover:shadow-md"
-              >
-                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-2xl">
-                  {emoji}
-                </div>
-                <h3 className="mb-2 text-lg font-bold text-slate-900">{title}</h3>
-                <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-10 text-center text-sm text-slate-500">
-            <strong className="text-slate-900">Multi-business &amp; multi-branch built in.</strong>{" "}
-            Own several businesses or branches? Switch between them in one tap — each kept fully separate.
-          </p>
-        </div>
-      </section>
-
-      {/* ══════════════════════════════════════════════
-          LIVE PRODUCT TOUR — interactive dashboard
-      ══════════════════════════════════════════════ */}
-      <section className="bg-slate-50 py-20 sm:py-28">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-12 text-center">
-            <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
-              Live Product Tour
-            </span>
-            <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              This isn&apos;t a mockup.
-              <br className="hidden sm:block" />
-              <span className="text-emerald-600"> This is your future dashboard.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl text-lg text-slate-500">
-               Click through the tabs to explore Orders, Finance, Inventory, Customers and the Global Sell Marketplace.
-            </p>
-          </div>
-
-          <DashboardPreview />
-
-          
-        </div>
-      </section>
-
-      {/* ══════════════════════════════════════════════
-          FEATURES GRID
-      ══════════════════════════════════════════════ */}
-      <section className="py-20 sm:py-28">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-14 text-center">
-            <span className="mb-3 inline-block rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
-              Everything You Need
-            </span>
-            <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              One platform. Every part
-              <br className="hidden sm:block" /> of your business.
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl text-lg text-slate-500">
-              Stop juggling notebooks, spreadsheets and phone messages. FundiFlow brings your entire business into one clean, fast app — whatever you sell.
-            </p>
-          </div>
-
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <StaggerContainer className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(({ icon: Icon, color, title, desc }) => (
-              <div
-                key={title}
-                className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-emerald-200 hover:shadow-md"
-              >
-                <div className={`mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl ${color}`}>
-                  <Icon className="h-6 w-6" />
-                </div>
-                <h3 className="mb-2 text-lg font-bold text-slate-900">{title}</h3>
-                <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
-              </div>
+              <StaggerChild key={title}>
+                <motion.div
+                  className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-emerald-200 hover:shadow-md"
+                  whileHover={{ y: -6, transition: { duration: 0.2 } }}
+                >
+                  <motion.div
+                    className={`mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl ${color}`}
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                  >
+                    <Icon className="h-6 w-6" />
+                  </motion.div>
+                  <h3 className="mb-2 text-lg font-bold text-slate-900">{title}</h3>
+                  <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
+                </motion.div>
+              </StaggerChild>
             ))}
 
-            {/* Business Insights card */}
-            <div className="group relative col-span-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-emerald-950 p-6 text-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md sm:col-span-2 lg:col-span-1 lg:col-start-3">
-              <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-500/10" />
-              <div className="relative">
-                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-amber-400/20">
-                  <Lightbulb className="h-6 w-6 text-amber-300" />
+            <StaggerChild>
+              <motion.div
+                className="group relative col-span-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-emerald-950 p-6 text-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md sm:col-span-2 lg:col-span-1 lg:col-start-3"
+                whileHover={{ y: -6 }}
+              >
+                <motion.div
+                  className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-500/10"
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                />
+                <div className="relative">
+                  <motion.div
+                    className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-amber-400/20"
+                    animate={{ rotate: [0, 5, 0, -5, 0] }}
+                    transition={{ duration: 3, repeat: Infinity }}
+                  >
+                    <Lightbulb className="h-6 w-6 text-amber-300" />
+                  </motion.div>
+                  <span className="mb-2 inline-block rounded-full bg-amber-400/20 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-300">
+                    Built In — Business Insights
+                  </span>
+                  <h3 className="mb-2 text-lg font-bold">Smart Business Insights</h3>
+                  <p className="text-sm leading-relaxed text-slate-300">
+                    Your data, turned into clear recommendations — revenue trends, best-selling styles and stock reorder alerts surfaced automatically, the moment they matter.
+                  </p>
                 </div>
-                <span className="mb-2 inline-block rounded-full bg-amber-400/20 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-300">
-                  Built In — Business Insights
-                </span>
-                <h3 className="mb-2 text-lg font-bold">Smart Business Insights</h3>
-                <p className="text-sm leading-relaxed text-slate-300">
-                  Your data, turned into clear recommendations — revenue trends, best-selling styles and stock reorder alerts surfaced automatically, the moment they matter.
-                </p>
-              </div>
-            </div>
-          </div>
+              </motion.div>
+            </StaggerChild>
+          </StaggerContainer>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          ORDER PIPELINE — visual workflow strip
-      ══════════════════════════════════════════════ */}
+      {/* Order Pipeline */}
       <section className="bg-slate-50 py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-10 text-center">
-            <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
-              Track every order, every step of the way
-            </h2>
-            <p className="mt-3 text-slate-500">
-              From first measurement to final delivery — full visibility across your production pipeline.
-            </p>
-          </div>
+          <AnimatedSection>
+            <div className="mb-10 text-center">
+              <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
+                Track every order, every step of the way
+              </h2>
+              <p className="mt-3 text-slate-500">
+                From first measurement to final delivery — full visibility across your production pipeline.
+              </p>
+            </div>
+          </AnimatedSection>
 
-          {/* Pipeline with arrows */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {[
-              { label: "New Order", color: "bg-blue-100 text-blue-700 border-blue-200" },
-              { label: "Cutting", color: "bg-violet-100 text-violet-700 border-violet-200" },
-              { label: "Stitching", color: "bg-amber-100 text-amber-700 border-amber-200" },
-              { label: "Fitting", color: "bg-orange-100 text-orange-700 border-orange-200" },
-              { label: "Finishing", color: "bg-teal-100 text-teal-700 border-teal-200" },
-              { label: "Ready for Pickup", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-              { label: "Delivered", color: "bg-slate-100 text-slate-700 border-slate-200" },
-            ].map(({ label, color }, i, arr) => (
-              <div key={label} className="flex items-center gap-2">
-                <div className={`rounded-full border px-5 py-2 text-sm font-semibold ${color}`}>
+          <StaggerContainer className="flex flex-wrap items-center justify-center gap-2">
+            {PIPELINE_STEPS.map(({ label, color }, i, arr) => (
+              <StaggerChild key={label} className="flex items-center gap-2">
+                <motion.div
+                  className={`rounded-full border px-5 py-2 text-sm font-semibold ${color}`}
+                  whileHover={{ scale: 1.08, y: -3 }}
+                  transition={{ type: "spring", stiffness: 300 }}
+                >
                   {label}
-                </div>
+                </motion.div>
                 {i < arr.length - 1 && (
-                  <ArrowRight className="h-4 w-4 shrink-0 text-slate-300" />
+                  <motion.div
+                    initial={{ opacity: 0, scaleX: 0 }}
+                    animate={{ opacity: 1, scaleX: 1 }}
+                    transition={{ delay: 0.3 + i * 0.15, duration: 0.3 }}
+                    className="origin-left"
+                  >
+                    <ArrowRight className="h-4 w-4 shrink-0 text-slate-300" />
+                  </motion.div>
                 )}
-              </div>
+              </StaggerChild>
             ))}
-          </div>
+          </StaggerContainer>
 
-          {/* Mini order cards */}
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
+          <StaggerContainer className="mt-10 grid gap-4 sm:grid-cols-3">
             {[
               {
                 id: "ON-001",
@@ -610,272 +969,272 @@ export default function HomePage() {
                 tailor: "James M.",
               },
             ].map((o) => (
-              <div key={o.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-mono text-xs font-semibold text-slate-500">{o.id}</p>
-                    <p className="text-sm font-bold text-slate-900">{o.customer}</p>
-                    <p className="text-xs text-slate-500">{o.garment}</p>
+              <StaggerChild key={o.id}>
+                <motion.div
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                  whileHover={{ y: -4, boxShadow: "0 12px 30px rgba(0,0,0,0.08)" }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-mono text-xs font-semibold text-slate-500">{o.id}</p>
+                      <p className="text-sm font-bold text-slate-900">{o.customer}</p>
+                      <p className="text-xs text-slate-500">{o.garment}</p>
+                    </div>
+                    <motion.span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${o.statusColor}`}
+                      animate={{ scale: [1, 1.05, 1] }}
+                      transition={{ duration: 2.5, repeat: Infinity }}
+                    >
+                      {o.status}
+                    </motion.span>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${o.statusColor}`}>
-                    {o.status}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  <span>👔 {o.tailor}</span>
-                  <span>📅 Due {o.due}</span>
-                  <span className="font-semibold text-slate-900">{o.amount}</span>
-                </div>
-              </div>
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                    <span>👔 {o.tailor}</span>
+                    <span>📅 Due {o.due}</span>
+                    <span className="font-semibold text-slate-900">{o.amount}</span>
+                  </div>
+                </motion.div>
+              </StaggerChild>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          GLOBAL SELL — dedicated marketplace section
-      ══════════════════════════════════════════════ */}
+      {/* Global Sell Marketplace */}
       <section className="overflow-hidden bg-gradient-to-br from-emerald-950 to-slate-900 py-20 text-white sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid items-center gap-12 lg:grid-cols-2">
-
-            {/* Left — explanation */}
             <div>
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-semibold text-emerald-300">
-                <Globe className="h-4 w-4" />
-                Global Sell — Built-in Marketplace
-              </div>
-
-              <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
-                Your workshop.{" "}
-                <span className="text-emerald-400">Online.</span>
-                <br />
-                Worldwide.
-              </h2>
-
-              <p className="mb-6 text-lg leading-relaxed text-slate-300">
-                <strong className="text-white">Global Sell</strong> is FundiFlow&apos;s built-in B2C and B2B marketplace — purpose-built for tailoring businesses. Set up your verified seller store, list your products, and start reaching customers and wholesale buyers across the globe. No extra tools, no separate accounts.
-              </p>
-
-              <div className="mb-8 grid gap-6 sm:grid-cols-2">
-                {/* For Sellers */}
-                <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600/20">
-                      <Store className="h-4 w-4 text-emerald-400" />
-                    </div>
-                    <p className="font-semibold text-white">For Sellers</p>
-                  </div>
-                  <ul className="space-y-1.5 text-sm text-slate-300">
-                    {[
-                      "Verified seller profile & store page",
-                      "Retail & Wholesale product listings",
-                      "Variant builder (Size, Color, Material)",
-                      "Automatic SMS order notifications",
-                      "Full order management dashboard",
-                      "Cloudinary image hosting built-in",
-                    ].map((f) => (
-                      <li key={f} className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
+              <AnimatedSection direction="left">
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-semibold text-emerald-300">
+                  <motion.span
+                    animate={{ rotate: [0, 360] }}
+                    transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+                  >
+                    <Globe className="h-4 w-4" />
+                  </motion.span>
+                  Global Sell — Built-in Marketplace
                 </div>
+              </AnimatedSection>
 
-                {/* For Buyers */}
-                <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600/20">
-                      <ShoppingCart className="h-4 w-4 text-blue-400" />
-                    </div>
-                    <p className="font-semibold text-white">For Buyers</p>
-                  </div>
-                  <ul className="space-y-1.5 text-sm text-slate-300">
-                    {[
-                      "Browse verified tailors worldwide",
-                      "Retail & Wholesale channels",
-                      "Product variants (size, colour, etc.)",
-                      "Secure cart & checkout",
-                      "Real-time order tracking",
-                      "Multiple payment options",
-                    ].map((f) => (
-                      <li key={f} className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
+              <AnimatedSection direction="left" delay={0.1}>
+                <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
+                  Your workshop.{" "}
+                  <span className="text-emerald-400">Online.</span>
+                  <br />
+                  Worldwide.
+                </h2>
+              </AnimatedSection>
 
-              {/* How the order flow works */}
-              <div className="mb-8 rounded-2xl border border-slate-700 bg-slate-800/40 p-5">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">Order Flow</p>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {[
-                    { icon: ShoppingCart, label: "Buyer Orders" },
-                    { icon: Bell, label: "SMS Notification" },
-                    { icon: PackageCheck, label: "Seller Confirms" },
-                    { icon: Truck, label: "Packed & Shipped" },
-                    { icon: MapPin, label: "Delivered" },
-                  ].map(({ icon: Icon, label }, i, arr) => (
-                    <div key={label} className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5 rounded-full border border-slate-600 bg-slate-700 px-3 py-1.5">
-                        <Icon className="h-3.5 w-3.5 text-emerald-400" />
-                        <span className="text-slate-300">{label}</span>
+              <AnimatedSection direction="left" delay={0.2}>
+                <p className="mb-6 text-lg leading-relaxed text-slate-300">
+                  <strong className="text-white">Global Sell</strong> is FundiFlow's built-in B2C and B2B marketplace — purpose-built for tailoring businesses. Set up your verified seller store, list your products, and start reaching customers and wholesale buyers across the globe.
+                </p>
+              </AnimatedSection>
+
+              <StaggerContainer className="mb-8 grid gap-6 sm:grid-cols-2">
+                <StaggerChild>
+                  <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600/20">
+                        <Store className="h-4 w-4 text-emerald-400" />
                       </div>
-                      {i < arr.length - 1 && (
-                        <ArrowRight className="h-3.5 w-3.5 text-slate-600" />
-                      )}
+                      <p className="font-semibold text-white">For Sellers</p>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <ul className="space-y-1.5 text-sm text-slate-300">
+                      {[
+                        "Verified seller profile & store page",
+                        "Retail & Wholesale product listings",
+                        "Variant builder (Size, Color, Material)",
+                        "Automatic SMS order notifications",
+                        "Full order management dashboard",
+                      ].map((f) => (
+                        <li key={f} className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </StaggerChild>
 
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/globalsell"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-400 hover:scale-105"
-                >
-                  <Globe className="h-4 w-4" />
-                  Shop the Marketplace
-                </Link>
-                <Link
-                  href="/register"
-                  className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
-                >
-                  <Store className="h-4 w-4" />
-                  Start Selling
-                </Link>
-              </div>
+                <StaggerChild>
+                  <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600/20">
+                        <ShoppingCart className="h-4 w-4 text-blue-400" />
+                      </div>
+                      <p className="font-semibold text-white">For Buyers</p>
+                    </div>
+                    <ul className="space-y-1.5 text-sm text-slate-300">
+                      {[
+                        "Browse verified tailors worldwide",
+                        "Retail & Wholesale channels",
+                        "Product variants (size, colour, etc.)",
+                        "Secure cart & checkout",
+                        "Real-time order tracking",
+                      ].map((f) => (
+                        <li key={f} className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </StaggerChild>
+              </StaggerContainer>
+
+              <AnimatedSection direction="left" delay={0.3}>
+                <div className="flex flex-wrap gap-3">
+                  <MagneticButton
+                    href="/globalsell"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-400"
+                  >
+                    <Globe className="h-4 w-4" />
+                    Shop the Marketplace
+                  </MagneticButton>
+                  <MagneticButton
+                    href="/register"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
+                  >
+                    <Store className="h-4 w-4" />
+                    Start Selling
+                  </MagneticButton>
+                </div>
+              </AnimatedSection>
             </div>
 
-            {/* Right — marketplace preview */}
-            <div className="relative">
-              <div className="absolute -inset-4 rounded-3xl bg-emerald-500/10 blur-2xl" />
-              <div className="relative">
-                <MarketplacePreview />
-                <div className="mt-4 flex flex-wrap justify-center gap-3 text-xs">
-                  {[
-                    { icon: Tag, label: "Retail & Wholesale" },
-                    { icon: Shield, label: "Verified Sellers" },
-                    { icon: Truck, label: "Worldwide Delivery" },
-                  ].map(({ icon: Icon, label }) => (
-                    <div key={label} className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-slate-300">
-                      <Icon className="h-3.5 w-3.5 text-emerald-400" />
-                      {label}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <AnimatedSection direction="right" delay={0.2}>
+              <MarketplacePreview />
+            </AnimatedSection>
           </div>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          BUSINESS INSIGHTS, PERSONAL AI ASSISTANT & SMS COMMUNICATIONS
-      ══════════════════════════════════════════════ */}
+      {/* Business Insights & AI Assistant */}
       <section className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 py-20 text-white sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-
-          {/* Business Insights Section */}
+          {/* Business Insights */}
           <div className="mb-16">
             <div className="grid items-center gap-12 lg:grid-cols-2">
               <div>
-                <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-amber-300">
-                  <Lightbulb className="h-3.5 w-3.5" /> Built-In Business Insights
-                </span>
-                <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
-                  Decisions backed by{" "}
-                  <span className="text-amber-300">your own numbers</span>
-                </h2>
-                <p className="mb-8 text-lg leading-relaxed text-slate-300">
-                  FundiFlow reads the data you already capture — orders, payments, stock and staff activity — and turns it into clear, actionable insights for your business. No spreadsheets, no guesswork.
-                </p>
-                <ul className="space-y-3">
+                <AnimatedSection direction="left">
+                  <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-amber-300">
+                    <Lightbulb className="h-3.5 w-3.5" /> Built-In Business Insights
+                  </span>
+                  <h2 className="mb-4 text-4xl font-black leading-tight sm:text-5xl">
+                    Decisions backed by{" "}
+                    <span className="text-amber-300">your own numbers</span>
+                  </h2>
+                  <p className="mb-8 text-lg leading-relaxed text-slate-300">
+                    FundiFlow reads the data you already capture — orders, payments, stock and staff activity — and turns it into clear, actionable insights for your business.
+                  </p>
+                </AnimatedSection>
+
+                <StaggerContainer className="space-y-3">
                   {INSIGHTS_FEATURES.map((f) => (
-                    <li key={f} className="flex items-start gap-3 text-sm">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                      <span className="text-slate-300">{f}</span>
-                    </li>
+                    <StaggerChild key={f}>
+                      <motion.div
+                        className="flex items-start gap-3 text-sm"
+                        whileHover={{ x: 8, transition: { duration: 0.2 } }}
+                      >
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                        <span className="text-slate-300">{f}</span>
+                      </motion.div>
+                    </StaggerChild>
                   ))}
-                </ul>
+                </StaggerContainer>
               </div>
 
-              <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm">
-                <div className="mb-4 flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/20">
-                    <Lightbulb className="h-4 w-4 text-amber-300" />
-                  </div>
-                  <span className="font-semibold text-white">This Week&apos;s Insights</span>
-                  <span className="ml-auto rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
-                    Updated daily
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {[
-                    { tag: "Revenue", tagColor: "bg-emerald-500/20 text-emerald-300", msg: "Revenue is up 23% vs last month. Your best-selling style is the 3-piece suit." },
-                    { tag: "Stock Alert", tagColor: "bg-amber-500/20 text-amber-300", msg: "3 fabrics are running low: Black Suiting (2.5m), Navy Linen (1m), White Cotton Poplin (0.5m)." },
-                    { tag: "Reorder", tagColor: "bg-blue-500/20 text-blue-300", msg: "Based on this month's orders, reorder at least 12m of each to avoid delays next week." },
-                  ].map((m, i) => (
-                    <div key={i} className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
-                      <span className={`mb-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${m.tagColor}`}>
-                        {m.tag}
-                      </span>
-                      <p>{m.msg}</p>
+              <AnimatedSection direction="right" delay={0.2}>
+                <motion.div
+                  className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm"
+                  whileHover={{ y: -4 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/20">
+                      <Lightbulb className="h-4 w-4 text-amber-300" />
                     </div>
-                  ))}
-                </div>
-                <div className="mt-3 text-right text-xs text-slate-400">
-                  📊 Surfaced automatically from your live business data
-                </div>
-              </div>
+                    <span className="font-semibold text-white">This Week's Insights</span>
+                    <span className="ml-auto rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                      Updated daily
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      { tag: "Revenue", tagColor: "bg-emerald-500/20 text-emerald-300", msg: "Revenue is up 23% vs last month. Your best-selling style is the 3-piece suit." },
+                      { tag: "Stock Alert", tagColor: "bg-amber-500/20 text-amber-300", msg: "3 fabrics are running low: Black Suiting (2.5m), Navy Linen (1m), White Cotton Poplin (0.5m)." },
+                      { tag: "Reorder", tagColor: "bg-blue-500/20 text-blue-300", msg: "Based on this month's orders, reorder at least 12m of each to avoid delays next week." },
+                    ].map((m, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: 30 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: i * 0.15, duration: 0.5 }}
+                        className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200"
+                        whileHover={{ scale: 1.02, backgroundColor: "rgba(51,65,85,1)" }}
+                      >
+                        <span className={`mb-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${m.tagColor}`}>
+                          {m.tag}
+                        </span>
+                        <p>{m.msg}</p>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              </AnimatedSection>
             </div>
           </div>
 
-          {/* Personal AI Assistant Section */}
-          <div className="mb-16 border-t border-slate-700/50 pt-16">
+          {/* AI Assistant */}
+          <div className="border-t border-slate-700/50 pt-16">
             <div className="grid items-center gap-12 lg:grid-cols-2">
-              <div className="order-2 lg:order-1">
+              <AnimatedSection direction="right">
                 <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm">
                   <div className="mb-4 flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-400/20">
+                    <motion.div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-400/20"
+                      animate={{ boxShadow: ["0 0 0px rgba(168,85,247,0)", "0 0 20px rgba(168,85,247,0.3)", "0 0 0px rgba(168,85,247,0)"] }}
+                      transition={{ duration: 3, repeat: Infinity }}
+                    >
                       <Bot className="h-4 w-4 text-purple-300" />
-                    </div>
+                    </motion.div>
                     <span className="font-semibold text-white">Your AI Assistant</span>
                     <span className="ml-auto rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-400">
                       Always available
                     </span>
                   </div>
                   <div className="space-y-3">
-                    <div className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/20">
-                          <Sparkles className="h-3 w-3 text-purple-300" />
+                    {[
+                      { icon: Sparkles, text: "I notice you have 5 orders due this week and your team is at 80% capacity. Would you like me to recommend which orders to prioritize?" },
+                      { icon: Sparkles, text: "Your most profitable service is custom tailoring at KES 12,500 average. Consider promoting this service to boost margins." },
+                    ].map((msg, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: 0.2 + i * 0.15, duration: 0.5 }}
+                        className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200"
+                        whileHover={{ scale: 1.01 }}
+                      >
+                        <div className="mb-1.5 flex items-center gap-2">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/20">
+                            <Sparkles className="h-3 w-3 text-purple-300" />
+                          </div>
+                          <span className="text-xs text-purple-300 font-semibold">AI Assistant</span>
                         </div>
-                        <span className="text-xs text-purple-300 font-semibold">AI Assistant</span>
-                      </div>
-                      <p>&quot;I notice you have 5 orders due this week and your team is at 80% capacity. Would you like me to recommend which orders to prioritize and suggest hiring temporary help?&quot;</p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/20">
-                          <Sparkles className="h-3 w-3 text-purple-300" />
-                        </div>
-                        <span className="text-xs text-purple-300 font-semibold">AI Assistant</span>
-                      </div>
-                      <p>&quot;Your most profitable service is custom tailoring at KES 12,500 average. Consider promoting this service to boost margins by 15%.&quot;</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-right text-xs text-slate-400">
-                    🤖 Personalized recommendations from your business data
+                        <p>{msg.text}</p>
+                      </motion.div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              </AnimatedSection>
 
-              <div className="order-1 lg:order-2">
+              <AnimatedSection direction="left" delay={0.1}>
                 <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-purple-300">
                   <Bot className="h-3.5 w-3.5" /> Personal AI Assistant
                 </span>
@@ -884,9 +1243,9 @@ export default function HomePage() {
                   <span className="text-purple-300">Business Coach</span>
                 </h2>
                 <p className="mb-8 text-lg leading-relaxed text-slate-300">
-                  FundiFlow&apos;s AI assistant analyzes your business data to provide personalized recommendations, answer questions about your performance, and surface opportunities you might have missed. Like having a business consultant on your team 24/7.
+                  FundiFlow's AI assistant analyzes your business data to provide personalized recommendations, answer questions about your performance, and surface opportunities you might have missed.
                 </p>
-                <ul className="space-y-3">
+                <StaggerContainer className="space-y-3">
                   {[
                     "Analyze revenue trends and identify growth opportunities",
                     "Detect operational bottlenecks before they impact delivery",
@@ -894,301 +1253,382 @@ export default function HomePage() {
                     "Recommend product mix adjustments for better profitability",
                     "Answer questions about your business performance instantly",
                   ].map((f) => (
-                    <li key={f} className="flex items-start gap-3 text-sm">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-purple-400" />
-                      <span className="text-slate-300">{f}</span>
-                    </li>
+                    <StaggerChild key={f}>
+                      <motion.div
+                        className="flex items-start gap-3 text-sm"
+                        whileHover={{ x: 8, transition: { duration: 0.2 } }}
+                      >
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-purple-400" />
+                        <span className="text-slate-300">{f}</span>
+                      </motion.div>
+                    </StaggerChild>
                   ))}
-                </ul>
-              </div>
+                </StaggerContainer>
+              </AnimatedSection>
             </div>
           </div>
 
-          {/* SMS Section */}
-          <div className="border-t border-slate-700/50 pt-16">
-            <div className="mb-10 text-center">
-              <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-blue-300">
-                <MessageSquare className="h-3.5 w-3.5" /> Automated SMS
-              </span>
-              <h3 className="text-2xl font-bold text-white sm:text-3xl">
-                Keep customers informed with <span className="text-blue-300">automated SMS</span>
-              </h3>
-              <p className="mt-2 text-slate-400">One-way notifications · Order updates · Sent automatically</p>
-            </div>
+          {/* Automated SMS */}
+          <div className="mt-16 border-t border-slate-700/50 pt-16">
+            <AnimatedSection>
+              <div className="mb-10 text-center">
+                <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-blue-300">
+                  <MessageCircle className="h-3.5 w-3.5" /> Automated SMS
+                </span>
+                <h3 className="text-2xl font-bold text-white sm:text-3xl">
+                  Keep customers informed with <span className="text-blue-300">automated SMS</span>
+                </h3>
+                <p className="mt-2 text-slate-400">One-way notifications · Order updates · Sent automatically</p>
+              </div>
+            </AnimatedSection>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm transition hover:border-slate-600">
-                <div className="mb-4 flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-400/20">
-                    <MessageSquare className="h-4 w-4 text-blue-300" />
+            <StaggerContainer className="grid gap-6 md:grid-cols-2">
+              <StaggerChild>
+                <motion.div
+                  className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm"
+                  whileHover={{ y: -4, transition: { duration: 0.25 } }}
+                >
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-400/20">
+                      <MessageCircle className="h-4 w-4 text-blue-300" />
+                    </div>
+                    <span className="font-semibold text-white">Delay Alert</span>
                   </div>
-                  <span className="font-semibold text-white">Order Update</span>
-                  <span className="ml-auto rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-400">Delay Alert</span>
-                </div>
-                <div className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
-                  <div className="mb-1 text-xs text-slate-400">📱 OUTGOING SMS</div>
-                  &quot;Good afternoon Calvince Njia, your order #ON005 (10 white shirts, 20 black trousers) has been delayed. New completion date: Monday, 8 June 2026. We apologise for the inconvenience. — Smart Fabrics Ltd&quot;
-                </div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-                  <Clock className="h-3 w-3" />
-                  Automatically triggered when order status changes to &apos;delayed&apos;
-                </div>
-              </div>
+                  <motion.div
+                    className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200"
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.3, duration: 0.5 }}
+                  >
+                    <div className="mb-1 text-xs text-slate-400">📱 OUTGOING SMS</div>
+                    "Good afternoon Calvince Njia, your order #ON005 (10 white shirts, 20 black trousers) has been delayed. New completion date: Monday, 8 June 2026. We apologise for the inconvenience."
+                  </motion.div>
+                </motion.div>
+              </StaggerChild>
 
-              <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm transition hover:border-slate-600">
-                <div className="mb-4 flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-400/20">
-                    <MessageSquare className="h-4 w-4 text-green-300" />
+              <StaggerChild>
+                <motion.div
+                  className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm"
+                  whileHover={{ y: -4, transition: { duration: 0.25 } }}
+                >
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-400/20">
+                      <MessageCircle className="h-4 w-4 text-green-300" />
+                    </div>
+                    <span className="font-semibold text-white">Ready for Pickup</span>
                   </div>
-                  <span className="font-semibold text-white">Order Update</span>
-                  <span className="ml-auto rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">Ready for Pickup</span>
-                </div>
-                <div className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200">
-                  <div className="mb-1 text-xs text-slate-400">📱 OUTGOING SMS</div>
-                  &quot;Good afternoon Calvince Njia, your order #ON005 (10 white shirts, 20 black trousers) is complete and ready for pickup. Thank you for choosing Smart Fabrics Ltd.&quot;
-                </div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-                  <Clock className="h-3 w-3" />
-                  Automatically sent when order status changes to &apos;completed&apos;
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 rounded-xl border border-slate-700/50 bg-slate-800/40 p-4">
-              <div className="flex flex-wrap justify-center gap-6 text-sm">
-                <div className="flex items-center gap-2">
-                  <Lightbulb className="h-4 w-4 text-amber-300" />
-                  <span className="text-slate-300">Business Insights:</span>
-                  <span className="text-slate-400">Trends · Recommendations · Stock alerts from your data</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-purple-300" />
-                  <span className="text-slate-300">AI Assistant:</span>
-                  <span className="text-slate-400">Personalized business coaching · Instant answers</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-blue-300" />
-                  <span className="text-slate-300">SMS Alerts:</span>
-                  <span className="text-slate-400">One-way notifications · Order updates · Sent automatically</span>
-                </div>
-              </div>
-            </div>
+                  <motion.div
+                    className="rounded-2xl bg-slate-700 px-4 py-3 text-sm text-slate-200"
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.4, duration: 0.5 }}
+                  >
+                    <div className="mb-1 text-xs text-slate-400">📱 OUTGOING SMS</div>
+                    "Good afternoon Calvince Njia, your order #ON005 is complete and ready for pickup. Thank you for choosing Smart Fabrics Ltd."
+                  </motion.div>
+                </motion.div>
+              </StaggerChild>
+            </StaggerContainer>
           </div>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          HOW IT WORKS
-      ══════════════════════════════════════════════ */}
+      {/* How It Works */}
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-14 text-center">
-            <span className="mb-3 inline-block rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
-              How It Works
-            </span>
-            <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              Up and running in one day
-            </h2>
-          </div>
-          <div className="grid gap-8 sm:grid-cols-3">
+          <AnimatedSection>
+            <div className="mb-14 text-center">
+              <span className="mb-3 inline-block rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
+                How It Works
+              </span>
+              <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
+                Up and running in one day
+              </h2>
+            </div>
+          </AnimatedSection>
+
+          <StaggerContainer className="grid gap-8 sm:grid-cols-3">
             {HOW_IT_WORKS.map(({ step, title, desc }) => (
-              <div key={step} className="text-center">
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white shadow-lg shadow-emerald-600/20">
-                  {step}
-                </div>
-                <h3 className="mb-2 text-xl font-bold text-slate-900">{title}</h3>
-                <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
-              </div>
+              <StaggerChild key={step}>
+                <motion.div className="text-center">
+                  <motion.div
+                    className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white shadow-lg shadow-emerald-600/20"
+                    whileHover={{ scale: 1.1, rotate: 5, transition: { type: "spring", stiffness: 200 } }}
+                  >
+                    {step}
+                  </motion.div>
+                  <h3 className="mb-2 text-xl font-bold text-slate-900">{title}</h3>
+                  <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
+                </motion.div>
+              </StaggerChild>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          ROLE-BASED ACCESS
-      ══════════════════════════════════════════════ */}
+      {/* Role-Based Access */}
       <section className="bg-slate-50 py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
-              <span className="mb-3 inline-block rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
-                Team Management
-              </span>
-              <h2 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
-                The right access for every role
-              </h2>
-              <p className="mb-6 text-lg text-slate-500">
-                From solo tailors to large workshops with 50+ staff — FundiFlow&apos;s role-based access ensures everyone sees exactly what they need, nothing more.
-              </p>
-              <p className="text-sm text-slate-500">
-                <strong className="text-slate-900">Owner privacy built in.</strong>{" "}
-                Financial earnings, profit data and business insights are private to you by default. You decide what your manager can see and when.
-              </p>
+              <AnimatedSection direction="left">
+                <span className="mb-3 inline-block rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
+                  Team Management
+                </span>
+                <h2 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
+                  The right access for every role
+                </h2>
+                <p className="mb-6 text-lg text-slate-500">
+                  From solo tailors to large workshops with 50+ staff — FundiFlow's role-based access ensures everyone sees exactly what they need, nothing more.
+                </p>
+                <p className="text-sm text-slate-500">
+                  <strong className="text-slate-900">Owner privacy built in.</strong>{" "}
+                  Financial earnings, profit data and business insights are private to you by default.
+                </p>
+              </AnimatedSection>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-              {ROLES.map(({ role, access }, i) => (
-                <div
-                  key={role}
-                  className={`flex items-start justify-between gap-4 rounded-xl px-4 py-3 ${i === 0 ? "bg-emerald-50" : ""}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`h-2 w-2 rounded-full ${i === 0 ? "bg-emerald-500" : "bg-slate-300"}`} />
-                    <span className={`text-sm font-semibold ${i === 0 ? "text-emerald-800" : "text-slate-700"}`}>
-                      {role}
-                    </span>
-                  </div>
-                  <span className="text-right text-xs text-slate-500">{access}</span>
-                </div>
-              ))}
-            </div>
+
+            <AnimatedSection direction="right" delay={0.2}>
+              <motion.div
+                className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"
+                whileHover={{ y: -4, boxShadow: "0 12px 30px rgba(0,0,0,0.06)" }}
+                transition={{ duration: 0.3 }}
+              >
+                {ROLES.map(({ role, access }, i) => (
+                  <motion.div
+                    key={role}
+                    initial={{ opacity: 0, x: 30 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.08, duration: 0.4 }}
+                    className={`flex items-start justify-between gap-4 rounded-xl px-4 py-3 ${i === 0 ? "bg-emerald-50" : ""}`}
+                    whileHover={{ backgroundColor: i === 0 ? "#ecfdf5" : "#f8fafc" }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <motion.div
+                        className={`h-2 w-2 rounded-full ${i === 0 ? "bg-emerald-500" : "bg-slate-300"}`}
+                        animate={i === 0 ? { scale: [1, 1.3, 1] } : {}}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      />
+                      <span className={`text-sm font-semibold ${i === 0 ? "text-emerald-800" : "text-slate-700"}`}>
+                        {role}
+                      </span>
+                    </div>
+                    <span className="text-right text-xs text-slate-500">{access}</span>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </AnimatedSection>
           </div>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          TESTIMONIALS
-      ══════════════════════════════════════════════ */}
+      {/* Testimonials */}
       <section className="py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-14 text-center">
-            <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
-              Trusted by tailors worldwide
-            </h2>
-            <p className="mt-3 text-slate-500">
-              Real businesses. Real results. Hear from tailors who transformed their operations with FundiFlow.
-            </p>
-          </div>
-          <div className="grid gap-6 sm:grid-cols-3">
+          <AnimatedSection>
+            <div className="mb-14 text-center">
+              <h2 className="text-4xl font-black text-slate-900 sm:text-5xl">
+                Trusted by tailors worldwide
+              </h2>
+              <p className="mt-3 text-slate-500">
+                Real businesses. Real results. Hear from tailors who transformed their operations with FundiFlow.
+              </p>
+            </div>
+          </AnimatedSection>
+
+          <StaggerContainer className="grid gap-6 sm:grid-cols-3">
             {TESTIMONIALS.map(({ name, role, quote, stars }) => (
-              <div key={name} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="mb-3 flex gap-0.5">
-                  {Array.from({ length: stars }).map((_, i) => (
-                    <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  ))}
-                </div>
-                <p className="mb-5 text-sm leading-relaxed text-slate-600">&quot;{quote}&quot;</p>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-700">
-                    {name[0]}
+              <StaggerChild key={name}>
+                <motion.div
+                  className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+                  whileHover={{ y: -6, boxShadow: "0 16px 40px rgba(0,0,0,0.08)" }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <motion.div
+                    className="mb-3 flex gap-0.5"
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    viewport={{ once: true }}
+                  >
+                    {Array.from({ length: stars }).map((_, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, scale: 0, rotate: -180 }}
+                        whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: i * 0.08, type: "spring", stiffness: 200 }}
+                      >
+                        <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                  <p className="mb-5 text-sm leading-relaxed text-slate-600">"{quote}"</p>
+                  <div className="flex items-center gap-3">
+                    <motion.div
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-700"
+                      whileHover={{ scale: 1.15 }}
+                    >
+                      {name[0]}
+                    </motion.div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{name}</p>
+                      <p className="text-xs text-slate-500">{role}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{name}</p>
-                    <p className="text-xs text-slate-500">{role}</p>
-                  </div>
-                </div>
-              </div>
+                </motion.div>
+              </StaggerChild>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          PRICING TEASER
-      ══════════════════════════════════════════════ */}
+      {/* Pricing Teaser */}
       <section className="bg-slate-50 py-20">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6">
-          <span className="mb-3 inline-block rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
-            Pricing
-          </span>
-          <h6 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
-            Simple, honest pricing
-          </h6>
-          <p className="mx-auto mb-10 max-w-lg text-lg text-slate-500">
-            Three plans built for every stage of your tailoring journey — from solo needle to full enterprise workshop.
-          </p>
-          <div className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-3">
-            {[
-              { name: "Sindano", swahili: "The Needle", price: "690", color: "border-slate-200", badge: null },
-              { name: "Fundi", swahili: "The Craftsman", price: "3,690", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
-              { name: "Dhahabu", swahili: "Golden Standard", price: "9,990", color: "border-slate-200", badge: null },
-            ].map(({ name, swahili, price, color, badge }) => (
-              <div key={name} className={`relative rounded-2xl border bg-white p-6 shadow-sm ${color}`}>
-                {badge && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-emerald-600 px-3 py-0.5 text-xs font-bold text-white">
-                    {badge}
-                  </span>
-                )}
-                <p className="text-lg font-black text-slate-900">{name}</p>
-                <p className="mb-4 text-xs text-slate-400">{swahili}</p>
-                <p className="text-3xl font-black text-slate-900">
-                  KES {price}
-                  <span className="text-sm font-normal text-slate-400">/mo</span>
-                </p>
-              </div>
+          <AnimatedSection>
+            <span className="mb-3 inline-block rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-slate-600">
+              Pricing
+            </span>
+          </AnimatedSection>
+          <AnimatedSection delay={0.1}>
+            <h2 className="mb-4 text-4xl font-black text-slate-900 sm:text-5xl">
+              Simple, honest pricing
+            </h2>
+          </AnimatedSection>
+          <AnimatedSection delay={0.2}>
+            <p className="mx-auto mb-10 max-w-lg text-lg text-slate-500">
+              Three plans built for every stage of your tailoring journey — from solo needle to full enterprise workshop.
+            </p>
+          </AnimatedSection>
+
+          <StaggerContainer className="mx-auto grid max-w-4xl gap-6 sm:grid-cols-3">
+            {PRICING_PLANS.map(({ name, swahili, price, color, badge }) => (
+              <StaggerChild key={name}>
+                <motion.div
+                  className={`relative rounded-2xl border bg-white p-6 shadow-sm ${color}`}
+                  whileHover={{ y: -8, scale: 1.02, transition: { duration: 0.3 } }}
+                >
+                  {badge && (
+                    <motion.span
+                      initial={{ opacity: 0, y: -10 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-emerald-600 px-3 py-0.5 text-xs font-bold text-white"
+                    >
+                      {badge}
+                    </motion.span>
+                  )}
+                  <p className="text-lg font-black text-slate-900">{name}</p>
+                  <p className="mb-4 text-xs text-slate-400">{swahili}</p>
+                  <p className="text-3xl font-black text-slate-900">
+                    KES {price}
+                    <span className="text-sm font-normal text-slate-400">/mo</span>
+                  </p>
+                </motion.div>
+              </StaggerChild>
             ))}
-          </div>
-          <div className="mt-8">
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-8 py-4 text-base font-bold text-white transition-all hover:bg-slate-800"
-            >
-              See Full Pricing Details
-              <ArrowRight className="h-5 w-5" />
-            </Link>
-          </div>
+          </StaggerContainer>
+
+          <AnimatedSection delay={0.4}>
+            <div className="mt-8">
+              <MagneticButton
+                href="/pricing"
+                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-8 py-4 text-base font-bold text-white transition-all hover:bg-slate-800"
+              >
+                See Full Pricing Details
+                <motion.span
+                  animate={{ x: [0, 5, 0] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </motion.span>
+              </MagneticButton>
+            </div>
+          </AnimatedSection>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          PWA / OFFLINE STRIP
-      ══════════════════════════════════════════════ */}
+      {/* PWA / Offline Strip */}
       <section className="py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid gap-6 sm:grid-cols-3">
+          <StaggerContainer className="grid gap-6 sm:grid-cols-3">
             {[
               { icon: Smartphone, title: "Works Offline", desc: "No internet? No problem. FundiFlow syncs in the background and works fully offline on any device." },
               { icon: Clock, title: "Real-Time Sync", desc: "All your data syncs instantly across devices. Your tailor updates an order — you see it immediately." },
               { icon: TrendingUp, title: "Grows With You", desc: "Start solo and scale to 50+ staff. FundiFlow's plans and features grow as your business grows." },
             ].map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="flex gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
-                  <Icon className="h-5 w-5 text-emerald-700" />
-                </div>
-                <div>
-                  <h3 className="mb-1 font-bold text-slate-900">{title}</h3>
-                  <p className="text-sm text-slate-500">{desc}</p>
-                </div>
-              </div>
+              <StaggerChild key={title}>
+                <motion.div
+                  className="flex gap-4"
+                  whileHover={{ x: 6, transition: { duration: 0.2 } }}
+                >
+                  <motion.div
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100"
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                  >
+                    <Icon className="h-5 w-5 text-emerald-700" />
+                  </motion.div>
+                  <div>
+                    <h3 className="mb-1 font-bold text-slate-900">{title}</h3>
+                    <p className="text-sm text-slate-500">{desc}</p>
+                  </div>
+                </motion.div>
+              </StaggerChild>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════
-          FINAL CTA
-      ══════════════════════════════════════════════ */}
+      {/* Final CTA */}
       <section className="bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 py-24 text-white">
         <div className="mx-auto max-w-4xl px-4 text-center sm:px-6">
-          <h2 className="mb-4 text-5xl font-black leading-tight sm:text-6xl">
-            Work Smart.{" "}
-            <span className="text-emerald-400">Deliver Perfect.</span>
-            <br />
-            <span className="text-amber-300">Grow Faster.</span>
-          </h2>
-          <p className="mx-auto mb-10 max-w-lg text-lg text-slate-300">
-            Technology built for modern African businesses. Join the shops, wholesalers, hardwares and tailors already running their operations with FundiFlow.
-          </p>
-          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href="/register"
-              className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-8 py-4 text-base font-bold text-white shadow-lg shadow-emerald-500/30 transition-all hover:scale-105 hover:bg-emerald-400"
-            >
-              Get Started Today
-              <ArrowRight className="h-5 w-5" />
-            </Link>
-            <a
-              href={DEMO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-8 py-4 text-base font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
-            >
-              <MessageCircle className="h-5 w-5" />
-              Request a Demo
-            </a>
-          </div>
-          <p className="mt-6 text-sm text-slate-500">
-            📞 0142 225 233 &nbsp;·&nbsp; ✉️ adventnurutech@gmail.com
-          </p>
+          <AnimatedSection>
+            <h2 className="mb-4 text-5xl font-black leading-tight sm:text-6xl">
+              Work Smart.{" "}
+              <span className="text-emerald-400">Deliver Perfect.</span>
+              <br />
+              <span className="text-amber-300">Grow Faster.</span>
+            </h2>
+          </AnimatedSection>
+          <AnimatedSection delay={0.1}>
+            <p className="mx-auto mb-10 max-w-lg text-lg text-slate-300">
+              Technology built for modern tailoring businesses. Join the tailors already running their operations with FundiFlow.
+            </p>
+          </AnimatedSection>
+          <AnimatedSection delay={0.2}>
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <MagneticButton
+                href="/register"
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-8 py-4 text-base font-bold text-white shadow-lg shadow-emerald-500/30 transition-all hover:bg-emerald-400"
+              >
+                Get Started Today
+                <motion.span
+                  animate={{ x: [0, 5, 0] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </motion.span>
+              </MagneticButton>
+              <MagneticButton
+                href={DEMO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-8 py-4 text-base font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
+              >
+                <MessageCircle className="h-5 w-5" />
+                Request a Demo
+              </MagneticButton>
+            </div>
+          </AnimatedSection>
+          <AnimatedSection delay={0.3}>
+            <p className="mt-6 text-sm text-slate-500">
+              📞 0142 225 233 · ✉️ adventnurutech@gmail.com
+            </p>
+          </AnimatedSection>
         </div>
       </section>
     </MarketingShell>
