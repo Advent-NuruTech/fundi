@@ -13,6 +13,11 @@ import { appendOrderImageId, createOrder, fetchMembers, listenCustomers } from "
 import { uploadImage } from "@/services/cloudinary/upload.service";
 import { notifyNewOrder } from "@/services/notification-catalog";
 import { sendSms } from "@/lib/sms/sendSms";
+import { appendPortalOnboarding } from "@/lib/customer-portal";
+import {
+  getCustomerMessagingInfo,
+  markPortalOnboardingSent,
+} from "@/services/customer-portal.service";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,10 +136,27 @@ export function NewOrderModulePage() {
         const bizName = business?.name ?? "our workshop";
         const trackingLine = isLocalhost
           ? ""
-          : `\nTrack your order:\n${origin}/track/${trackingToken}\n`;
-        const message = `Hello ${firstName},\n\nYour order ${orderNumber} has been created at ${bizName}.${trackingLine}\nThank you.`;
+          : `\nTrack your order online:\n${origin}/auth/customer-login\n`;
+        let message = `Hello ${firstName},\n\nYour order ${orderNumber} has been created at ${bizName}.${trackingLine}\nThank you.`;
+
+        // First notification ever for this customer → include the Customer
+        // Portal onboarding block with their login id + default password.
+        let onboardingIncluded = false;
+        const messagingInfo = await getCustomerMessagingInfo(businessId, customer.id).catch(() => null);
+        if (messagingInfo && !messagingInfo.portalOnboardingSent) {
+          message = appendPortalOnboarding(message, {
+            email: messagingInfo.email ?? undefined,
+            phone: messagingInfo.phone,
+          });
+          onboardingIncluded = true;
+        }
+
         const smsResult = await sendSms(customer.phone, message);
-        if (!smsResult.success) {
+        if (smsResult.success) {
+          if (onboardingIncluded) {
+            await markPortalOnboardingSent(businessId, customer.id).catch(() => {});
+          }
+        } else {
           console.warn("Order creation SMS failed:", smsResult.error);
         }
       }

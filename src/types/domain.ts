@@ -255,6 +255,12 @@ export interface Customer {
   updatedAt: string;
   measurements: MeasurementSet;
   portalUserId?: string;
+  /** Login id assigned for the customer portal (email or normalized phone). */
+  portalLoginId?: string;
+  /** Whether the portal account still needs to be provisioned. */
+  portalProvisionNeeded?: boolean;
+  /** Whether the portal-onboarding SMS block has been sent to this customer. */
+  portalOnboardingSent?: boolean;
 }
 
 export interface OrderGarmentItem {

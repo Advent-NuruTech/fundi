@@ -24,6 +24,7 @@ interface CustomerPortalContextValue {
   customerIds: string[];
   primaryCustomer: Customer | null;
   isLoaded: boolean;
+  refresh: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -50,6 +51,16 @@ export function CustomerPortalProvider({ children }: { children: ReactNode }) {
     });
   }, [router]);
 
+  const refresh = useCallback(async () => {
+    const recs = await getMyCustomerRecords();
+    setCustomers(recs);
+    const session = await getPortalSession();
+    if (session) {
+      setUserId(session.user.id);
+      setUserEmail(session.user.email ?? "");
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     await logoutCustomerPortal();
     router.replace("/auth/customer-login");
@@ -63,9 +74,10 @@ export function CustomerPortalProvider({ children }: { children: ReactNode }) {
       customerIds: customers.map((c) => c.id),
       primaryCustomer: customers[0] ?? null,
       isLoaded,
+      refresh,
       logout,
     }),
-    [userId, userEmail, customers, isLoaded, logout]
+    [userId, userEmail, customers, isLoaded, refresh, logout]
   );
 
   return (

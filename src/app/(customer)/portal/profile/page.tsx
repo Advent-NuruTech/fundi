@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { User, Phone, Mail, Lock, Loader2 } from "lucide-react";
+import { User, Phone, Mail, Lock, Loader2, Save } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import { supabase } from "@/lib/supabase";
+import { isSyntheticPortalEmail } from "@/lib/customer-portal";
+import { updatePortalContact } from "@/services/customer-portal.service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +13,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 export default function PortalProfilePage() {
-  const { primaryCustomer, userEmail } = useCustomerPortal();
+  const { primaryCustomer, userEmail, refresh } = useCustomerPortal();
+
+  const [fullName, setFullName] = useState(primaryCustomer?.fullName ?? "");
+  const [phone, setPhone] = useState(primaryCustomer?.phone ?? "");
+  const [email, setEmail] = useState(isSyntheticPortalEmail(userEmail) ? "" : userEmail);
+  const [savingContact, setSavingContact] = useState(false);
+
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPwd, setSavingPwd] = useState(false);
+
+  const contactDirty =
+    fullName !== (primaryCustomer?.fullName ?? "") ||
+    phone !== (primaryCustomer?.phone ?? "") ||
+    email.trim() !== (isSyntheticPortalEmail(userEmail) ? "" : userEmail);
+
+  const handleSaveContact = async () => {
+    if (!primaryCustomer) return;
+    if (!fullName.trim()) {
+      toast.error("Please enter your full name");
+      return;
+    }
+    const originalEmail = isSyntheticPortalEmail(userEmail) ? "" : userEmail;
+    setSavingContact(true);
+    const { error } = await updatePortalContact({
+      customerId: primaryCustomer.id,
+      fullName: fullName.trim(),
+      ...(phone !== primaryCustomer.phone ? { phone: phone.trim() } : {}),
+      ...(email.trim() !== originalEmail ? { email: email.trim() || undefined } : {}),
+    });
+    setSavingContact(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success("Profile updated");
+    await refresh();
+  };
 
   const handleChangePassword = async () => {
     if (!newPassword || newPassword !== confirmPassword) {
@@ -47,39 +83,60 @@ export default function PortalProfilePage() {
           <CardTitle className="text-sm">Account Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 px-5 pb-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-              <User className="h-5 w-5 text-emerald-700" />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Full name</p>
-              <p className="text-sm font-medium text-slate-900">
-                {primaryCustomer?.fullName ?? "—"}
-              </p>
-            </div>
+          <div>
+            <Label htmlFor="fullName" className="text-xs flex items-center gap-1">
+              <User className="h-3.5 w-3.5" /> Full name
+            </Label>
+            <Input
+              id="fullName"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="mt-1"
+            />
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100">
-              <Phone className="h-5 w-5 text-slate-500" />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Phone</p>
-              <p className="text-sm font-medium text-slate-900">
-                {primaryCustomer?.phone ?? "—"}
-              </p>
-            </div>
+          <div>
+            <Label htmlFor="phone" className="text-xs flex items-center gap-1">
+              <Phone className="h-3.5 w-3.5" /> Phone number
+            </Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="0712345678"
+              className="mt-1"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Changing your phone number updates your sign-in id. Use it the next time you log in.
+            </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100">
-              <Mail className="h-5 w-5 text-slate-500" />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Email</p>
-              <p className="text-sm font-medium text-slate-900">{userEmail || "—"}</p>
-            </div>
+          <div>
+            <Label htmlFor="email" className="text-xs flex items-center gap-1">
+              <Mail className="h-3.5 w-3.5" /> Email address
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="mt-1"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Leave blank to keep signing in with your phone number.
+            </p>
           </div>
+
+          <Button
+            onClick={handleSaveContact}
+            disabled={savingContact || !contactDirty}
+            className="w-full bg-emerald-700 hover:bg-emerald-800 mt-1"
+          >
+            {savingContact ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            Save Changes
+          </Button>
         </CardContent>
       </Card>
 
@@ -123,7 +180,7 @@ export default function PortalProfilePage() {
       </Card>
 
       <p className="text-xs text-center text-slate-400 pb-2">
-        To update your name or phone, contact the workshop directly.
+        Your phone number is also your sign-in id. You can change your password above at any time.
       </p>
     </div>
   );

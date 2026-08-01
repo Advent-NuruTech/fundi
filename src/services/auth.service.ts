@@ -22,8 +22,29 @@ async function callOnboardAPI(accessToken: string, body: Record<string, unknown>
 }
 
 export async function loginWithEmail(email: string, password: string) {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ loginId: email, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    session?: { access_token?: string; refresh_token?: string; expires_in?: number; expires_at?: number; token_type?: string; user?: unknown };
+  };
+
+  if (!res.ok) {
+    // Server only ever returns generic messages (no user enumeration).
+    throw new Error(data.error ?? "Invalid login credentials.");
+  }
+
+  if (!data.session?.access_token || !data.session?.refresh_token) {
+    throw new Error("Invalid login credentials.");
+  }
+
+  await supabase.auth.setSession({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+  });
 }
 
 export async function loginWithGoogle() {

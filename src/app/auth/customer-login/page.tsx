@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 export default function CustomerLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,7 +24,7 @@ export default function CustomerLoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await loginCustomerPortal(email, password);
+    const { error } = await loginCustomerPortal(loginId, password);
     setLoading(false);
     if (error) {
       toast.error(error);
@@ -46,27 +46,21 @@ export default function CustomerLoginPage() {
         <CardContent className="pt-2">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="email" className="text-xs">Email address</Label>
+              <Label htmlFor="loginId" className="text-xs">Email or phone number</Label>
               <Input
-                id="email"
-                type="email"
+                id="loginId"
+                type="text"
                 required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                autoComplete="username"
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
+                placeholder="you@example.com or 07XX XXX XXX"
                 className="mt-1"
               />
             </div>
             <div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-xs">Password</Label>
-                <Link
-                  href="/auth/forgot-password"
-                  className="text-[10px] text-emerald-700 hover:underline"
-                >
-                  Forgot password?
-                </Link>
               </div>
               <div className="relative mt-1">
                 <Input
@@ -88,6 +82,9 @@ export default function CustomerLoginPage() {
                   {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <p className="mt-1 text-[10px] text-slate-400">
+                Your first password was in the SMS you received when your order was created. You can change it after signing in.
+              </p>
             </div>
 
             <Button

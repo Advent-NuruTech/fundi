@@ -69,14 +69,13 @@ function LoginForm() {
     } catch (err) {
       setStep("idle");
       const message = err instanceof Error ? err.message : "";
-      if (message.toLowerCase().includes("invalid") || message.includes("user-not-found") || message.includes("wrong-password")) {
-        setError("Invalid email or password. Please try again.");
-      } else if (message.includes("too-many-requests") || message.toLowerCase().includes("rate limit")) {
-        setError("Too many attempts. Please try again later.");
-      } else if (message.includes("invitation")) {
+      if (message.includes("invitation")) {
         setError(message);
+      } else if (message.toLowerCase().includes("too many")) {
+        setError("Too many attempts. Please try again later.");
       } else {
-        setError("Login failed. Check your email and password.");
+        // Deliberately generic — never reveal whether the account exists.
+        setError("Invalid email or password.");
       }
     }
   };

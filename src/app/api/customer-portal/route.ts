@@ -1,0 +1,457 @@
+import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server";
+import {
+  buildPortalLoginId,
+  buildPortalSyntheticEmail,
+  buildDefaultPortalPassword,
+  normalizePhoneForAuth,
+  isSyntheticPortalEmail,
+} from "@/lib/customer-portal";
+
+function getSupabaseUrl() {
+  return (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/rest\/v1\/?$/, "");
+}
+
+function getAdminClient() {
+  const url = getSupabaseUrl();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  if (!url || !serviceKey) throw new Error("Missing Supabase admin env vars");
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+type AdminClient = ReturnType<typeof getAdminClient>;
+
+async function findAuthUserByEmail(email: string) {
+  const url = getSupabaseUrl();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  if (!url || !serviceKey || !anonKey) return null;
+
+  try {
+    const res = await fetch(`${url}/auth/v1/admin/users?filter=${encodeURIComponent(email)}`, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { users?: Array<{ id: string; email?: string | null; user_metadata?: Record<string, unknown> }> };
+    return (
+      (data.users ?? []).find(
+        (u) => (u.email ?? "").toLowerCase() === email.toLowerCase()
+      ) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function isPortalUser(user: { user_metadata?: Record<string, unknown> }): boolean {
+  return user.user_metadata?.portal_type === "customer";
+}
+
+function extractToken(request: Request): string | null {
+  const header = request.headers.get("Authorization") ?? "";
+  return header.startsWith("Bearer ") ? header.slice(7) : null;
+}
+
+async function requireCaller(admin: AdminClient, request: Request) {
+  const token = extractToken(request);
+  if (!token) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  const { data, error } = await admin.auth.getUser(token);
+  if (error || !data.user) return { error: NextResponse.json({ error: "Invalid session" }, { status: 401 }) };
+  return { caller: data.user };
+}
+
+async function requireBusinessMember(admin: AdminClient, userId: string, businessId: string) {
+  if (!businessId) return { error: NextResponse.json({ error: "Missing businessId" }, { status: 400 }) };
+  const { data: member } = await admin
+    .from("business_members")
+    .select("id")
+    .eq("business_id", businessId)
+    .eq("profile_id", userId)
+    .maybeSingle();
+  if (!member) return { error: NextResponse.json({ error: "Not a member of this business" }, { status: 403 }) };
+  return { member };
+}
+
+interface CustomerRow {
+  id: string;
+  business_id: string;
+  full_name: string;
+  phone: string;
+  email?: string | null;
+  portal_user_id?: string | null;
+}
+
+/**
+ * Provision the portal account for ONE customer.
+ * - login id = email (if present) else normalized phone
+ * - default password = normalized phone
+ * Reuses an existing portal account whose login id matches (dedupe), and
+ * creates a Supabase auth user + profiles row when none exists.
+ */
+async function provisionCustomerAccount(
+  admin: AdminClient,
+  customer: CustomerRow
+): Promise<{ status: "created" | "linked" | "skipped"; userId?: string; loginId?: string; password?: string; reason?: string }> {
+  const phone = normalizePhoneForAuth(customer.phone ?? "");
+  if (!phone) {
+    return { status: "skipped", reason: "missing-phone" };
+  }
+
+  const email = customer.email?.trim() || undefined;
+  const password = buildDefaultPortalPassword(phone);
+
+  // Resolve the human-facing login id and the canonical auth email.
+  const loginIdByEmail = buildPortalLoginId(email, phone);
+  const authEmailByEmail = email ? email.toLowerCase() : buildPortalSyntheticEmail(phone);
+
+  let existing = await findAuthUserByEmail(authEmailByEmail);
+
+  // The requested email is already held by a NON-customer (e.g. a staff or
+  // owner account). Fall back to phone-based login when the customer gave us
+  // an email; if phone login is also unavailable, skip and retry later.
+  if (existing && !isPortalUser(existing) && !email) {
+    return { status: "skipped", reason: "login-taken" };
+  }
+  if (existing && !isPortalUser(existing) && email) {
+    const phoneLoginEmail = buildPortalSyntheticEmail(phone);
+    existing = await findAuthUserByEmail(phoneLoginEmail);
+    if (existing && !isPortalUser(existing)) {
+      return { status: "skipped", reason: "login-taken" };
+    }
+    return createAndLinkPortalUser(admin, customer, phone, phoneLoginEmail, phone, password);
+  }
+
+  if (existing) {
+    // Same customer already has an account — just link the record.
+    await admin
+      .from("customers")
+      .update({ portal_user_id: existing.id, portal_login_id: loginIdByEmail, portal_provision_needed: false })
+      .eq("id", customer.id);
+    return { status: "linked", userId: existing.id, loginId: loginIdByEmail, password };
+  }
+
+  return createAndLinkPortalUser(admin, customer, phone, authEmailByEmail, loginIdByEmail, password);
+}
+
+async function createAndLinkPortalUser(
+  admin: AdminClient,
+  customer: CustomerRow,
+  phone: string,
+  authEmail: string,
+  loginId: string,
+  password: string
+): Promise<{ status: "created"; userId: string; loginId: string; password: string }> {
+  const { data, error } = await admin.auth.admin.createUser({
+    email: authEmail,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      portal_type: "customer",
+      display_name: customer.full_name,
+      phone,
+      business_id: customer.business_id,
+    },
+  });
+
+  if (error || !data.user) {
+    throw new Error(error?.message ?? "Failed to create portal account");
+  }
+
+  const uid = data.user.id;
+
+  await admin.from("profiles").upsert(
+    {
+      id: uid,
+      email: authEmail,
+      display_name: customer.full_name,
+      role: "customer",
+      roles: ["customer"],
+      business_id: null,
+      active: true,
+    },
+    { onConflict: "id" }
+  );
+
+  await admin
+    .from("customers")
+    .update({
+      portal_user_id: uid,
+      portal_login_id: loginId,
+      portal_provision_needed: false,
+    })
+    .eq("id", customer.id);
+
+  return { status: "created", userId: uid, loginId, password };
+}
+
+async function handleProvision(admin: AdminClient, caller: { id: string }, body: Record<string, unknown>) {
+  const { businessId, customerId } = body as { businessId: string; customerId: string };
+  if (!businessId || !customerId) {
+    return NextResponse.json({ error: "Missing businessId or customerId" }, { status: 400 });
+  }
+  const check = await requireBusinessMember(admin, caller.id, businessId);
+  if (check.error) return check.error;
+
+  const { data: customer } = await admin
+    .from("customers")
+    .select("id, business_id, full_name, phone, email, portal_user_id")
+    .eq("id", customerId)
+    .eq("business_id", businessId)
+    .maybeSingle();
+
+  if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+
+  const result = await provisionCustomerAccount(admin, customer as CustomerRow);
+  return NextResponse.json({ success: true, ...result });
+}
+
+async function handleProcess(admin: AdminClient, caller: { id: string }, body: Record<string, unknown>) {
+  const { businessId } = body as { businessId: string };
+  const check = await requireBusinessMember(admin, caller.id, businessId);
+  if (check.error) return check.error;
+
+  const { data: pending } = await admin
+    .from("customers")
+    .select("id, business_id, full_name, phone, email, portal_user_id")
+    .eq("business_id", businessId)
+    .eq("portal_provision_needed", true)
+    .is("portal_user_id", null)
+    .limit(500);
+
+  let created = 0;
+  let linked = 0;
+  let skipped = 0;
+
+  for (const customer of pending ?? []) {
+    try {
+      const result = await provisionCustomerAccount(admin, customer as CustomerRow);
+      if (result.status === "created") created++;
+      else if (result.status === "linked") linked++;
+      else skipped++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  return NextResponse.json({ success: true, processed: (pending ?? []).length, created, linked, skipped });
+}
+
+async function handleCheckLogin(admin: AdminClient, body: Record<string, unknown>) {
+  const { loginId, excludeUserId } = body as { loginId: string; excludeUserId?: string };
+  if (!loginId) return NextResponse.json({ error: "Missing loginId" }, { status: 400 });
+
+  const loginEmail = isSyntheticPortalEmail(loginId)
+    ? loginId.toLowerCase()
+    : loginId.includes("@")
+      ? loginId.toLowerCase()
+      : buildPortalSyntheticEmail(loginId);
+
+  const existing = await findAuthUserByEmail(loginEmail);
+  const available = !existing || existing.id === excludeUserId;
+
+  return NextResponse.json({ success: true, available });
+}
+
+async function handleUpdateContact(admin: AdminClient, caller: { id: string }, body: Record<string, unknown>) {
+  const { customerId, fullName, email, phone } = body as {
+    customerId: string;
+    fullName?: string;
+    email?: string;
+    phone?: string;
+  };
+
+  if (!customerId) return NextResponse.json({ error: "Missing customerId" }, { status: 400 });
+
+  // Portal customers may only update their OWN customer record.
+  const { data: customer } = await admin
+    .from("customers")
+    .select("id, business_id, full_name, phone, email, portal_user_id, portal_login_id")
+    .eq("id", customerId)
+    .maybeSingle();
+
+  if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+  if (customer.portal_user_id !== caller.id) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+
+  const currentLoginId = (customer.portal_login_id as string) || "";
+  const currentPhone = normalizePhoneForAuth((customer.phone as string) || "");
+
+  const nextFullName = fullName?.trim() || (customer.full_name as string);
+  const nextEmailRaw = email?.trim() || "";
+  const nextPhone = phone ? normalizePhoneForAuth(phone) : currentPhone;
+
+  if (!nextPhone) return NextResponse.json({ error: "Invalid phone number" }, { status: 400 });
+  if (nextEmailRaw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmailRaw)) {
+    return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+  }
+
+  const nextEmail = nextEmailRaw.toLowerCase();
+
+  // ── Uniqueness validation ──────────────────────────────────────────────────
+  // Email / phone login ids must stay unique across the whole platform.
+  const newLoginCandidate = nextEmail || nextPhone;
+  if (newLoginCandidate) {
+    const existing = await findAuthUserByEmail(
+      nextEmail ? nextEmail : buildPortalSyntheticEmail(nextPhone)
+    );
+    if (existing && existing.id !== caller.id) {
+      return NextResponse.json(
+        { error: `That ${nextEmail ? "email" : "phone number"} is already used by another account` },
+        { status: 409 }
+      );
+    }
+  }
+
+  // Phone must stay unique within the customer's own business.
+  if (nextPhone !== currentPhone) {
+    const { data: clash } = await admin
+      .from("customers")
+      .select("id")
+      .eq("business_id", customer.business_id as string)
+      .eq("phone", nextPhone)
+      .neq("id", customerId)
+      .maybeSingle();
+    if (clash) {
+      return NextResponse.json({ error: "Another customer in this workshop already uses that phone number" }, { status: 409 });
+    }
+  }
+
+  // ── Apply changes ──────────────────────────────────────────────────────────
+  const { data: authUser } = await admin.auth.admin.getUserById(caller.id);
+  const authEmail = authUser?.user?.email ?? "";
+  const isPhoneLogin = !nextEmailRaw && isSyntheticPortalEmail(authEmail);
+
+  const newAuthEmail = nextEmailRaw ? nextEmail : isPhoneLogin ? buildPortalSyntheticEmail(nextPhone) : authEmail;
+
+  if (newAuthEmail !== authEmail) {
+    await admin.auth.admin.updateUserById(caller.id, {
+      email: newAuthEmail,
+      email_confirm: true,
+      user_metadata: {
+        ...(authUser?.user?.user_metadata ?? {}),
+        display_name: nextFullName,
+        phone: nextPhone,
+        email: nextEmail || undefined,
+      },
+    });
+  }
+
+  const nextLoginId = nextEmail || (!nextEmailRaw && isPhoneLogin ? nextPhone : currentLoginId);
+
+  await admin
+    .from("customers")
+    .update({
+      full_name: nextFullName,
+      email: nextEmail || null,
+      phone: nextPhone,
+      portal_login_id: nextLoginId || null,
+    })
+    .eq("id", customerId);
+
+  await admin
+    .from("profiles")
+    .upsert(
+      {
+        id: caller.id,
+        email: newAuthEmail,
+        display_name: nextFullName,
+        role: "customer",
+        roles: ["customer"],
+        active: true,
+      },
+      { onConflict: "id" }
+    );
+
+  return NextResponse.json({
+    success: true,
+    fullName: nextFullName,
+    email: nextEmail || null,
+    phone: nextPhone,
+    loginId: nextLoginId || null,
+    loginEmail: newAuthEmail,
+  });
+}
+
+async function handleMarkOnboarding(admin: AdminClient, caller: { id: string }, body: Record<string, unknown>) {
+  const { businessId, customerId } = body as { businessId: string; customerId: string };
+  const check = await requireBusinessMember(admin, caller.id, businessId);
+  if (check.error) return check.error;
+  if (!customerId) return NextResponse.json({ error: "Missing customerId" }, { status: 400 });
+
+  await admin
+    .from("customers")
+    .update({ portal_onboarding_sent: true })
+    .eq("id", customerId)
+    .eq("business_id", businessId);
+
+  return NextResponse.json({ success: true });
+}
+
+async function handleMessageInfo(admin: AdminClient, caller: { id: string }, body: Record<string, unknown>) {
+  const { businessId, customerId } = body as { businessId: string; customerId: string };
+  const check = await requireBusinessMember(admin, caller.id, businessId);
+  if (check.error) return check.error;
+  if (!customerId) return NextResponse.json({ error: "Missing customerId" }, { status: 400 });
+
+  const { data: customer } = await admin
+    .from("customers")
+    .select("id, full_name, phone, email, portal_onboarding_sent")
+    .eq("id", customerId)
+    .eq("business_id", businessId)
+    .maybeSingle();
+
+  if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+
+  return NextResponse.json({
+    success: true,
+    customer: {
+      id: customer.id,
+      fullName: customer.full_name,
+      phone: customer.phone,
+      email: customer.email,
+      portalOnboardingSent: customer.portal_onboarding_sent,
+    },
+  });
+}
+
+export async function POST(request: Request) {
+  try {
+    const admin = getAdminClient();
+    const auth = await requireCaller(admin, request);
+    if (auth.error) return auth.error;
+    const caller = auth.caller!;
+
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const action = body.action as string;
+
+    switch (action) {
+      case "provision":
+        return await handleProvision(admin, caller, body);
+      case "process":
+        return await handleProcess(admin, caller, body);
+      case "check-login":
+        return await handleCheckLogin(admin, body);
+      case "update-contact":
+        return await handleUpdateContact(admin, caller, body);
+      case "mark-onboarding":
+        return await handleMarkOnboarding(admin, caller, body);
+      case "message-info":
+        return await handleMessageInfo(admin, caller, body);
+      default:
+        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    }
+  } catch (err) {
+    console.error("[customer-portal]", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Request failed" },
+      { status: 500 }
+    );
+  }
+}

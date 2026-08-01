@@ -1,6 +1,30 @@
 import { supabase } from "@/lib/supabase";
 import { transformArrayToCamel } from "@/lib/case-utils";
-import type { Customer, Order, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
+import type { Customer, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
+
+// ── API helper ────────────────────────────────────────────────────────────────
+
+async function portalFetch<T>(action: string, body: Record<string, unknown>): Promise<{ data?: T; error?: string }> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) return { error: "Not signed in" };
+
+  try {
+    const res = await fetch("/api/customer-portal", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action, ...body }),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & T;
+    if (!res.ok) return { error: (data.error as string) ?? "Request failed" };
+    return { data: data as T };
+  } catch {
+    return { error: "Network error. Please try again." };
+  }
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,6 +60,18 @@ export async function registerCustomerPortal(params: {
   name: string;
   phone: string;
 }): Promise<{ error?: string }> {
+  // Prevent duplicate portal accounts: if any customer record for this phone
+  // already has a portal account, the customer should sign in instead.
+  const { data: existingCustomers } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("phone", params.phone)
+    .not("portal_user_id", "is", null)
+    .limit(1);
+  if (existingCustomers?.length) {
+    return { error: "An account already exists for this phone number. Please sign in instead." };
+  }
+
   const { data, error } = await supabase.auth.signUp({
     email: params.email,
     password: params.password,
@@ -61,13 +97,126 @@ export async function registerCustomerPortal(params: {
   return {};
 }
 
+/**
+ * Sign a customer in. Accepts EITHER their email OR their phone number as the
+ * login id. Goes through the protected /api/auth/login endpoint which applies
+ * escalating lockouts and always returns a generic error (so the response
+ * never reveals whether an account exists).
+ */
 export async function loginCustomerPortal(
-  email: string,
+  loginId: string,
   password: string
 ): Promise<{ error?: string }> {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: error.message };
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ loginId, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    session?: { access_token?: string; refresh_token?: string; expires_in?: number; expires_at?: number; token_type?: string; user?: unknown };
+  };
+
+  if (!res.ok) {
+    return { error: data.error ?? "Invalid login credentials." };
+  }
+
+  if (!data.session?.access_token || !data.session?.refresh_token) {
+    return { error: "Invalid login credentials." };
+  }
+
+  await supabase.auth.setSession({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+  });
+
   return {};
+}
+
+// ── Account provisioning (automatic, behind the scenes) ──────────────────────
+
+export interface ProvisionResult {
+  status: "created" | "linked" | "skipped";
+  loginId?: string;
+  password?: string;
+  reason?: string;
+}
+
+export async function provisionPortalAccount(
+  businessId: string,
+  customerId: string
+): Promise<ProvisionResult | { error: string }> {
+  const { data, error } = await portalFetch<ProvisionResult>("provision", { businessId, customerId });
+  if (error) return { error };
+  return data ?? { status: "skipped" };
+}
+
+export async function processPendingPortalAccounts(businessId: string): Promise<void> {
+  await portalFetch<{ processed: number }>("process", { businessId });
+}
+
+// ── Account management ────────────────────────────────────────────────────────
+
+export async function checkPortalLoginAvailability(
+  loginId: string,
+  excludeUserId?: string
+): Promise<{ available: boolean } | { error: string }> {
+  const { data, error } = await portalFetch<{ available: boolean }>("check-login", {
+    loginId,
+    ...(excludeUserId ? { excludeUserId } : {}),
+  });
+  if (error) return { error };
+  return data ?? { available: false };
+}
+
+export interface UpdatePortalContactParams {
+  customerId: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface PortalContactResult {
+  fullName: string;
+  email: string | null;
+  phone: string;
+  loginId: string | null;
+  loginEmail: string;
+}
+
+export async function updatePortalContact(
+  params: UpdatePortalContactParams
+): Promise<{ data?: PortalContactResult; error?: string }> {
+  return portalFetch<PortalContactResult>("update-contact", params as unknown as Record<string, unknown>);
+}
+
+// ── First-notification onboarding ─────────────────────────────────────────────
+
+export interface CustomerMessagingInfo {
+  id: string;
+  fullName: string;
+  phone: string;
+  email: string | null;
+  portalOnboardingSent: boolean;
+}
+
+export async function getCustomerMessagingInfo(
+  businessId: string,
+  customerId: string
+): Promise<CustomerMessagingInfo | null> {
+  const { data, error } = await portalFetch<{ customer: CustomerMessagingInfo }>("message-info", {
+    businessId,
+    customerId,
+  });
+  if (error || !data?.customer) return null;
+  return data.customer;
+}
+
+export async function markPortalOnboardingSent(
+  businessId: string,
+  customerId: string
+): Promise<void> {
+  await portalFetch<{ success: boolean }>("mark-onboarding", { businessId, customerId });
 }
 
 export async function logoutCustomerPortal(): Promise<void> {
@@ -88,7 +237,7 @@ export async function getMyCustomerRecords(): Promise<Customer[]> {
 
   const { data } = await supabase
     .from("customers")
-    .select("id, business_id, full_name, phone, email, outstanding_balance, last_order_at, created_at, updated_at")
+    .select("id, business_id, full_name, phone, email, portal_login_id, outstanding_balance, last_order_at, created_at, updated_at")
     .eq("portal_user_id", uid);
 
   return data ? transformArrayToCamel<Customer>(data as Record<string, unknown>[]) : [];

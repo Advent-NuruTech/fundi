@@ -20,6 +20,11 @@ import { notifyOrderStageChanged, notifyOrderCompleted, notifyMaterialsConsumed 
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { sendSms } from "@/lib/sms/sendSms";
+import { appendPortalOnboarding } from "@/lib/customer-portal";
+import {
+  getCustomerMessagingInfo,
+  markPortalOnboardingSent,
+} from "@/services/customer-portal.service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -299,6 +304,24 @@ export function OrderDetailModulePage() {
     setEditGarments(updated);
   };
 
+  // Appends the Customer Portal onboarding block when this is the FIRST
+  // notification ever sent to the customer (login id + default password).
+  const prepareMessageWithOnboarding = async (baseMessage: string) => {
+    if (!order) return { message: baseMessage, onboardingIncluded: false, customerId: "" };
+    const messagingInfo = await getCustomerMessagingInfo(businessId, order.customerId).catch(() => null);
+    if (messagingInfo && !messagingInfo.portalOnboardingSent) {
+      return {
+        message: appendPortalOnboarding(baseMessage, {
+          email: messagingInfo.email ?? undefined,
+          phone: messagingInfo.phone,
+        }),
+        onboardingIncluded: true,
+        customerId: messagingInfo.id,
+      };
+    }
+    return { message: baseMessage, onboardingIncluded: false, customerId: order.customerId };
+  };
+
   const handleStageChange = async (stage: Order["stage"]) => {
     if (!order || stageLoading) return;
     setStageLoading(stage);
@@ -316,8 +339,9 @@ export function OrderDetailModulePage() {
       // Send pickup SMS — no sender param (same as delay SMS which works)
       if (stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent) {
         const name = order.customerName || "Customer";
-        const message = `${timeGreeting()} ${name},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
+        const baseMessage = `${timeGreeting()} ${name},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
         try {
+          const { message, onboardingIncluded, customerId } = await prepareMessageWithOnboarding(baseMessage);
           const result = await sendSms(order.customerPhone, message);
           if (result.success) {
             await updateOrderSmsFields(businessId, orderId, {
@@ -328,6 +352,9 @@ export function OrderDetailModulePage() {
               orderId, recipient: order.customerPhone, message,
               type: "ready_for_pickup", status: "success", response: result.response,
             });
+            if (onboardingIncluded) {
+              await markPortalOnboardingSent(businessId, customerId).catch(() => {});
+            }
             toast.success("Pickup SMS sent to customer");
           } else {
             await logSmsEntry(businessId, {
@@ -357,8 +384,9 @@ export function OrderDetailModulePage() {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
     const reasonLine = delayReason.trim() ? `\nReason: ${delayReason.trim()}\n` : "";
-    const message = `${timeGreeting()} ${order.customerName || "Customer"},\n\nYour order "${orderLabel(order)}" has been delayed.\n${reasonLine}\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${business?.name ?? "us"}.`;
+    const baseMessage = `${timeGreeting()} ${order.customerName || "Customer"},\n\nYour order "${orderLabel(order)}" has been delayed.\n${reasonLine}\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${business?.name ?? "us"}.`;
     try {
+      const { message, onboardingIncluded, customerId } = await prepareMessageWithOnboarding(baseMessage);
       const result = await sendSms(order.customerPhone, message);
       if (result.success) {
         await updateOrderSmsFields(businessId, orderId, {
@@ -370,6 +398,9 @@ export function OrderDetailModulePage() {
           orderId, recipient: order.customerPhone, message,
           type: "delay_notification", status: "success", response: result.response,
         });
+        if (onboardingIncluded) {
+          await markPortalOnboardingSent(businessId, customerId).catch(() => {});
+        }
         toast.success("Delay notification sent");
         setExpectedReadyDate("");
         setDelayReason("");

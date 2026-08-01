@@ -1,6 +1,7 @@
 ﻿import { supabase } from "@/lib/supabase";
 import { transformKeysToCamel, transformKeysToSnake, transformArrayToCamel, toDate, snakeToCamel } from "@/lib/case-utils";
 import { formatKes } from "@/lib/utils";
+import { provisionPortalAccount } from "@/services/customer-portal.service";
 import {
   getCachedCollection,
   cacheCollection,
@@ -657,6 +658,19 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
     await supabase
       .from('customer_measurements')
       .insert(transformKeysToSnake({ customerId: insertData.id, values: measurements } as Record<string, unknown>));
+  }
+
+  // Automatically provision the customer's portal account (login id + default
+  // password = normalized phone). Best-effort: on failure the customer row is
+  // left flagged `portal_provision_needed = true` and the background sync
+  // processor retries it when the dashboard is online.
+  try {
+    const provision = await provisionPortalAccount(businessId, insertData.id);
+    if ("error" in provision && provision.error) {
+      console.warn("[customer-portal] Provisioning failed:", provision.error);
+    }
+  } catch (error) {
+    console.warn("[customer-portal] Provisioning error:", error);
   }
 
   return insertData.id;

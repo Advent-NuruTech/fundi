@@ -4,6 +4,12 @@ import { createHash, randomUUID } from "crypto";
 import { z } from "zod";
 import { signAdminToken, SESSION_COOKIE, TOKEN_TTL_SECONDS } from "@/lib/admin/session";
 import { verifyPassword } from "@/lib/admin/verify-password";
+import {
+  normalizeLoginIdentifier,
+  isLoginLocked,
+  recordFailedLogin,
+  clearLoginAttempts,
+} from "@/lib/login-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +63,19 @@ export async function POST(request: Request) {
   const { email, password } = parsed.data;
   const db = getDb();
 
+  // Account-level escalating lockout (7 failures -> 15 min -> 1 month -> 1 year),
+  // shared with the tenant/customer login endpoint. The IP limiter above stays
+  // as a second layer. Lockouts apply identically to existing and non-existing
+  // accounts, so they never reveal whether an account exists.
+  const identifier = normalizeLoginIdentifier(email);
+  const lock = await isLoginLocked(db, identifier).catch(() => ({ locked: false, retryAfterMs: null }));
+  if (lock.locked) {
+    return NextResponse.json(
+      { error: "Too many failed attempts. Please try again later.", retryAfterMs: lock.retryAfterMs },
+      { status: 429 }
+    );
+  }
+
   // Step 1: Authenticate via Supabase Auth.
   // IMPORTANT: verify on an isolated client (verifyPassword). signing in on `db`
   // would switch its Authorization header to the user's token, demoting every
@@ -65,8 +84,13 @@ export async function POST(request: Request) {
   // "not registered as a platform administrator" denial. Keep `db` service-role.
   const user = await verifyPassword(email, password);
   if (!user) {
+    // Generic — identical whether the account is missing or the password is wrong.
+    await recordFailedLogin(db, identifier).catch(() => {});
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
+
+  // Successful authentication clears the lockout escalation.
+  await clearLoginAttempts(db, identifier).catch(() => {});
 
   // Step 2: Verify the user is an active platform admin (explicit platform identity check).
   //         This is intentionally separate from the tenant domain (profiles/businesses).

@@ -11,6 +11,39 @@ import { TrialBanner } from "@/components/billing/trial-banner";
 import { WifiOff, RefreshCw } from "lucide-react";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useSyncEngine } from "@/hooks/useSyncEngine";
+import { useBusinessContext } from "@/modules/shared/use-business-context";
+import { processPendingPortalAccounts } from "@/services/customer-portal.service";
+
+/**
+ * Background worker for the Customer Portal. Whenever the dashboard is online
+ * it provisions portal accounts for any customer created offline (or whose
+ * provisioning failed earlier). Idempotent — provisioned customers are skipped.
+ */
+function PortalProvisioner() {
+  const { businessId, ready } = useBusinessContext();
+  const { online } = useNetworkStatus();
+
+  useEffect(() => {
+    if (!ready || !businessId || !online) return;
+
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) processPendingPortalAccounts(businessId).catch(() => {});
+    };
+
+    run();
+    // Retry a few seconds later to catch customers that were synced during the
+    // most recent sync cycle.
+    const retry = setTimeout(run, 8000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+    };
+  }, [businessId, ready, online]);
+
+  return null;
+}
 
 function OfflineBanner() {
   const { online, wasOffline } = useNetworkStatus();
@@ -82,6 +115,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     <AuthGuard>
       <SubscriptionGuard>
         <OfflineBanner />
+        <PortalProvisioner />
         <ExpiryReminder />
         <TrialBanner />
         <Sidebar>
