@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, MessageCircle, Store } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Send, Loader2, MessageCircle, Store, ImageIcon } from "lucide-react";
+import { toast } from "sonner";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import {
   getOrCreateSupportConversation,
   listenSupportMessages,
   sendSupportMessage,
+  getMySupportConversations,
+  listenMySupportConversations,
+  type SupportConversationMeta,
 } from "@/services/customer-portal.service";
+import { uploadImage } from "@/services/cloudinary/upload.service";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,16 +34,68 @@ interface BusinessChat {
   conversationId: string;
 }
 
+// ─── Read-state helpers (localStorage, mirrors business messaging) ────────────
+
+const READ_KEY = "fundiflow_portal_conv_read";
+
+function loadReadMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(READ_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveRead(convId: string) {
+  const map = loadReadMap();
+  map[convId] = new Date().toISOString();
+  localStorage.setItem(READ_KEY, JSON.stringify(map));
+}
+
+function isChatUnread(
+  convId: string,
+  meta: SupportConversationMeta | undefined,
+  uid: string,
+  readMap: Record<string, string>
+): boolean {
+  if (!meta?.lastMessageAt) return false;
+  if (meta.lastMessageSenderUid === uid) return false;
+  const lastRead = readMap[convId];
+  if (!lastRead) return true;
+  return new Date(meta.lastMessageAt) > new Date(lastRead);
+}
+
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString("en-KE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export default function PortalSupportPage() {
   const { userId, customers, primaryCustomer, isLoaded } = useCustomerPortal();
   const [chats, setChats] = useState<BusinessChat[]>([]);
+  const [convMeta, setConvMeta] = useState<SupportConversationMeta[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [readMap, setReadMap] = useState<Record<string, string>>(loadReadMap);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const markRead = (convId: string) => {
+    saveRead(convId);
+    setReadMap(loadReadMap());
+    window.dispatchEvent(new Event("fundiflow-portal-conv-read"));
+  };
+
+  // Load the businesses this customer is linked to and ensure a support
+  // conversation exists for each of them.
   useEffect(() => {
     if (!isLoaded || !userId || !customers.length) {
       setLoading(false);
@@ -82,7 +139,9 @@ export default function PortalSupportPage() {
 
         if (cancelled) return;
         setChats(loaded);
-        setActiveChatId((prev) => prev ?? loaded[0]?.id ?? null);
+        const first = loaded[0];
+        setActiveChatId((prev) => prev ?? first?.id ?? null);
+        if (first) markRead(first.conversationId);
         setLoading(false);
       });
 
@@ -91,8 +150,20 @@ export default function PortalSupportPage() {
     };
   }, [isLoaded, userId, customers]);
 
+  // Live conversation metadata → drives unread badges exactly like the
+  // business messages sidebar.
+  useEffect(() => {
+    if (!userId) return;
+    getMySupportConversations(userId).then(setConvMeta).catch(() => {});
+    return listenMySupportConversations(userId, setConvMeta);
+  }, [userId]);
+
   const activeChat = chats.find((c) => c.id === activeChatId) ?? null;
   const conversationId = activeChat?.conversationId ?? null;
+  const currentName =
+    customers.find((c) => c.businessId === activeChatId)?.fullName ??
+    primaryCustomer?.fullName ??
+    "Customer";
 
   useEffect(() => {
     if (!conversationId) return;
@@ -104,14 +175,88 @@ export default function PortalSupportPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const openChat = (chat: BusinessChat) => {
+    setActiveChatId(chat.id);
+    markRead(chat.conversationId);
+  };
+
   const handleSend = async () => {
-    if (!text.trim() || !conversationId || !userId || sending) return;
-    setSending(true);
-    const customer = customers.find((c) => c.businessId === activeChatId);
-    const name = customer?.fullName ?? primaryCustomer?.fullName ?? "Customer";
-    await sendSupportMessage(conversationId, userId, name, text.trim());
+    const trimmed = text.trim();
+    if (!trimmed || !activeChat || !userId || sending) return;
+
+    const tempId = `opt-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const optimistic: SupportMessage = {
+      id: tempId,
+      senderUid: userId,
+      senderName: currentName,
+      text: trimmed,
+      createdAt: now,
+      attachments: [],
+    };
+
     setText("");
-    setSending(false);
+    setSending(true);
+    // Optimistic display: the message appears instantly and the real-time
+    // subscription replaces it with the DB-confirmed one in the background.
+    setMessages((prev) => [...prev, optimistic]);
+    try {
+      await sendSupportMessage(activeChat.conversationId, activeChat.id, userId, currentName, trimmed);
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setText(trimmed);
+      toast.error("Message could not be sent");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleImageSend = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeChat || !userId || uploadingImage) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8MB");
+      return;
+    }
+
+    const tempId = `opt-${crypto.randomUUID()}`;
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadImage({
+        file,
+        businessId: activeChat.id,
+        uploadedByUid: userId,
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          senderUid: userId,
+          senderName: currentName,
+          text: "",
+          createdAt: new Date().toISOString(),
+          attachments: [{ url: uploaded.url, name: file.name }],
+        } as SupportMessage,
+      ]);
+      await sendSupportMessage(
+        activeChat.conversationId,
+        activeChat.id,
+        userId,
+        currentName,
+        "",
+        [{ type: "image", url: uploaded.url, name: file.name }]
+      );
+    } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      toast.error(err instanceof Error ? err.message : "Image upload failed");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -142,25 +287,35 @@ export default function PortalSupportPage() {
     <div className="flex flex-col h-[calc(100vh-200px)]">
       <h1 className="text-lg font-bold text-slate-900 mb-3 shrink-0">Support</h1>
 
-      {/* Business selector — customer sees each business by name */}
+      {/* Business selector — customer sees each business by name, with an
+          unread dot when that workshop has replied */}
       {chats.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 -mx-1 px-1">
-          {chats.map((chat) => (
-            <button
-              key={chat.id}
-              onClick={() => setActiveChatId(chat.id)}
-              className={cn(
-                "shrink-0 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
-                activeChatId === chat.id
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200"
-              )}
-              aria-pressed={activeChatId === chat.id}
-            >
-              <Store className="h-3.5 w-3.5" />
-              {chat.name}
-            </button>
-          ))}
+          {chats.map((chat) => {
+            const unread = isChatUnread(
+              chat.conversationId,
+              convMeta.find((m) => m.id === chat.conversationId),
+              userId,
+              readMap
+            );
+            return (
+              <button
+                key={chat.id}
+                onClick={() => openChat(chat)}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                  activeChatId === chat.id
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200"
+                )}
+                aria-pressed={activeChatId === chat.id}
+              >
+                <Store className="h-3.5 w-3.5" />
+                {chat.name}
+                {unread && <span className="h-2 w-2 rounded-full bg-emerald-500" />}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -188,6 +343,7 @@ export default function PortalSupportPage() {
         )}
         {messages.map((msg) => {
           const isMe = msg.senderUid === userId;
+          const images = (msg.attachments ?? []).filter((a) => a.url);
           return (
             <div key={msg.id} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
               <div
@@ -201,14 +357,28 @@ export default function PortalSupportPage() {
                 {!isMe && (
                   <p className="text-[10px] font-semibold text-emerald-700 mb-1">{msg.senderName}</p>
                 )}
-                <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-                {msg.attachments?.map((a, i) => (
-                  <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="block mt-2">
-                    <img src={a.url} alt={a.name} className="rounded-lg max-w-full border" />
-                  </a>
-                ))}
+                {images.length > 0 && (
+                  <div className="space-y-1.5 mb-2">
+                    {images.map((a, i) => (
+                      <a
+                        key={i}
+                        href={a.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <img
+                          src={a.url}
+                          alt={a.name ?? "Sent image"}
+                          className="rounded-lg max-w-full max-h-60 object-cover border"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {msg.text ? <p className="whitespace-pre-wrap break-words">{msg.text}</p> : null}
                 <p className={cn("text-[10px] mt-1", isMe ? "text-emerald-200" : "text-slate-400")}>
-                  {new Date(msg.createdAt).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}
+                  {formatTime(msg.createdAt)}
                 </p>
               </div>
             </div>
@@ -219,13 +389,35 @@ export default function PortalSupportPage() {
 
       {/* Input */}
       <div className="shrink-0 flex items-end gap-2 pt-3 border-t border-slate-200 bg-slate-50 pb-1">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSend}
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadingImage || !conversationId}
+          className="h-10 w-10 p-0 shrink-0 text-slate-400 hover:text-emerald-700"
+          aria-label="Attach image"
+        >
+          {uploadingImage ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ImageIcon className="h-4 w-4" />
+          )}
+        </Button>
         <Input
           placeholder="Type a message…"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKey}
           className="flex-1 bg-white"
-          disabled={sending}
+          disabled={sending || !conversationId}
         />
         <Button
           size="sm"

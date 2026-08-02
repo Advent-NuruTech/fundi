@@ -374,6 +374,65 @@ export async function getMyPayments(customerIds: string[]): Promise<Payment[]> {
   return data ? transformArrayToCamel<Payment>(data as Record<string, unknown>[]) : [];
 }
 
+// ── Support conversation meta (for unread badges) ─────────────────────────────
+
+export interface SupportConversationMeta {
+  id: string;
+  businessId: string;
+  lastMessageAt: string | null;
+  updatedAt: string;
+  lastMessageText: string;
+  lastMessageSenderUid: string | null;
+  lastMessageCreatedAt: string | null;
+}
+
+export async function getMySupportConversations(userId: string): Promise<SupportConversationMeta[]> {
+  if (!userId) return [];
+
+  const { data } = await supabase
+    .from("conversations")
+    .select("id, business_id, last_message, last_message_at, last_message_text, updated_at")
+    .contains("participants", [userId]);
+
+  return (data ?? []).map((c) => {
+    const lm = (c.last_message as { messageId?: string; text?: string; senderUid?: string; senderName?: string; createdAt?: string } | null) ?? null;
+    return {
+      id: c.id as string,
+      businessId: c.business_id as string,
+      lastMessageAt: (c.last_message_at as string) ?? null,
+      updatedAt: (c.updated_at as string) ?? new Date().toISOString(),
+      lastMessageText: (lm?.text as string) ?? (c.last_message_text as string) ?? "",
+      lastMessageSenderUid: (lm?.senderUid as string) ?? null,
+      lastMessageCreatedAt: (lm?.createdAt as string) ?? null,
+    };
+  });
+}
+
+export function listenMySupportConversations(
+  userId: string,
+  callback: (rows: SupportConversationMeta[]) => void
+): () => void {
+  let destroyed = false;
+
+  const fetchRows = async () => {
+    if (destroyed) return;
+    const rows = await getMySupportConversations(userId);
+    if (!destroyed) callback(rows);
+  };
+
+  fetchRows();
+
+  const channel = supabase
+    .channel(`portal-convs-${userId}-${crypto.randomUUID()}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, fetchRows)
+    .subscribe();
+
+  return () => {
+    destroyed = true;
+    supabase.removeChannel(channel);
+  };
+}
+
 // ── Support conversations ─────────────────────────────────────────────────────
 
 export async function getOrCreateSupportConversation(
@@ -392,7 +451,7 @@ export async function getOrCreateSupportConversation(
     .contains("participants", [portalUserId])
     .eq("type", "direct")
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (existing?.id) return existing.id as string;
 
@@ -437,20 +496,22 @@ export function listenSupportMessages(
     if (destroyed) return;
     const { data } = await supabase
       .from("messages")
-      .select("id, sender_uid, sender_name, text, created_at, attachments")
+      .select("id, sender_uid, sender_name, text, created_at, attachments, deleted_at, is_deleted")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
 
     if (!destroyed && data) {
       callback(
-        data.map((m) => ({
-          id: m.id as string,
-          senderUid: m.sender_uid as string,
-          senderName: m.sender_name as string,
-          text: m.text as string,
-          createdAt: m.created_at as string,
-          attachments: m.attachments as Array<{ url: string; name: string }> | undefined,
-        }))
+        data
+          .filter((m) => !m.is_deleted && !m.deleted_at)
+          .map((m) => ({
+            id: m.id as string,
+            senderUid: m.sender_uid as string,
+            senderName: m.sender_name as string,
+            text: m.text as string,
+            createdAt: m.created_at as string,
+            attachments: m.attachments as Array<{ url: string; name: string }> | undefined,
+          }))
       );
     }
   };
@@ -458,7 +519,7 @@ export function listenSupportMessages(
   fetch();
 
   const channel = supabase
-    .channel(`portal-msgs-${conversationId}`)
+    .channel(`portal-msgs-${conversationId}-${crypto.randomUUID()}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` }, fetch)
     .subscribe();
 
@@ -470,23 +531,21 @@ export function listenSupportMessages(
 
 export async function sendSupportMessage(
   conversationId: string,
+  businessId: string,
   senderUid: string,
   senderName: string,
-  text: string
+  text: string,
+  attachments?: Array<{ type: "image" | "file"; url: string; name?: string }>
 ): Promise<void> {
   const now = new Date().toISOString();
   await supabase.from("messages").insert({
     conversation_id: conversationId,
+    business_id: businessId,
     sender_uid: senderUid,
     sender_name: senderName,
     text,
+    attachments: attachments ?? [],
+    read_by: [senderUid],
     created_at: now,
-    updated_at: now,
-    deleted: false,
   });
-
-  await supabase
-    .from("conversations")
-    .update({ last_message_text: text, last_message_at: now, updated_at: now })
-    .eq("id", conversationId);
 }

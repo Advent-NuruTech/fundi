@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ShoppingBag, CreditCard, MessageCircle, User, Store, LogOut } from "lucide-react";
 import { CustomerPortalProvider, useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
+import { useCustomerSupportUnread } from "@/hooks/useCustomerSupportUnread";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -17,7 +18,8 @@ const NAV = [
 
 function PortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { primaryCustomer, logout, isLoaded } = useCustomerPortal();
+  const { userId, primaryCustomer, logout, isLoaded } = useCustomerPortal();
+  const supportUnread = useCustomerSupportUnread(userId);
 
   if (!isLoaded) {
     return (
@@ -61,12 +63,17 @@ function PortalShell({ children }: { children: React.ReactNode }) {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 px-3 py-2 text-[10px] font-medium transition-colors",
+                  "relative flex flex-col items-center gap-0.5 px-3 py-2 text-[10px] font-medium transition-colors",
                   active ? "text-emerald-600" : "text-slate-500 hover:text-slate-800"
                 )}
               >
                 <Icon className={cn("h-5 w-5", active && "stroke-[2.5]")} />
                 {label}
+                {href === "/portal/support" && supportUnread > 0 && (
+                  <span className="absolute top-0.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
+                    {supportUnread}
+                  </span>
+                )}
               </Link>
             );
           })}
