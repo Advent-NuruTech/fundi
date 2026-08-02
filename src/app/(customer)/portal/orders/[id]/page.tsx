@@ -154,24 +154,6 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
         </CardContent>
       </Card>
 
-      {/* Images */}
-      {(order.imageUrls?.length ?? 0) > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Photos</CardTitle>
-          </CardHeader>
-          <CardContent className="px-5 pb-5">
-            <div className="grid grid-cols-3 gap-2">
-              {order.imageUrls!.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                  <img src={url} alt={`Order photo ${i + 1}`} className="rounded-lg aspect-square object-cover w-full border hover:opacity-90 transition-opacity" />
-                </a>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Support CTA */}
       <Link href="/portal/support">
         <Button className="w-full gap-2 bg-emerald-700 hover:bg-emerald-800">

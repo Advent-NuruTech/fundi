@@ -44,7 +44,6 @@ export interface CustomerSafeOrder {
   garments: Array<{ name: string; quantity: number }>;
   createdAt: string;
   updatedAt: string;
-  imageUrls?: string[];
 }
 
 export interface PublicTrackingOrder extends CustomerSafeOrder {
@@ -250,7 +249,7 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
   const { data: orders } = await supabase
     .from("orders")
     .select(
-      "id, tracking_token, order_number, business_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at, image_urls"
+      "id, tracking_token, order_number, business_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at"
     )
     .in("customer_id", customerIds)
     .order("created_at", { ascending: false });
@@ -296,7 +295,6 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
     garments: garmentMap[o.id as string] ?? [],
     createdAt: o.created_at as string,
     updatedAt: o.updated_at as string,
-    imageUrls: (o.image_urls as string[]) ?? [],
   }));
 }
 
@@ -308,7 +306,7 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, tracking_token, order_number, business_id, customer_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at, image_urls"
+      "id, tracking_token, order_number, business_id, customer_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at"
     )
     .eq("id", orderId)
     .single();
@@ -354,7 +352,6 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     })),
     createdAt: order.created_at as string,
     updatedAt: order.updated_at as string,
-    imageUrls: (order.image_urls as string[]) ?? [],
   };
 }
 

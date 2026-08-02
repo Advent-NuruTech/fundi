@@ -18,7 +18,7 @@ export async function GET(
   const { data: order, error } = await db
     .from("orders")
     .select(
-      "id, tracking_token, order_number, business_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at, image_urls, delivery_status"
+      "id, tracking_token, order_number, business_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at, delivery_status"
     )
     .eq("tracking_token", trackingId)
     .single();
@@ -59,6 +59,5 @@ export async function GET(
     garments: (garments ?? []).map((g) => ({ name: g.name, quantity: g.quantity })),
     createdAt: order.created_at,
     updatedAt: order.updated_at,
-    imageUrls: order.image_urls ?? [],
   });
 }
