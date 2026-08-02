@@ -15,6 +15,7 @@ import {
   getPortalSession,
   getMyCustomerRecords,
   logoutCustomerPortal,
+  relinkPortalCustomers,
 } from "@/services/customer-portal.service";
 
 interface CustomerPortalContextValue {
@@ -45,6 +46,9 @@ export function CustomerPortalProvider({ children }: { children: ReactNode }) {
       }
       setUserId(session.user.id);
       setUserEmail(session.user.email ?? "");
+      // Heal any customer records that never got linked to this portal account
+      // (legacy registrations were silently blocked by RLS).
+      await relinkPortalCustomers().catch(() => {});
       const recs = await getMyCustomerRecords();
       setCustomers(recs);
       setIsLoaded(true);
@@ -52,6 +56,7 @@ export function CustomerPortalProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const refresh = useCallback(async () => {
+    await relinkPortalCustomers().catch(() => {});
     const recs = await getMyCustomerRecords();
     setCustomers(recs);
     const session = await getPortalSession();

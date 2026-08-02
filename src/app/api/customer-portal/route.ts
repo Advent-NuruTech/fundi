@@ -88,6 +88,20 @@ interface CustomerRow {
 }
 
 /**
+ * Canonical phone variants that can appear in the `customers` table for a
+ * single number: "254712345678", "+254712345678", "0712345678", "712345678".
+ */
+function phoneMatchForms(phone: string): string[] {
+  const n = normalizePhoneForAuth(phone);
+  if (!n) return [];
+  const forms = [n, `+${n}`];
+  if (n.startsWith("254") && n.length === 12) {
+    forms.push(`0${n.slice(3)}`, n.slice(3));
+  }
+  return [...new Set(forms)];
+}
+
+/**
  * Provision the portal account for ONE customer.
  * - login id = email (if present) else normalized phone
  * - default password = normalized phone
@@ -421,17 +435,232 @@ async function handleMessageInfo(admin: AdminClient, caller: { id: string }, bod
   });
 }
 
+/**
+ * Public self-registration for the customer portal.
+ *
+ * This MUST run with the service role: a brand-new portal customer has no
+ * business membership, so RLS would silently block the account→customer link
+ * (that was the root cause of "portal shows zero records despite the order
+ * existing"). Using the service role here makes the link persist.
+ */
+async function handleRegister(admin: AdminClient, body: Record<string, unknown>) {
+  const { email, password, name, phone } = body as {
+    email?: string;
+    password?: string;
+    name?: string;
+    phone?: string;
+  };
+
+  const normalizedEmail = (email ?? "").trim().toLowerCase();
+  const normalizedPhone = normalizePhoneForAuth(phone ?? "");
+  const displayName = (name ?? "").trim();
+
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return NextResponse.json({ error: "A valid email address is required" }, { status: 400 });
+  }
+  if (!normalizedPhone) {
+    return NextResponse.json({ error: "A valid phone number is required" }, { status: 400 });
+  }
+  if (!displayName) {
+    return NextResponse.json({ error: "Your name is required" }, { status: 400 });
+  }
+  if (!password || password.length < 8) {
+    return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+  }
+
+  // ── Duplicate account prevention ──────────────────────────────────────────
+  // If ANY customer row for this phone already has a portal account, the
+  // customer should sign in instead of creating a second account.
+  const phoneForms = phoneMatchForms(normalizedPhone);
+  const { data: phoneCustomers } = await admin
+    .from("customers")
+    .select("id, business_id, full_name, phone, email, portal_user_id")
+    .in("phone", phoneForms)
+    .limit(50);
+  const alreadyLinked = (phoneCustomers ?? []).some((c) => c.portal_user_id != null);
+  if (alreadyLinked) {
+    return NextResponse.json(
+      { error: "An account already exists for this phone number. Please sign in instead." },
+      { status: 409 }
+    );
+  }
+
+  // ── Resolve the canonical auth email ──────────────────────────────────────
+  // Prefer the real email unless it is held by a NON-customer account (e.g. a
+  // staff member) — then fall back to the phone-based login so the customer can
+  // still sign in with their phone number.
+  let authEmail = normalizedEmail;
+  let loginId = normalizedEmail;
+
+  const emailExisting = await findAuthUserByEmail(normalizedEmail);
+  if (emailExisting && isPortalUser(emailExisting)) {
+    return NextResponse.json(
+      { error: "An account already exists for this email. Please sign in instead." },
+      { status: 409 }
+    );
+  }
+  if (emailExisting && !isPortalUser(emailExisting)) {
+    authEmail = buildPortalSyntheticEmail(normalizedPhone);
+    loginId = normalizedPhone;
+  }
+
+  const synthetic = await findAuthUserByEmail(buildPortalSyntheticEmail(normalizedPhone));
+  if (synthetic) {
+    if (isPortalUser(synthetic)) {
+      return NextResponse.json(
+        { error: "An account already exists for this phone number. Please sign in instead." },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      { error: "This phone number is already in use. Please contact support." },
+      { status: 409 }
+    );
+  }
+
+  // ── Create the auth user + profile ────────────────────────────────────────
+  const { data, error } = await admin.auth.admin.createUser({
+    email: authEmail,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      portal_type: "customer",
+      display_name: displayName,
+      phone: normalizedPhone,
+      email: normalizedEmail,
+    },
+  });
+  if (error || !data?.user) {
+    return NextResponse.json({ error: error?.message ?? "Failed to create account" }, { status: 500 });
+  }
+  const uid = data.user.id;
+
+  await admin.from("profiles").upsert(
+    {
+      id: uid,
+      email: authEmail,
+      display_name: displayName,
+      role: "customer",
+      roles: ["customer"],
+      business_id: null,
+      active: true,
+    },
+    { onConflict: "id" }
+  );
+
+  // ── Link every customer record for this phone ─────────────────────────────
+  // A single phone may map to customer records in multiple businesses; all of
+  // them get linked to the same portal account.
+  const { data: linkable } = await admin
+    .from("customers")
+    .select("id, phone, email")
+    .in("phone", phoneForms)
+    .is("portal_user_id", null);
+  for (const c of linkable ?? []) {
+    await admin
+      .from("customers")
+      .update({
+        portal_user_id: uid,
+        portal_login_id: buildPortalLoginId(c.email as string | undefined, c.phone as string),
+        portal_provision_needed: false,
+      })
+      .eq("id", c.id);
+  }
+
+  return NextResponse.json({ success: true, loginId });
+}
+
+/**
+ * Self-healing linkage. Runs on every portal session load: links any customer
+ * record that matches this portal user's phone / email but never got linked
+ * (e.g. because the older client-side registration was silently blocked by
+ * RLS). Uses the service role so RLS cannot interfere.
+ */
+async function handleRelink(admin: AdminClient, caller: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) {
+  const meta = caller.user_metadata ?? {};
+  if (meta.portal_type !== "customer") {
+    return NextResponse.json({ success: true, linked: 0 });
+  }
+
+  const callerEmail = (caller.email ?? "").trim().toLowerCase();
+  const phoneRaw = typeof meta.phone === "string" ? meta.phone : "";
+  const phoneForms = phoneMatchForms(phoneRaw);
+
+  const seen = new Set<string>();
+  const toLink: CustomerRow[] = [];
+
+  if (phoneForms.length) {
+    const { data } = await admin
+      .from("customers")
+      .select("id, business_id, full_name, phone, email, portal_user_id")
+      .in("phone", phoneForms)
+      .is("portal_user_id", null)
+      .limit(500);
+    for (const c of data ?? []) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        toLink.push(c as CustomerRow);
+      }
+    }
+  }
+
+  if (callerEmail && !isSyntheticPortalEmail(callerEmail)) {
+    const { data } = await admin
+      .from("customers")
+      .select("id, business_id, full_name, phone, email, portal_user_id")
+      .ilike("email", callerEmail)
+      .is("portal_user_id", null)
+      .limit(500);
+    for (const c of data ?? []) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        toLink.push(c as CustomerRow);
+      }
+    }
+  }
+
+  for (const c of toLink) {
+    await admin
+      .from("customers")
+      .update({
+        portal_user_id: caller.id,
+        portal_login_id: buildPortalLoginId(c.email as string | undefined, c.phone as string),
+        portal_provision_needed: false,
+      })
+      .eq("id", c.id);
+  }
+
+  return NextResponse.json({ success: true, linked: toLink.length });
+}
+
 export async function POST(request: Request) {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const action = body.action as string;
+
+  // Registration happens BEFORE a portal session exists, so it must not go
+  // through requireCaller (which needs a signed-in user).
+  if (action === "register") {
+    try {
+      const admin = getAdminClient();
+      return await handleRegister(admin, body);
+    } catch (err) {
+      console.error("[customer-portal]", err);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Request failed" },
+        { status: 500 }
+      );
+    }
+  }
+
   try {
     const admin = getAdminClient();
     const auth = await requireCaller(admin, request);
     if (auth.error) return auth.error;
     const caller = auth.caller!;
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const action = body.action as string;
-
     switch (action) {
+      case "relink":
+        return await handleRelink(admin, caller);
       case "provision":
         return await handleProvision(admin, caller, body);
       case "process":

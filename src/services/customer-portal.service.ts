@@ -60,41 +60,40 @@ export async function registerCustomerPortal(params: {
   name: string;
   phone: string;
 }): Promise<{ error?: string }> {
-  // Prevent duplicate portal accounts: if any customer record for this phone
-  // already has a portal account, the customer should sign in instead.
-  const { data: existingCustomers } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("phone", params.phone)
-    .not("portal_user_id", "is", null)
-    .limit(1);
-  if (existingCustomers?.length) {
-    return { error: "An account already exists for this phone number. Please sign in instead." };
+  // Registration runs through the service-role API route. Creating the account
+  // and linking the customer record(s) client-side was silently blocked by RLS
+  // (a fresh portal customer is not a business member), leaving `portal_user_id`
+  // NULL and the portal showing zero records despite orders existing.
+  const res = await fetch("/api/customer-portal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "register", ...params }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    loginId?: string;
+  };
+
+  if (!res.ok || data.error) {
+    return { error: data.error ?? "Registration failed. Please try again." };
   }
 
-  const { data, error } = await supabase.auth.signUp({
-    email: params.email,
-    password: params.password,
-    options: {
-      data: {
-        portal_type: "customer",
-        display_name: params.name,
-        phone: params.phone,
-      },
-    },
-  });
-
-  if (error) return { error: error.message };
-  if (!data.user) return { error: "Registration failed. Please try again." };
-
-  // Link auth user to all customer records matching this phone
-  await supabase
-    .from("customers")
-    .update({ portal_user_id: data.user.id })
-    .eq("phone", params.phone)
-    .is("portal_user_id", null);
+  // The account is created server-side, so sign the customer in explicitly.
+  const loginRes = await loginCustomerPortal(data.loginId ?? params.email, params.password);
+  if (loginRes.error) return { error: loginRes.error };
 
   return {};
+}
+
+/**
+ * Self-healing linkage: tells the server to link any customer record matching
+ * this portal user's phone / email that never got a `portal_user_id`. Called on
+ * every portal load so broken accounts repair themselves automatically.
+ */
+export async function relinkPortalCustomers(): Promise<{ linked?: number; error?: string }> {
+  const { data, error } = await portalFetch<{ linked: number }>("relink", {});
+  if (error) return { error };
+  return { linked: data?.linked ?? 0 };
 }
 
 /**
