@@ -97,19 +97,9 @@ export default function CustomerLoginPage() {
             </Button>
           </form>
 
-          <p className="mt-4 text-center text-xs text-slate-500">
-            Don&apos;t have an account?{" "}
-            <Link href="/auth/customer-register" className="font-medium text-emerald-700 hover:underline">
-              Create account
-            </Link>
-          </p>
+        
 
-          <p className="mt-3 text-center text-xs text-slate-400">
-            Are you a workshop owner?{" "}
-            <Link href="/login" className="text-slate-600 hover:underline">
-              Staff login
-            </Link>
-          </p>
+          
         </CardContent>
       </Card>
     </div>

@@ -41,7 +41,7 @@ export interface CustomerSafeOrder {
   subtotalAmount: number;
   amountPaid: number;
   balanceAmount: number;
-  garments: Array<{ name: string; quantity: number }>;
+  garments: Array<{ name: string; quantity: number; agreedPrice: number }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -269,14 +269,18 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
   const orderIds = orders.map((o) => o.id as string);
   const { data: garments } = await supabase
     .from("order_garments")
-    .select("order_id, name, quantity")
+    .select("order_id, name, quantity, agreed_price")
     .in("order_id", orderIds);
 
-  const garmentMap: Record<string, Array<{ name: string; quantity: number }>> = {};
+  const garmentMap: Record<string, Array<{ name: string; quantity: number; agreedPrice: number }>> = {};
   for (const g of garments ?? []) {
     const key = g.order_id as string;
     if (!garmentMap[key]) garmentMap[key] = [];
-    garmentMap[key].push({ name: g.name as string, quantity: g.quantity as number });
+    garmentMap[key].push({
+      name: g.name as string,
+      quantity: g.quantity as number,
+      agreedPrice: Number(g.agreed_price ?? 0),
+    });
   }
 
   return orders.map((o) => ({
@@ -330,7 +334,7 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
 
   const { data: garments } = await supabase
     .from("order_garments")
-    .select("name, quantity")
+    .select("name, quantity, agreed_price")
     .eq("order_id", orderId);
 
   return {
@@ -349,6 +353,7 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     garments: (garments ?? []).map((g) => ({
       name: g.name as string,
       quantity: g.quantity as number,
+      agreedPrice: Number(g.agreed_price ?? 0),
     })),
     createdAt: order.created_at as string,
     updatedAt: order.updated_at as string,
@@ -399,8 +404,8 @@ export async function getOrCreateSupportConversation(
       business_id: businessId,
       participants: [portalUserId, ownerUid],
       participant_profiles: [
-        { uid: portalUserId, display_name: portalUserName },
-        { uid: ownerUid, display_name: ownerName },
+        { uid: portalUserId, displayName: portalUserName, photoURL: undefined },
+        { uid: ownerUid, displayName: ownerName, photoURL: undefined },
       ],
       type: "direct",
       title: `Support — ${portalUserName}`,

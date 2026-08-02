@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Send, ImageIcon, Loader2, MessageCircle } from "lucide-react";
+import { Send, Loader2, MessageCircle, Store } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import {
   getOrCreateSupportConversation,
@@ -22,9 +22,17 @@ interface SupportMessage {
   attachments?: Array<{ url: string; name: string }>;
 }
 
+interface BusinessChat {
+  id: string;
+  name: string;
+  ownerUid: string;
+  conversationId: string;
+}
+
 export default function PortalSupportPage() {
-  const { userId, primaryCustomer, customerIds, isLoaded } = useCustomerPortal();
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const { userId, customers, primaryCustomer, isLoaded } = useCustomerPortal();
+  const [chats, setChats] = useState<BusinessChat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -32,45 +40,63 @@ export default function PortalSupportPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isLoaded || !userId || !customerIds.length) {
+    if (!isLoaded || !userId || !customers.length) {
       setLoading(false);
       return;
     }
 
-    const customer = primaryCustomer;
-    if (!customer) {
-      setLoading(false);
-      return;
-    }
+    let cancelled = false;
+    const bizIds = [...new Set(customers.map((c) => c.businessId))];
 
-    // Get business owner UID to create/find support conversation
     supabase
       .from("businesses")
       .select("id, owner_uid, name")
-      .eq("id", customer.businessId)
-      .single()
-      .then(async ({ data: biz }) => {
-        if (!biz) {
-          setLoading(false);
+      .in("id", bizIds)
+      .then(async ({ data }) => {
+        if (cancelled || !data?.length) {
+          if (!cancelled) setLoading(false);
           return;
         }
 
-        const convId = await getOrCreateSupportConversation(
-          customer.businessId,
-          customer.id,
-          userId,
-          customer.fullName,
-          biz.owner_uid as string,
-          (biz.name as string) + " Support"
-        );
+        const loaded: BusinessChat[] = [];
+        for (const biz of data as Array<{ id: string; owner_uid: string; name: string }>) {
+          const customer = customers.find((c) => c.businessId === biz.id);
+          if (!customer) continue;
+          const convId = await getOrCreateSupportConversation(
+            biz.id,
+            customer.id,
+            userId,
+            customer.fullName,
+            biz.owner_uid,
+            biz.name
+          );
+          if (convId) {
+            loaded.push({
+              id: biz.id,
+              name: biz.name,
+              ownerUid: biz.owner_uid,
+              conversationId: convId,
+            });
+          }
+        }
 
-        setConversationId(convId);
+        if (cancelled) return;
+        setChats(loaded);
+        setActiveChatId((prev) => prev ?? loaded[0]?.id ?? null);
         setLoading(false);
       });
-  }, [isLoaded, userId, primaryCustomer, customerIds]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, userId, customers]);
+
+  const activeChat = chats.find((c) => c.id === activeChatId) ?? null;
+  const conversationId = activeChat?.conversationId ?? null;
 
   useEffect(() => {
     if (!conversationId) return;
+    setMessages([]);
     return listenSupportMessages(conversationId, setMessages);
   }, [conversationId]);
 
@@ -81,7 +107,8 @@ export default function PortalSupportPage() {
   const handleSend = async () => {
     if (!text.trim() || !conversationId || !userId || sending) return;
     setSending(true);
-    const name = primaryCustomer?.fullName ?? "Customer";
+    const customer = customers.find((c) => c.businessId === activeChatId);
+    const name = customer?.fullName ?? primaryCustomer?.fullName ?? "Customer";
     await sendSupportMessage(conversationId, userId, name, text.trim());
     setText("");
     setSending(false);
@@ -102,7 +129,7 @@ export default function PortalSupportPage() {
     );
   }
 
-  if (!customerIds.length) {
+  if (!chats.length) {
     return (
       <div className="text-center py-16">
         <MessageCircle className="mx-auto h-12 w-12 text-slate-300 mb-3" />
@@ -115,8 +142,43 @@ export default function PortalSupportPage() {
     <div className="flex flex-col h-[calc(100vh-200px)]">
       <h1 className="text-lg font-bold text-slate-900 mb-3 shrink-0">Support</h1>
 
+      {/* Business selector — customer sees each business by name */}
+      {chats.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 -mx-1 px-1">
+          {chats.map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() => setActiveChatId(chat.id)}
+              className={cn(
+                "shrink-0 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer",
+                activeChatId === chat.id
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200"
+              )}
+              aria-pressed={activeChatId === chat.id}
+            >
+              <Store className="h-3.5 w-3.5" />
+              {chat.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Chat header with business name */}
+      {activeChat && (
+        <div className="flex items-center gap-2.5 border-b border-slate-200 bg-white px-3 py-2.5 shrink-0 rounded-t-xl">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+            <Store className="h-4 w-4 text-emerald-700" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-900">{activeChat.name}</p>
+            <p className="text-[10px] text-slate-400">Customer support chat</p>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-3 pb-2 pr-1">
+      <div className="flex-1 overflow-y-auto space-y-3 py-3 pr-1">
         {messages.length === 0 && (
           <div className="text-center py-10">
             <MessageCircle className="mx-auto h-10 w-10 text-slate-300 mb-2" />
@@ -168,7 +230,7 @@ export default function PortalSupportPage() {
         <Button
           size="sm"
           onClick={handleSend}
-          disabled={!text.trim() || sending}
+          disabled={!text.trim() || sending || !conversationId}
           className="h-10 w-10 p-0 bg-emerald-700 hover:bg-emerald-800 shrink-0"
           aria-label="Send"
         >

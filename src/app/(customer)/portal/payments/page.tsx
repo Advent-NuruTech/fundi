@@ -1,20 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CreditCard, Banknote } from "lucide-react";
+import { CreditCard, Banknote, ChevronRight } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import { getMyPayments, getMyOrders } from "@/services/customer-portal.service";
 import type { CustomerSafeOrder } from "@/services/customer-portal.service";
 import type { Payment } from "@/types/domain";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatKes } from "@/lib/utils";
+import { cn, formatKes } from "@/lib/utils";
+import { OutstandingBalancesDialog } from "../_modals";
 
 export default function PortalPaymentsPage() {
   const { customerIds, isLoaded } = useCustomerPortal();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [orders, setOrders] = useState<CustomerSafeOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showBalances, setShowBalances] = useState(false);
 
   useEffect(() => {
     if (!isLoaded || !customerIds.length) {
@@ -29,7 +31,8 @@ export default function PortalPaymentsPage() {
   }, [isLoaded, customerIds]);
 
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
-  const totalBalance = orders.reduce((s, o) => s + o.balanceAmount, 0);
+  const outstandingOrders = orders.filter((o) => o.balanceAmount > 0);
+  const totalBalance = outstandingOrders.reduce((s, o) => s + o.balanceAmount, 0);
 
   if (loading) {
     return (
@@ -51,14 +54,23 @@ export default function PortalPaymentsPage() {
             <p className="text-xl font-bold text-emerald-900">{formatKes(totalPaid)}</p>
           </CardContent>
         </Card>
-        <Card className={totalBalance > 0 ? "border-amber-100 bg-amber-50" : "border-slate-100"}>
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-slate-600 mb-1">Outstanding</p>
-            <p className={`text-xl font-bold ${totalBalance > 0 ? "text-amber-800" : "text-slate-700"}`}>
-              {formatKes(totalBalance)}
-            </p>
-          </CardContent>
-        </Card>
+        <button
+          onClick={() => setShowBalances(true)}
+          className={cn(
+            "text-left rounded-2xl border p-4 cursor-pointer transition-colors",
+            totalBalance > 0
+              ? "border-amber-100 bg-amber-50 hover:border-amber-300"
+              : "border-slate-100 hover:border-emerald-200"
+          )}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-medium text-slate-600">Outstanding</p>
+            <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+          </div>
+          <p className={`text-xl font-bold ${totalBalance > 0 ? "text-amber-800" : "text-slate-700"}`}>
+            {formatKes(totalBalance)}
+          </p>
+        </button>
       </div>
 
       {/* Payment list */}
@@ -102,6 +114,14 @@ export default function PortalPaymentsPage() {
           ))}
         </div>
       )}
+
+      {/* Outstanding balances window */}
+      <OutstandingBalancesDialog
+        open={showBalances}
+        orders={outstandingOrders}
+        totalBalance={totalBalance}
+        onClose={() => setShowBalances(false)}
+      />
     </div>
   );
 }
