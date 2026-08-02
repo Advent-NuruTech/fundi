@@ -371,7 +371,7 @@ const words = [
         </Card>
 
         <div className="mt-6 text-center text-xs text-slate-400">
-          By creating an account, you agree to our{" "}
+          By creating an account in fundiflow, you agree to our{" "}
           <a
             href="/terms"
             className="text-emerald-500 hover:text-emerald-600 underline transition-colors"
