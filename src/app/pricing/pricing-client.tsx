@@ -11,6 +11,8 @@ import {
   BadgeCheck,
   ShieldCheck,
   Star,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/features/auth/components/auth-context";
@@ -39,6 +41,8 @@ const CAPACITY_TILES: { key: keyof PricingPlan["capacity"]; label: string }[] = 
   { key: "sms", label: "SMS / month" },
   { key: "aiCredits", label: "AI Credits" },
 ];
+
+const COLLAPSED_FEATURE_COUNT = 5;
 
 export function PricingClient({ freeTrialEnabled }: { freeTrialEnabled: boolean }) {
   const searchParams = useSearchParams();
@@ -180,7 +184,7 @@ export function PricingClient({ freeTrialEnabled }: { freeTrialEnabled: boolean 
               Choose your kind of business to see tailored pricing:
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              {BUSINESS_TYPES.map((bt) => {
+              {BUSINESS_TYPES.filter((bt) => bt.id === "tailoring").map((bt) => {
                 const active = bt.id === category;
                 return (
                   <button
@@ -420,6 +424,11 @@ function PlanCard({
   user: boolean;
   freeTrialEnabled: boolean;
 }) {
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
+  const visibleFeatures = showAllFeatures
+    ? plan.features
+    : plan.features.slice(0, COLLAPSED_FEATURE_COUNT);
+
   const href = user
     ? freeTrialEnabled
       ? `/start-trial?plan=${plan.id}`
@@ -530,7 +539,7 @@ function PlanCard({
       </div>
 
       <div className="flex-1 space-y-2.5">
-        {plan.features.map(({ text, included, note }) => (
+        {visibleFeatures.map(({ text, included, note }) => (
           <div key={text} className="flex items-start gap-2.5">
             {included ? (
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
@@ -543,6 +552,25 @@ function PlanCard({
             </span>
           </div>
         ))}
+        {plan.features.length > COLLAPSED_FEATURE_COUNT && (
+          <button
+            type="button"
+            onClick={() => setShowAllFeatures((v) => !v)}
+            className="mt-1 flex w-full items-center justify-center gap-1 rounded-xl border border-slate-200 py-2 text-xs font-bold text-emerald-700 transition-all hover:border-emerald-300 hover:bg-emerald-50"
+          >
+            {showAllFeatures ? (
+              <>
+                Show less
+                <ChevronUp className="h-3.5 w-3.5" />
+              </>
+            ) : (
+              <>
+                Read more
+                <ChevronDown className="h-3.5 w-3.5" />
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
