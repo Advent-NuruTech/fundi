@@ -160,7 +160,7 @@ export function PricingClient({ freeTrialEnabled }: { freeTrialEnabled: boolean 
               href="/register"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400"
             >
-              Start free trial
+              Start {freeTrialEnabled ? "free trial" : "now"}
               <ArrowRight className="h-5 w-5" />
             </Link>
             <a
@@ -173,10 +173,12 @@ export function PricingClient({ freeTrialEnabled }: { freeTrialEnabled: boolean 
               Request a demo
             </a>
           </div>
-          <p className="mt-5 flex items-center justify-center gap-2 text-sm text-slate-400">
-            <BadgeCheck className="h-4 w-4 text-emerald-400" />
-            14-day free trial · No card required · Cancel anytime
-          </p>
+          {freeTrialEnabled && (
+            <p className="mt-5 flex items-center justify-center gap-2 text-sm text-slate-400">
+              <BadgeCheck className="h-4 w-4 text-emerald-400" />
+              14-day free trial · No card required · Cancel anytime
+            </p>
+          )}
 
           {/* Category picker */}
           <div className="mt-10">

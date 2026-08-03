@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
+import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
 
 export const metadata = {
   title: "About FundiFlow",
@@ -53,7 +54,8 @@ const BUILT_FOR = [
   "Multi-branch businesses",
 ];
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const freeTrialEnabled = await getFreeTrialEnabled();
   return (
     <MarketingShell>
       {/* ── HERO ── */}
@@ -89,7 +91,7 @@ export default function AboutPage() {
               href="/register"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400"
             >
-              Start your free trial
+              Start {freeTrialEnabled ? "your free trial" : "now"}
               <ArrowRight className="h-5 w-5" />
             </Link>
             <a
@@ -233,7 +235,7 @@ export default function AboutPage() {
               href="/register"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-105 hover:bg-emerald-500"
             >
-              Start your free trial
+              Start {freeTrialEnabled ? "your free trial" : "now"}
               <ArrowRight className="h-5 w-5" />
             </Link>
             <a

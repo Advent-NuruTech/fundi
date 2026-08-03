@@ -26,7 +26,7 @@ export default function AdminSystemPage() {
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [activeSessions, setActiveSessions] = useState<AdminSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"health" | "audit" | "sessions" | "invites" | "settings">("health");
+  const [activeTab, setActiveTab] = useState<"health" | "trial" | "audit" | "sessions" | "invites">("health");
 
   useEffect(() => {
     fetch("/api/ffmanage/system")
@@ -48,7 +48,7 @@ export default function AdminSystemPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-xl font-bold text-slate-100">System</h1>
-          <p className="mt-0.5 text-sm text-slate-500">Health monitoring, audit logs, sessions, and invite management</p>
+          <p className="mt-0.5 text-sm text-slate-500">Health monitoring, free trial control, audit logs, sessions, and invite management</p>
         </div>
 
         {/* System health summary */}
@@ -78,7 +78,7 @@ export default function AdminSystemPage() {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-800 gap-1 overflow-x-auto">
-          {(["health", "audit", "sessions", "invites", "settings"] as const).map((tab) => (
+          {(["health", "trial", "audit", "sessions", "invites"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -213,7 +213,7 @@ export default function AdminSystemPage() {
           <InviteLinksPanel />
         )}
 
-        {activeTab === "settings" && (
+        {activeTab === "trial" && (
           <PlatformSettingsPanel />
         )}
       </div>

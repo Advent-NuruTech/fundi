@@ -367,7 +367,7 @@ export default async function PricingPage() {
               href="/register"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-105 hover:bg-emerald-400"
             >
-              Start your free trial
+              Start {freeTrialEnabled ? "your free trial" : "now"}
               <ArrowRight className="h-5 w-5" />
             </Link>
             <a
@@ -380,9 +380,11 @@ export default async function PricingPage() {
               Request a demo
             </a>
           </div>
-          <p className="mt-6 text-sm text-slate-400">
-            14-day free trial · No card required · Cancel anytime
-          </p>
+          {freeTrialEnabled && (
+            <p className="mt-6 text-sm text-slate-400">
+              14-day free trial · No card required · Cancel anytime
+            </p>
+          )}
         </div>
       </section>
     </MarketingShell>

@@ -815,7 +815,8 @@ export default function HomePage() {
               Built for Tailors. Designed for Growth.
             </p>
             <p className="text-sm text-emerald-700">
-              Plans starting at <strong>KES 690 / month</strong> — Start free with a 14-day trial
+              Plans starting at <strong>KES 690 / month</strong>
+              {freeTrialEnabled && <> — Start free with a 14-day trial</>}
             </p>
             <Link
               href="/pricing"
