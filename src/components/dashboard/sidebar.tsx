@@ -16,6 +16,7 @@ import {
   UserCircle,
   Landmark,
   Receipt,
+  Gauge,
   Globe,
   Store,
   Building2,
@@ -160,6 +161,21 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             Billing
           </Link>
         )}
+        {user?.role === "owner" && (
+          <Link
+            href="/settings/usage"
+            onClick={() => setOpen(false)}
+            className={cn(
+              "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
+              pathname.startsWith("/settings/usage")
+                ? "bg-emerald-600 text-white"
+                : "text-slate-700 hover:bg-slate-100"
+            )}
+          >
+            <Gauge className="h-4 w-4 shrink-0" />
+            Usage & Top-ups
+          </Link>
+        )}
       </nav>
 
       <div className="border-t border-slate-200 p-4">
@@ -249,6 +265,20 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 >
                   <Receipt className="h-4 w-4 shrink-0" />
                   Billing
+                </Link>
+              )}
+              {user?.role === "owner" && (
+                <Link
+                  href="/settings/usage"
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition",
+                    pathname.startsWith("/settings/usage")
+                      ? "bg-emerald-600 text-white"
+                      : "text-slate-700 hover:bg-slate-100"
+                  )}
+                >
+                  <Gauge className="h-4 w-4 shrink-0" />
+                  Usage & Top-ups
                 </Link>
               )}
             </nav>

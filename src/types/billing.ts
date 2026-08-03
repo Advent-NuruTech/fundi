@@ -22,7 +22,75 @@ export type BillingPaymentType =
   | "monthly_subscription"
   | "sms_sender_id"
   | "upgrade"
-  | "renewal";
+  | "renewal"
+  | "topup";
+
+// ─── Usage metering & top-ups ───────────────────────────────────────────────
+
+/** Every measurable capacity a business can consume. */
+export type UsageResource = "sms" | "ai_credits" | "storage";
+
+export type UsageLedgerSource =
+  | "usage" // consumed units (negative)
+  | "topup" // purchased units (positive)
+  | "adjustment" // platform adjustments
+  | "measurement"; // storage measured usage
+
+export interface UsageMeter {
+  id: string;
+  workspaceId: string;
+  resource: UsageResource;
+  /** Plan allowance for the current cycle (bytes for storage). */
+  planQuota: number;
+  /** Consumed from the plan allowance (storage = measured bytes in use). */
+  planUsed: number;
+  /** Purchased units that never expire / roll over between cycles. */
+  topUpCredits: number;
+  resetsCycle: boolean;
+  cycleStart: string | null;
+  cycleEnd: string | null;
+}
+
+export interface UsageLedgerEntry {
+  id: string;
+  workspaceId: string;
+  resource: UsageResource;
+  /** Positive = credit (bought), negative = consumed. */
+  units: number;
+  source: UsageLedgerSource;
+  reference: string | null;
+  balanceAfter: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface UsageTopup {
+  id: string;
+  workspaceId: string;
+  userId: string | null;
+  resource: UsageResource;
+  units: number;
+  amountKes: number;
+  paystackFee: number | null;
+  status: "pending" | "success" | "failed";
+  paystackReference: string;
+  paystackTransactionId: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+/** Live balance for one measurable resource (units; bytes for storage). */
+export interface UsageSummary {
+  resource: UsageResource;
+  quota: number;
+  used: number;
+  topUpCredits: number;
+  available: number;
+  unlimited: boolean;
+  resetsCycle: boolean;
+  cycleStart: string | null;
+  cycleEnd: string | null;
+}
 
 export type SenderIdStatus =
   | "none"

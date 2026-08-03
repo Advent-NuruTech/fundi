@@ -7,8 +7,9 @@ import {
   processSenderIdActivation,
   processRenewal,
 } from "@/lib/billing/subscription-service";
+import { creditTopup } from "@/lib/billing/usage-metering";
 import { koboToKes } from "@/lib/billing/fees";
-import type { PlanSlug } from "@/types/billing";
+import type { PlanSlug, UsageResource } from "@/types/billing";
 
 // Must be read as raw text BEFORE any parsing for signature verification
 export async function POST(request: Request) {
@@ -192,6 +193,8 @@ async function handleChargeSuccess(
     sender_id_name?: string;
     from_plan_slug?: string;
     to_plan_slug?: string;
+    resource?: string;
+    units?: number;
   };
 
   if (!meta?.workspace_id || !meta?.user_id) {
@@ -298,6 +301,22 @@ async function handleChargeSuccess(
         paystackFeeKobo: tx.fees ?? 0,
         paidAt: tx.paid_at,
         paystackCustomerCode: tx.customer.customer_code ?? "",
+      });
+      break;
+    }
+
+    case "topup": {
+      const resource = meta.resource as UsageResource | undefined;
+      if (!resource || !["sms", "ai_credits", "storage"].includes(resource)) {
+        console.warn("[webhook] Missing/invalid resource for top-up", reference, meta);
+        return;
+      }
+      await creditTopup(admin, {
+        paystackReference: reference,
+        paystackTransactionId: String(tx.id),
+        paidAt: tx.paid_at,
+        verifiedAmountKobo: tx.amount,
+        paystackFeeKobo: tx.fees ?? 0,
       });
       break;
     }

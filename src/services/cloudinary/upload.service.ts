@@ -27,6 +27,31 @@ export async function uploadImage(input: {
     throw new Error("Missing Cloudinary upload preset.");
   }
 
+  // ── Pre-flight: make sure the workspace has room for this file ─────────────
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (token) {
+    try {
+      const checkRes = await fetch(
+        `/api/billing/usage/check?resource=storage&units=${input.file.size}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (checkRes.ok) {
+        const check = await checkRes.json();
+        if (!check.ok) {
+          throw new Error(
+            "Your storage is full. Free up space or add more storage in Settings → Usage & Top-ups."
+          );
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("Your storage is full")) {
+        throw err;
+      }
+      console.warn("Storage pre-flight check skipped:", err);
+    }
+  }
+
   const formData = new FormData();
   formData.append("file", input.file);
   formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET);
@@ -56,6 +81,7 @@ export async function uploadImage(input: {
     width: data.width,
     height: data.height,
     format: data.format,
+    sizeBytes: input.file.size,
     uploadedByUid: input.uploadedByUid,
     uploadedAt: new Date().toISOString(),
   });
@@ -80,6 +106,7 @@ export async function uploadImage(input: {
       width: data.width,
       height: data.height,
       format: data.format ?? "",
+      sizeBytes: input.file.size,
       uploadedByUid: input.uploadedByUid,
       uploadedAt: new Date().toISOString(),
     } as ImageMeta;

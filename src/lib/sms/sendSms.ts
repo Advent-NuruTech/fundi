@@ -1,6 +1,9 @@
+import { supabase } from "@/lib/supabase";
+
 export interface SendSmsResult {
   success: boolean;
   error?: string;
+  code?: string;
   response?: unknown;
   recipient?: string;
 }
@@ -15,9 +18,15 @@ export async function sendSms(recipient: string, message: string, sender?: strin
   console.log("Sending SMS:", payload);
 
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
     const response = await fetch("/api/send-sms", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
     });
     const result = await response.json();
@@ -28,6 +37,7 @@ export async function sendSms(recipient: string, message: string, sender?: strin
       return {
         success: false,
         error: result?.error || "SMS request failed",
+        code: result?.code,
         response: result?.response || result,
       };
     }

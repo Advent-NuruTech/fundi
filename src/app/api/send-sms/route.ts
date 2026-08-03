@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { formatPhone, isValidKenyanPhone } from "@/lib/sms/formatPhone";
+import { getBillingAdminClient } from "@/lib/billing/admin-client";
+import { consumeUsage, InsufficientUsageError } from "@/lib/billing/usage-metering";
 
 type WasmsResult = {
   recipient?: string;
@@ -68,7 +71,30 @@ function getErrorDetails(error: unknown) {
   return error;
 }
 
+/** Resolves the caller's workspace from the bearer token, if present. */
+async function resolveWorkspaceId(request: Request): Promise<string | null> {
+  const authHeader = request.headers.get("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return null;
+
+  const admin = getBillingAdminClient();
+  const { data: { user }, error } = await admin.auth.getUser(token);
+  if (error || !user) return null;
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("business_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return profile?.business_id ?? null;
+}
+
 export async function POST(request: Request) {
+  const admin = getBillingAdminClient();
+  let workspaceId: string | null = null;
+  let reservedReference: string | null = null;
+
   try {
     const body = (await request.json()) as SmsRequestBody;
     const { recipient, message, sender } = body;
@@ -83,6 +109,9 @@ export async function POST(request: Request) {
       console.error("WASMS API Error:", { error: "Missing message", body });
       return NextResponse.json({ success: false, error: "Missing message" }, { status: 400 });
     }
+
+    // Resolve the caller's business for metering (optional for server-to-server sends)
+    workspaceId = await resolveWorkspaceId(request);
 
     const apiKey = process.env.WASMS_API_KEY;
     const apiSecret = process.env.WASMS_API_SECRET;
@@ -126,6 +155,28 @@ export async function POST(request: Request) {
 
     console.log("SMS Request Payload:", payload);
 
+    // ── Reserve 1 SMS atomically BEFORE sending (refunded if the provider rejects) ──
+    if (workspaceId) {
+      reservedReference = `sms_${Date.now()}_${randomUUID()}`;
+      try {
+        await consumeUsage(admin, workspaceId, "sms", 1, reservedReference);
+      } catch (meterError) {
+        if (meterError instanceof InsufficientUsageError) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: "INSUFFICIENT_USAGE",
+              resource: "sms",
+              error:
+                "Your SMS allowance is used up. Add more SMS in Settings → Usage & Top-ups to keep sending.",
+            },
+            { status: 429 }
+          );
+        }
+        console.warn("[send-sms] Metering reservation failed", meterError);
+      }
+    }
+
     const response = await fetch("https://www.wasms.co.ke/sendsms", {
       method: "POST",
       headers: {
@@ -164,6 +215,9 @@ export async function POST(request: Request) {
 
     if (!response.ok || !wasSmsAccepted(data)) {
       console.error("WASMS API Error:", data);
+      if (workspaceId && reservedReference) {
+        await refundReservedSms(workspaceId, reservedReference);
+      }
       return NextResponse.json(
         { success: false, error: getProviderError(data), response: data },
         { status: response.ok ? 502 : response.status }
@@ -175,6 +229,25 @@ export async function POST(request: Request) {
     return NextResponse.json(frontendResult);
   } catch (error) {
     console.error("SMS send exception:", getErrorDetails(error));
+    if (workspaceId && reservedReference) {
+      await refundReservedSms(workspaceId, reservedReference);
+    }
     return NextResponse.json({ success: false, error: "Failed to send SMS" }, { status: 500 });
+  }
+}
+
+/** Returns a previously reserved SMS credit when the provider rejects the send. */
+async function refundReservedSms(workspaceId: string, consumedReference: string) {
+  try {
+    await getBillingAdminClient().rpc("credit_usage", {
+      p_workspace: workspaceId,
+      p_resource: "sms",
+      p_units: 1,
+      p_reference: `refund_${consumedReference}`,
+      p_source: "adjustment",
+      p_metadata: { refunded_consumption: consumedReference },
+    });
+  } catch (refundErr) {
+    console.warn("[send-sms] Failed to refund reserved SMS", refundErr);
   }
 }

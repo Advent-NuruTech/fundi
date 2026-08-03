@@ -450,6 +450,7 @@ export interface ImageMeta {
   width: number;
   height: number;
   format?: string;
+  sizeBytes?: number;
   uploadedByUid: string;
   uploadedAt: string;
 }

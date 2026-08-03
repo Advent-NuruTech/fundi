@@ -52,6 +52,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
   sms_sender_id:       "Custom SMS Sender ID",
   upgrade:             "Plan Upgrade",
   renewal:             "Subscription Renewal",
+  topup:               "Usage Top-up",
 };
 
 const SENDER_ID_STATUS_CONFIG = {
