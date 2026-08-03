@@ -70,9 +70,7 @@ function fromPlan(plan: PlanConfig): PlanForm {
 }
 
 function limitsMatch(a: LimitValues, b: LimitValues): boolean {
-  return (Object.keys(LIMIT_FIELDS) as (keyof LimitValues)[]).every(
-    (k) => a[k] === b[k]
-  );
+  return LIMIT_FIELDS.every(({ key }) => a[key] === b[key]);
 }
 
 function planDiffersFromDefault(form: PlanForm, def: PlanConfig): boolean {
