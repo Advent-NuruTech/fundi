@@ -6,12 +6,13 @@ import { toast } from "sonner";
 import { Store, Check, Plus, ChevronDown, Loader2, Lock, ArrowUpRight } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { useSubscription } from "@/hooks/useSubscription";
-import { branchLimitForPlan } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { PlanSlug } from "@/types/billing";
 
 /** WhatsApp sales line for custom (10+ branch) enterprise plans. */
 const SALES_URL =
@@ -26,6 +27,7 @@ const SALES_URL =
 export function BranchSwitcher() {
   const { branches, activeBranchId, switchBranch, addBranch } = useAuth();
   const { subscription } = useSubscription();
+  const { data: planConfigs } = usePlanConfigs();
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -36,7 +38,12 @@ export function BranchSwitcher() {
   const active = branches.find((b) => b.id === activeBranchId) ?? branches[0];
 
   // Branches allowed by the active plan (includes the main branch).
-  const limit = branchLimitForPlan(subscription?.planSlug);
+  const planSlug = subscription?.planSlug;
+  const limit =
+    planSlug === "custom"
+      ? Number.POSITIVE_INFINITY
+      : planConfigs.branchLimits[planSlug as Exclude<PlanSlug, "custom">] ??
+        planConfigs.branchLimits.sindano;
   const hasLimit = Number.isFinite(limit);
   const atLimit = branches.length >= limit;
   // Sindano (limit 1) has no extra outlets at all — show an upgrade nudge.

@@ -6,9 +6,10 @@ import { toast } from "sonner";
 import { Store, Check, Plus, Loader2, Lock, ArrowUpRight, MapPin } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { useSubscription } from "@/hooks/useSubscription";
-import { branchLimitForPlan } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { getBusinessTypeConfig } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
+import type { PlanSlug } from "@/types/billing";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ const SALES_URL =
 export default function BranchesPage() {
   const { branches, activeBranchId, switchBranch, addBranch, business, isOwner } = useAuth();
   const { subscription } = useSubscription();
+  const { data: planConfigs } = usePlanConfigs();
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -29,7 +31,12 @@ export default function BranchesPage() {
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   const cfg = getBusinessTypeConfig(business?.businessType);
-  const limit = branchLimitForPlan(subscription?.planSlug);
+  const planSlug = subscription?.planSlug;
+  const limit =
+    planSlug === "custom"
+      ? Number.POSITIVE_INFINITY
+      : planConfigs.branchLimits[planSlug as Exclude<PlanSlug, "custom">] ??
+        planConfigs.branchLimits.sindano;
   const hasLimit = Number.isFinite(limit);
   const atLimit = branches.length >= limit;
   const isStarter = limit <= 1;

@@ -23,6 +23,7 @@ import {
   type BusinessType,
 } from "@/lib/business-types";
 import { getPlansForCategory, getHeroForCategory, type PricingPlan } from "@/lib/billing/pricing-content";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { formatKes } from "@/lib/billing/fees";
 
 const SALES_URL =
@@ -52,8 +53,9 @@ export function PricingClient({ freeTrialEnabled }: { freeTrialEnabled: boolean 
   );
   const [billing, setBilling] = useState<BillingCycle>("monthly");
   const { user } = useAuth();
+  const { data: planConfigs } = usePlanConfigs();
 
-  const plans = useMemo(() => getPlansForCategory(category), [category]);
+  const plans = useMemo(() => getPlansForCategory(category, planConfigs.plans), [category, planConfigs.plans]);
   const hero = getHeroForCategory(category);
 
   const comparisonRows = useMemo(

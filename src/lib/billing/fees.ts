@@ -1,10 +1,20 @@
-import type { CheckoutTotals, PlanSlug } from "@/types/billing";
+import type { CheckoutTotals, PlanConfig, PlanSlug } from "@/types/billing";
 import {
   getPlanConfig,
   PAYSTACK_FEE_CAP_KES,
   PAYSTACK_FEE_RATE,
-  SMS_SENDER_ID_PRICE,
+  SMS_SENDER_ID_PRICE as DEFAULT_SMS_SENDER_ID_PRICE,
 } from "./constants";
+
+/**
+ * Optional live-pricing overrides so server routes and client pages can pass
+ * the admin-edited values (from `src/lib/billing/dynamic-config.ts` / the
+ * `usePlanConfigs` hook). When omitted, the baked-in defaults are used.
+ */
+export interface BillingPriceOverrides {
+  plan?: PlanConfig | null;
+  smsSenderIdPrice?: number;
+}
 
 /**
  * Calculates the Paystack processing fee for a subtotal (KES).
@@ -23,12 +33,15 @@ export function calculatePaystackFee(subtotalKes: number): number {
  */
 export function calculateCheckoutTotals(
   planSlug: PlanSlug,
-  addSmsSenderId: boolean
+  addSmsSenderId: boolean,
+  overrides?: BillingPriceOverrides
 ): CheckoutTotals {
-  const plan = getPlanConfig(planSlug);
+  const plan = overrides?.plan ?? getPlanConfig(planSlug);
 
   const firstPayment = plan?.monthlyPrice ?? 0;
-  const smsSenderIdAmount = addSmsSenderId ? SMS_SENDER_ID_PRICE : 0;
+  const smsSenderIdAmount = addSmsSenderId
+    ? (overrides?.smsSenderIdPrice ?? DEFAULT_SMS_SENDER_ID_PRICE)
+    : 0;
   const subtotal = firstPayment + smsSenderIdAmount;
 
   return {

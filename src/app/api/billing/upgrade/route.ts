@@ -4,7 +4,7 @@ import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { initializeTransaction, getAppBaseUrl } from "@/lib/billing/paystack-client";
 import { kesToKobo } from "@/lib/billing/fees";
 import { generateReference } from "@/lib/billing/reference";
-import { getPlanConfig } from "@/lib/billing/constants";
+import { getEffectivePlanConfig } from "@/lib/billing/dynamic-config";
 import type { PlanSlug } from "@/types/billing";
 
 const PLAN_RANK: Record<string, number> = {
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
     const { newPlanSlug } = parsed.data;
-    const newPlan = getPlanConfig(newPlanSlug as PlanSlug);
+    const newPlan = await getEffectivePlanConfig(newPlanSlug as PlanSlug, admin);
     if (!newPlan) return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
 
     // Resolve workspace + require owner

@@ -7,7 +7,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { StatCard } from "@/components/admin/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { formatKes, formatDateLabel, cn } from "@/lib/utils";
-import { PLAN_CONFIGS } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { CreditCard, TrendingUp, Clock, AlertCircle, ChevronLeft, ChevronRight, Search, Building2 } from "lucide-react";
 
 interface Payment {
@@ -30,6 +30,7 @@ interface Summary {
 }
 
 export default function AdminBillingPage() {
+  const { data: planConfigs } = usePlanConfigs();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<Summary>({ totalRevenue: 0, pendingCount: 0, failedCount: 0 });
@@ -77,7 +78,7 @@ export default function AdminBillingPage() {
             <h2 className="text-sm font-semibold text-slate-300">Plan branch limits</h2>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {Object.values(PLAN_CONFIGS).map((p) => (
+            {Object.values(planConfigs.plans).map((p) => (
               <div key={p.slug} className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
                 <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{p.name}</p>
                 <p className="mt-1 text-sm font-bold text-slate-200">

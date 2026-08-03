@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { scheduleDowngrade } from "@/lib/billing/subscription-service";
-import { getPlanConfig } from "@/lib/billing/constants";
+import { getEffectivePlanConfig } from "@/lib/billing/dynamic-config";
 import type { PlanSlug } from "@/types/billing";
 
 const PLAN_RANK: Record<string, number> = {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
     const { newPlanSlug } = parsed.data;
-    if (!getPlanConfig(newPlanSlug as PlanSlug)) {
+    if (!(await getEffectivePlanConfig(newPlanSlug as PlanSlug, admin))) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
 

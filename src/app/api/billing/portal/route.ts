@@ -5,7 +5,8 @@ import {
   mapDbToBillingPayment,
   mapDbToAuditLog,
 } from "@/lib/billing/subscription-service";
-import { getPlanConfig } from "@/lib/billing/constants";
+import { getPlanConfig as getDefaultPlanConfig } from "@/lib/billing/constants";
+import { getEffectivePlanConfig } from "@/lib/billing/dynamic-config";
 import type { PlanSlug } from "@/types/billing";
 
 export async function GET(request: Request) {
@@ -121,7 +122,8 @@ export async function GET(request: Request) {
     const payments = (paymentRows ?? []).map(mapDbToBillingPayment);
     const auditLogs = (auditRows ?? []).map(mapDbToAuditLog);
     const plan = subscription
-      ? getPlanConfig(subscription.planSlug as PlanSlug)
+      ? (await getEffectivePlanConfig(subscription.planSlug as PlanSlug, admin)) ??
+        getDefaultPlanConfig(subscription.planSlug as PlanSlug)
       : null;
 
     return NextResponse.json({ subscription, payments, plan, auditLogs });

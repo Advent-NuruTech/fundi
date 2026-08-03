@@ -22,55 +22,11 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { calculateCheckoutTotals, formatKes } from "@/lib/billing/fees";
-import { SMS_SENDER_ID_PRICE, getPlanConfig } from "@/lib/billing/constants";
+import { getPlanConfig } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PlanSlug } from "@/types/billing";
-
-// ── Feature list per plan ────────────────────────────────────────────────────
-
-const PLAN_FEATURES: Record<string, string[]> = {
-  sindano: [
-    "1 user account (owner only)",
-    "Up to 500 customer records",
-    "Up to 250 orders/month",
-    "Customer measurements & fitting notes",
-    "Inventory tracking (up to 500 items)",
-    "Payment recording (Cash & M-Pesa)",
-    "75 SMS notifications/month",
-    "Mobile dashboard (PWA) + offline mode",
-    "AI Assistant — 100 credits/month",
-    "Email support (48 hr response)",
-  ],
-  fundi: [
-    "Up to 10 user accounts",
-    "Up to 5,000 customers & 2,000 orders/month",
-    "Full measurements, fittings & style records",
-    "Full production workflow (6 stages)",
-    "Full inventory + purchase orders",
-    "Complete finance dashboard",
-    "500 SMS notifications/month",
-    "WhatsApp order notifications",
-    "Analytics — sales trends & KPIs",
-    "Role-based team management (6 roles)",
-    "AI Assistant — 800 credits/month",
-    "Priority support (12 hr response)",
-  ],
-  dhahabu: [
-    "Up to 30 user accounts",
-    "Up to 25,000 customers & 10,000 orders/month",
-    "Everything in Fundi, fully unlocked",
-    "2,000 SMS notifications/month",
-    "AI Assistant — 3,000 credits/month",
-    "Advanced analytics & profit forecasting",
-    "Multi-location / branch support",
-    "API access for custom integrations",
-    "Dedicated account manager",
-    "On-site training & onboarding (Nairobi)",
-    "SLA: 99.9% uptime guarantee",
-    "Priority phone support (2 hr response)",
-  ],
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -81,14 +37,19 @@ interface Props {
 
 export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
   const router = useRouter();
-  const plan = getPlanConfig(planSlug);
+  const { data: planConfigs } = usePlanConfigs();
+  const plan =
+    planConfigs.plans[planSlug as Exclude<PlanSlug, "custom">] ?? getPlanConfig(planSlug);
+  const smsSenderIdPrice = planConfigs.smsSenderIdPrice;
   const { enabled: freeTrialEnabled } = useFreeTrialEnabled();
   const [addSenderId, setAddSenderId] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const totals = calculateCheckoutTotals(planSlug, addSenderId);
-  const features = PLAN_FEATURES[planSlug] ?? [];
+  const totals = calculateCheckoutTotals(planSlug, addSenderId, {
+    plan,
+    smsSenderIdPrice,
+  });
 
   const handleProceed = useCallback(async () => {
     if (loading) return;
@@ -284,7 +245,7 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                   {addSenderId && (
                     <div className="flex justify-between text-emerald-700">
                       <span>Custom SMS Sender ID</span>
-                      <span className="font-semibold">{formatKes(SMS_SENDER_ID_PRICE)}</span>
+                      <span className="font-semibold">{formatKes(smsSenderIdPrice)}</span>
                     </div>
                   )}
 
@@ -317,7 +278,7 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                         Available on all plans. Never billed again after purchase.
                       </p>
                       <p className="mt-1 text-sm font-bold text-slate-900">
-                        + {formatKes(SMS_SENDER_ID_PRICE)}
+                        + {formatKes(smsSenderIdPrice)}
                       </p>
                     </div>
                   </label>

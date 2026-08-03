@@ -4,7 +4,7 @@ import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { initializeTransaction, getAppBaseUrl } from "@/lib/billing/paystack-client";
 import { kesToKobo } from "@/lib/billing/fees";
 import { generateReference } from "@/lib/billing/reference";
-import { SMS_SENDER_ID_PRICE } from "@/lib/billing/constants";
+import { getSmsSenderIdPrice } from "@/lib/billing/dynamic-config";
 
 // Sender ID rules: 3–11 alphanumeric chars (no spaces, no special chars)
 const bodySchema = z.object({
@@ -64,14 +64,15 @@ export async function POST(request: Request) {
     }
 
     const reference = generateReference("sms");
-    const amountKobo = kesToKobo(SMS_SENDER_ID_PRICE);
+    const smsSenderIdPrice = await getSmsSenderIdPrice(admin);
+    const amountKobo = kesToKobo(smsSenderIdPrice);
 
     // Save payment_attempt
     await admin.from("payment_attempts").insert({
       reference,
       user_id: user.id,
       workspace_id: workspaceId,
-      amount: SMS_SENDER_ID_PRICE,
+      amount: smsSenderIdPrice,
       status: "pending",
     });
 
@@ -80,12 +81,12 @@ export async function POST(request: Request) {
       user_id: user.id,
       workspace_id: workspaceId,
       paystack_reference: reference,
-      amount: SMS_SENDER_ID_PRICE,
+      amount: smsSenderIdPrice,
       currency: "KES",
       payment_status: "pending",
       payment_type: "sms_sender_id",
       includes_sms_sender_id: true,
-      sms_sender_id_amount: SMS_SENDER_ID_PRICE,
+      sms_sender_id_amount: smsSenderIdPrice,
       metadata: { sender_id_name: senderIdName },
     });
 
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
         workspace_id: workspaceId,
         payment_type: "sms_sender_id",
         includes_sms_sender_id: true,
-        sms_sender_id_amount: SMS_SENDER_ID_PRICE,
+        sms_sender_id_amount: smsSenderIdPrice,
         monthly_price: 0,
         sender_id_name: senderIdName,
       },
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       authorizationUrl: paystackRes.data.authorization_url,
       reference,
-      amount: SMS_SENDER_ID_PRICE,
+      amount: smsSenderIdPrice,
     });
   } catch (err) {
     console.error("[billing/sender-id]", err);

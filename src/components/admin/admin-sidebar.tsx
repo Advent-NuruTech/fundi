@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Building2,
   CreditCard,
+  BadgeDollarSign,
   MessageSquare,
   Server,
   FileText,
@@ -36,6 +37,12 @@ const NAV_ITEMS = [
     icon: CreditCard,
     label: "Billing",
     description: "Payments & revenue",
+  },
+  {
+    href: "/ffmanage/pricing",
+    icon: BadgeDollarSign,
+    label: "Pricing",
+    description: "Plans & SMS fees",
   },
   {
     href: "/ffmanage/sms",

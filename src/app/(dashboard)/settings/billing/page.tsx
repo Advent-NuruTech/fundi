@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatKes } from "@/lib/billing/fees";
-import { SMS_SENDER_ID_PRICE, PLAN_CONFIGS } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -105,6 +105,9 @@ export default function BillingDashboardPage() {
   const searchParams = useSearchParams();
   const action = searchParams.get("action");
   const ref = searchParams.get("ref");
+
+  // Live plan pricing/capacity (defaults + platform-admin overrides).
+  const { data: planConfigs } = usePlanConfigs();
 
   const [data, setData] = useState<BillingPortalData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -237,7 +240,7 @@ export default function BillingDashboardPage() {
     : null;
 
   const pendingPlanConfig = subscription?.pendingPlanSlug
-    ? PLAN_CONFIGS[subscription.pendingPlanSlug as Exclude<PlanSlug, "custom">] ?? null
+    ? planConfigs.plans[subscription.pendingPlanSlug as Exclude<PlanSlug, "custom">] ?? null
     : null;
 
   const pendingChangeDate = subscription?.pendingChangeAt
@@ -414,7 +417,7 @@ export default function BillingDashboardPage() {
                       className="mt-2 h-7 gap-1 text-xs"
                       onClick={() => setSenderIdOpen(true)}
                     >
-                      Purchase — {formatKes(SMS_SENDER_ID_PRICE)}
+                      Purchase — {formatKes(planConfigs.smsSenderIdPrice)}
                       <ArrowUpRight className="h-3 w-3" />
                     </Button>
                   </>
@@ -788,8 +791,9 @@ function UpgradePlanModal({
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: planConfigs } = usePlanConfigs();
 
-  const upgradePlans = Object.values(PLAN_CONFIGS).filter(
+  const upgradePlans = Object.values(planConfigs.plans).filter(
     (p) => (PLAN_RANK[p.slug] ?? 0) > currentRank
   );
 
@@ -856,7 +860,7 @@ function UpgradePlanModal({
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <div className="flex items-center justify-between font-semibold text-slate-900">
               <span>Charge today</span>
-              <span>{formatKes(PLAN_CONFIGS[selectedPlan as Exclude<PlanSlug, "custom">]?.monthlyPrice ?? 0)}</span>
+              <span>{formatKes(planConfigs.plans[selectedPlan as Exclude<PlanSlug, "custom">]?.monthlyPrice ?? 0)}</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">
               Payment via Paystack. Billing period resets from today for 30 days.
@@ -904,8 +908,9 @@ function DowngradePlanModal({
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: planConfigs } = usePlanConfigs();
 
-  const downgradePlans = Object.values(PLAN_CONFIGS).filter(
+  const downgradePlans = Object.values(planConfigs.plans).filter(
     (p) => (PLAN_RANK[p.slug] ?? 0) < currentRank
   );
 
@@ -1002,8 +1007,9 @@ function CancelDowngradeModal({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: planConfigs } = usePlanConfigs();
   const pendingConfig = pendingPlanSlug
-    ? PLAN_CONFIGS[pendingPlanSlug as Exclude<PlanSlug, "custom">]
+    ? planConfigs.plans[pendingPlanSlug as Exclude<PlanSlug, "custom">]
     : null;
 
   async function handleCancel() {
@@ -1185,6 +1191,8 @@ function SenderIdModal({
   const [senderIdName, setSenderIdName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: planConfigs } = usePlanConfigs();
+  const smsSenderIdPrice = planConfigs.smsSenderIdPrice;
 
   const isValid = /^[A-Za-z0-9]{3,11}$/.test(senderIdName);
 
@@ -1251,7 +1259,7 @@ function SenderIdModal({
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
           <div className="flex items-center justify-between font-semibold text-slate-900">
             <span>One-time fee</span>
-            <span>{formatKes(SMS_SENDER_ID_PRICE)}</span>
+            <span>{formatKes(smsSenderIdPrice)}</span>
           </div>
           <p className="mt-0.5 text-xs text-slate-500">Paid via Paystack. No recurring charge.</p>
         </div>
@@ -1268,7 +1276,7 @@ function SenderIdModal({
             disabled={!isValid || loading}
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
-            {loading ? "Redirecting…" : `Pay ${formatKes(SMS_SENDER_ID_PRICE)}`}
+            {loading ? "Redirecting…" : `Pay ${formatKes(smsSenderIdPrice)}`}
           </Button>
         </div>
       </div>

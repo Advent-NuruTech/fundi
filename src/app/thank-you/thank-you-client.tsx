@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatKes } from "@/lib/billing/fees";
-import { getPlanConfig } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
 import { Button } from "@/components/ui/button";
 import { PlanBadge } from "@/components/billing/plan-badge";
 import type { Subscription } from "@/types/billing";
@@ -131,6 +131,7 @@ export function ThankYouClient() {
   const router = useRouter();
   const reference = searchParams.get("reference") ?? searchParams.get("trxref") ?? "";
 
+  const { data: planConfigs } = usePlanConfigs();
   const [state, setState] = useState<State>("verifying");
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -192,7 +193,9 @@ export function ThankYouClient() {
     verify();
   }, [verify]);
 
-  const plan = subscription?.planSlug ? getPlanConfig(subscription.planSlug) : null;
+  const plan = subscription?.planSlug
+    ? (planConfigs.plans[subscription.planSlug as Exclude<Subscription["planSlug"], "custom">] ?? null)
+    : null;
 
   const nextBillingDate = subscription?.nextBillingDate
     ? new Date(subscription.nextBillingDate).toLocaleDateString("en-KE", {

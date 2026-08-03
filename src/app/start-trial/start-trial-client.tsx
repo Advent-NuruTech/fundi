@@ -17,35 +17,42 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
-import { PLAN_CONFIGS, TRIAL_DAYS, isValidPlanSlug } from "@/lib/billing/constants";
+import { usePlanConfigs } from "@/hooks/usePlanConfigs";
+import { TRIAL_DAYS, isValidPlanSlug } from "@/lib/billing/constants";
 import { formatKes } from "@/lib/billing/fees";
 import { Button } from "@/components/ui/button";
-import type { PlanSlug } from "@/types/billing";
+import type { PlanConfig, PlanSlug } from "@/types/billing";
 
 type TrialPlan = Exclude<PlanSlug, "custom">;
 const PLAN_ORDER: TrialPlan[] = ["sindano", "fundi", "dhahabu"];
 
+const nf = (value: number | null | undefined): string =>
+  value == null ? "Unlimited" : value.toLocaleString("en-KE");
+
 // Short, scannable highlights per plan for the trial chooser.
-const PLAN_HIGHLIGHTS: Record<TrialPlan, string[]> = {
-  sindano: [
-    "1 user account",
-    "Up to 500 customers",
-    "Basic inventory & payments",
-    "75 SMS / month",
-  ],
-  fundi: [
-    "Up to 10 user accounts",
-    "Up to 5,000 customers & 2,000 orders/mo",
-    "Full finance dashboard & analytics",
-    "500 SMS + WhatsApp notifications",
-  ],
-  dhahabu: [
-    "Up to 30 users",
-    "Everything in Fundi, unlocked",
-    "Multi-branch + API access",
-    "2,000 SMS + AI assistant & forecasting",
-  ],
-};
+function buildPlanHighlights(configs: Record<TrialPlan, PlanConfig>): Record<TrialPlan, string[]> {
+  const l = configs;
+  return {
+    sindano: [
+      `${nf(l.sindano.limits.maxUsers)} user account${l.sindano.limits.maxUsers === 1 ? "" : "s"}`,
+      `Up to ${nf(l.sindano.limits.maxCustomers)} customers`,
+      "Basic inventory & payments",
+      `${nf(l.sindano.limits.smsPerMonth)} SMS / month`,
+    ],
+    fundi: [
+      `Up to ${nf(l.fundi.limits.maxUsers)} user accounts`,
+      `Up to ${nf(l.fundi.limits.maxCustomers)} customers & ${nf(l.fundi.limits.maxOrdersPerMonth)} orders/mo`,
+      "Full finance dashboard & analytics",
+      `${nf(l.fundi.limits.smsPerMonth)} SMS + WhatsApp notifications`,
+    ],
+    dhahabu: [
+      `Up to ${nf(l.dhahabu.limits.maxUsers)} users`,
+      "Everything in Fundi, unlocked",
+      "Multi-branch + API access",
+      `${nf(l.dhahabu.limits.smsPerMonth)} SMS + AI assistant & forecasting`,
+    ],
+  };
+}
 
 export function StartTrialClient() {
   const router = useRouter();
@@ -60,6 +67,13 @@ export function StartTrialClient() {
 
   // Defense-in-depth: never show the trial chooser when the platform flag is OFF.
   const { enabled: freeTrialEnabled, loading: trialFlagLoading } = useFreeTrialEnabled();
+
+  // Live plan pricing/capacity (defaults + platform-admin overrides).
+  const { data: planConfigs } = usePlanConfigs();
+  const planHighlights = useMemo(
+    () => buildPlanHighlights(planConfigs.plans),
+    [planConfigs.plans]
+  );
 
   useEffect(() => {
     if (trialFlagLoading) return;
@@ -183,7 +197,7 @@ export function StartTrialClient() {
         {/* Plan cards */}
         <div className="grid gap-5 lg:grid-cols-3">
           {PLAN_ORDER.map((slug) => {
-            const plan = PLAN_CONFIGS[slug];
+            const plan = planConfigs.plans[slug];
             const active = selected === slug;
             const popular = slug === "fundi";
             return (
@@ -228,7 +242,7 @@ export function StartTrialClient() {
                 </div>
 
                 <ul className="space-y-2">
-                  {PLAN_HIGHLIGHTS[slug].map((f) => (
+                  {planHighlights[slug].map((f) => (
                     <li key={f} className="flex items-start gap-2 text-sm text-slate-600">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
                       {f}
@@ -247,7 +261,7 @@ export function StartTrialClient() {
               {
                 icon: Sparkles,
                 title: "Today",
-                desc: `Your ${PLAN_CONFIGS[selected].name} trial starts instantly — full access, no card.`,
+                desc: `Your ${planConfigs.plans[selected].name} trial starts instantly — full access, no card.`,
               },
               {
                 icon: CalendarClock,

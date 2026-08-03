@@ -3,7 +3,7 @@ import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { initializeTransaction, getAppBaseUrl } from "@/lib/billing/paystack-client";
 import { kesToKobo } from "@/lib/billing/fees";
 import { generateReference } from "@/lib/billing/reference";
-import { getPlanConfig } from "@/lib/billing/constants";
+import { getEffectivePlanConfig } from "@/lib/billing/dynamic-config";
 import type { PlanSlug } from "@/types/billing";
 
 export async function POST(request: Request) {
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
 
     // Allow renewal for past_due, cancelled, or expiring active subscriptions
     const effectivePlanSlug = (sub.pending_plan_slug ?? sub.plan_slug) as PlanSlug;
-    const planConfig = getPlanConfig(effectivePlanSlug);
+    const planConfig = await getEffectivePlanConfig(effectivePlanSlug, admin);
     if (!planConfig) return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
 
     const amountKes = planConfig.monthlyPrice;

@@ -4,7 +4,11 @@ import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { initializeTransaction, getAppBaseUrl } from "@/lib/billing/paystack-client";
 import { calculateCheckoutTotals, kesToKobo } from "@/lib/billing/fees";
 import { generateReference } from "@/lib/billing/reference";
-import { isValidPlanSlug, getPlanConfig, SMS_SENDER_ID_PRICE } from "@/lib/billing/constants";
+import { isValidPlanSlug } from "@/lib/billing/constants";
+import {
+  getEffectivePlanConfig,
+  getSmsSenderIdPrice,
+} from "@/lib/billing/dynamic-config";
 import type { PlanSlug } from "@/types/billing";
 
 const bodySchema = z.object({
@@ -44,10 +48,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
     const slug = planSlug as PlanSlug;
-    const planConfig = getPlanConfig(slug);
+    const planConfig = await getEffectivePlanConfig(slug, admin);
     if (!planConfig) {
       return NextResponse.json({ error: "Plan not found" }, { status: 400 });
     }
+    const smsSenderIdPrice = await getSmsSenderIdPrice(admin);
 
     // ── Workspace resolution ──────────────────────────────────────────────
     const { data: profile } = await admin
@@ -76,7 +81,10 @@ export async function POST(request: Request) {
     }
 
     // ── Server-side amount calculation (NEVER trust frontend amounts) ──────
-    const totals = calculateCheckoutTotals(slug, addSmsSenderId);
+    const totals = calculateCheckoutTotals(slug, addSmsSenderId, {
+      plan: planConfig,
+      smsSenderIdPrice,
+    });
     const amountKobo = kesToKobo(totals.total);
 
     // ── Generate unique reference ─────────────────────────────────────────
@@ -109,7 +117,7 @@ export async function POST(request: Request) {
       payment_status: "pending",
       payment_type: "monthly_subscription",
       includes_sms_sender_id: addSmsSenderId,
-      sms_sender_id_amount: addSmsSenderId ? SMS_SENDER_ID_PRICE : null,
+      sms_sender_id_amount: addSmsSenderId ? smsSenderIdPrice : null,
       paystack_fee: totals.paystackFee,
       metadata: {
         plan_slug: slug,
@@ -130,7 +138,7 @@ export async function POST(request: Request) {
         workspace_id: workspaceId,
         payment_type: "monthly_subscription",
         includes_sms_sender_id: addSmsSenderId,
-        sms_sender_id_amount: addSmsSenderId ? SMS_SENDER_ID_PRICE : 0,
+        sms_sender_id_amount: addSmsSenderId ? smsSenderIdPrice : 0,
         monthly_price: planConfig.monthlyPrice,
       },
     });
