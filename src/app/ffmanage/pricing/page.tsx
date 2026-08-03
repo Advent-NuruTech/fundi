@@ -407,6 +407,27 @@ export default function AdminPricingPage() {
             );
           })}
         </div>
+
+        {/* Floating save button — stays visible while the page scrolls */}
+        {changedCount > 0 && (
+          <div className="fixed bottom-5 right-5 z-40 sm:bottom-6 sm:right-6">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-950/60 ring-1 ring-violet-400/50 transition-all hover:bg-violet-500 disabled:opacity-60"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {saving
+                ? "Saving…"
+                : `Save changes (${changedCount})`}
+            </button>
+          </div>
+        )}
       </div>
     </AdminShell>
   );
