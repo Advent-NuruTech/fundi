@@ -16,6 +16,9 @@ import {
   LogOut,
   X,
   ChevronRight,
+  Cpu,
+  BarChart3,
+  ShieldCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -43,6 +46,25 @@ const NAV_ITEMS = [
     icon: BadgeDollarSign,
     label: "Pricing",
     description: "Plans & SMS fees",
+  },
+  {
+    href: "/ffmanage/ai-billing",
+    icon: Cpu,
+    label: "AI Billing",
+    description: "Engine & pricing config",
+    exact: true,
+  },
+  {
+    href: "/ffmanage/ai-billing/analytics",
+    icon: BarChart3,
+    label: "AI Analytics",
+    description: "Cost & revenue insights",
+  },
+  {
+    href: "/ffmanage/ai-billing/records",
+    icon: ShieldCheck,
+    label: "AI Records",
+    description: "Immutable audit trail",
   },
   {
     href: "/ffmanage/sms",
@@ -120,10 +142,10 @@ export function AdminSidebar({ open, onClose, currentPath, adminEmail }: Props) 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
         <ul className="space-y-0.5">
-          {NAV_ITEMS.map(({ href, icon: Icon, label, description }) => {
-            const active =
-              currentPath === href ||
-              (href !== "/ffmanage/dashboard" && currentPath.startsWith(href));
+          {NAV_ITEMS.map(({ href, icon: Icon, label, description, exact }) => {
+            const active = exact
+              ? currentPath === href
+              : currentPath === href || currentPath.startsWith(href);
             return (
               <li key={href}>
                 <Link
