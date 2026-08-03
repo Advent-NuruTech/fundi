@@ -167,7 +167,6 @@ export interface AdminBusinessDetail extends AdminBusinessSummary {
     id: string;
     planSlug: string;
     status: string;
-    installationFeePaid: boolean;
     currentPeriodStart: string | null;
     currentPeriodEnd: string | null;
     nextBillingDate: string | null;

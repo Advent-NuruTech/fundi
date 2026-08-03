@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       `
       id, name, email, phone, location, owner_uid, is_active, created_at, plan, business_type,
       subscriptions!subscriptions_workspace_id_fkey (
-        id, plan_slug, status, next_billing_date, installation_fee_paid
+        id, plan_slug, status, next_billing_date
       ),
       profiles!businesses_owner_uid_fkey (
         email, display_name

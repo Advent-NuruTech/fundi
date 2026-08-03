@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     const amountKobo = kesToKobo(totals.total);
 
     // ── Generate unique reference ─────────────────────────────────────────
-    const reference = generateReference("install");
+    const reference = generateReference("first");
 
     // ── Save payment_attempt BEFORE redirect (anti-double-charge) ─────────
     const { error: attemptErr } = await admin.from("payment_attempts").insert({
@@ -107,13 +107,13 @@ export async function POST(request: Request) {
       amount: totals.total,
       currency: "KES",
       payment_status: "pending",
-      payment_type: "installation_fee",
+      payment_type: "monthly_subscription",
       includes_sms_sender_id: addSmsSenderId,
       sms_sender_id_amount: addSmsSenderId ? SMS_SENDER_ID_PRICE : null,
       paystack_fee: totals.paystackFee,
       metadata: {
         plan_slug: slug,
-        installation_fee: totals.installationFee,
+        first_month_amount: totals.firstPayment,
       },
     });
 
@@ -128,9 +128,8 @@ export async function POST(request: Request) {
         plan_slug: slug,
         user_id: user.id,
         workspace_id: workspaceId,
-        payment_type: "installation_fee",
+        payment_type: "monthly_subscription",
         includes_sms_sender_id: addSmsSenderId,
-        installation_fee_amount: totals.installationFee,
         sms_sender_id_amount: addSmsSenderId ? SMS_SENDER_ID_PRICE : 0,
         monthly_price: planConfig.monthlyPrice,
       },

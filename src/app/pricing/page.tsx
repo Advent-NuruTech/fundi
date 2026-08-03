@@ -1,51 +1,137 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { CheckCircle2, MessageCircle, ArrowRight, Users, Shield } from "lucide-react";
+import {
+  Users,
+  ShoppingBag,
+  Ruler,
+  Layers,
+  Boxes,
+  Wallet,
+  LineChart,
+  Globe,
+  WifiOff,
+  BarChart3,
+  TrendingUp,
+  Store,
+  Bot,
+  MessageSquare,
+  MessageCircle,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
+import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
 import { PricingClient } from "./pricing-client";
+
+export const dynamic = "force-dynamic";
 
 const DEMO_URL =
   "https://wa.me/254142225233?text=Hi%2C%20I'd%20like%20to%20request%20a%20demo%20of%20FundiFlow";
 
+const TRIAL_FAQ = {
+  q: "Is there a free trial?",
+  a: "Yes — every plan starts with a 14-day free trial, with no card required. You pick the plan you want to try and get full access to it, so the data and workflow you set up carry over exactly when you continue. We remind you 5 days before it ends, and you only pay if you choose to keep using FundiFlow.",
+};
+
 const FAQS = [
   {
-    q: "What is the installation fee?",
-    a: "The installation fee is a one-time setup cost that covers account creation, data migration assistance, initial training and full onboarding support. Sindano: KES 5,075 | Fundi: KES 28,420 | Dhahabu: KES 43,990.",
+    q: "What happens after the first two introductory months?",
+    a: "Nothing needs your attention. Your plan continues automatically at the standard monthly rate, and we'll remind you before it happens. You can switch plans or billing periods at any time — the choice is always yours.",
   },
   {
-    q: "Is there a free trial?",
-    a: "Yes — every plan starts with a 14-day free trial. No card required. You pick the plan you want to try and get full access to it, so the data and workflow you set up carry over exactly when you continue. We remind you 5 days before it ends, and you only pay if you choose to keep using FundiFlow.",
+    q: "How does annual billing actually save me money?",
+    a: "You pay for 10 months and receive 12 — two full months free on every plan. That's a saving of about 17%, applied instantly. No rebates to chase and no coupons: just a lower price for choosing to stay for the year.",
+  },
+  TRIAL_FAQ,
+  {
+    q: "What exactly is an AI Credit?",
+    a: "An AI Credit is how we measure AI usage so pricing stays simple. Most everyday questions — like \"summarise today's sales\" — cost 1 credit, while deeper analysis such as profit reviews or six-month forecasts costs 2–5. Every plan includes a monthly allowance, and you can add more any time.",
   },
   {
-    q: "Can I run more than one branch?",
-    a: "Yes. Sindano runs a single outlet, Fundi supports up to 4 branches and Dhahabu up to 9 — each branch keeps its own stock, sales, customers and finance, fully separate. Need more than 9? Contact sales for a custom plan with unlimited branches.",
+    q: "What is an SMS credit, and how much do they cost?",
+    a: "Each SMS you send costs KES 0.90. Every plan includes a monthly bundle — from 75 to 2,000 SMS — and when you need more, top-ups start at just KES 90 for 100 SMS. You only ever pay for what you use.",
   },
   {
-    q: "Can I upgrade my plan later?",
-    a: "Absolutely. You can upgrade from Sindano to Fundi or Dhahabu at any time. We will prorate the monthly cost and handle the migration for you. Downgrading is also available with 30 days notice.",
+    q: "What happens if my business grows beyond my plan's capacity?",
+    a: "First, congratulations — that's the best problem to have. You'll receive clear prompts as you approach a limit, and you can upgrade to a larger plan or simply purchase more SMS, AI Credits, storage or listings. Nothing is ever deleted, and your business never stops growing.",
   },
   {
-    q: "Who can see the financial data?",
-    a: "Only the owner sees full financial data by default — weekly/monthly earnings, net profit, inventory value, payroll liability and business insights. Owners can selectively grant or revoke access to managers for specific periods.",
+    q: "Can I change plans later?",
+    a: "Yes, at any time. Upgrade to a larger plan whenever you're ready and we'll handle the transition. You can also move between monthly and annual billing, and downgrade when your needs change.",
   },
   {
-    q: "Does it work without internet?",
-    a: "Yes. FundiFlow is an offline-first Progressive Web App (PWA). You can record sales, customers and payments without connectivity, and everything syncs automatically when internet is available.",
+    q: "Does it really work without internet?",
+    a: "Yes. FundiFlow is an offline-first Progressive Web App. You can record orders, customers and payments without connectivity — on a phone, tablet or computer — and everything syncs automatically the moment you're back online.",
   },
   {
-    q: "Is my data secure?",
-    a: "Yes. All data is encrypted in transit and at rest, and every business is fully isolated. Your business data is never shared with third parties.",
+    q: "Who can see my financial data?",
+    a: "You decide. By default, only the business owner sees full financial data. You can grant managers access to today's numbers or unlock history selectively. Your money is your business.",
   },
   {
-    q: "What payment methods do you accept for the subscription?",
-    a: "We accept M-Pesa and bank transfer. Recurring charges start 60 days after your setup. Contact us via WhatsApp to set up your payment.",
+    q: "Is my data safe?",
+    a: "Yes. Your data is encrypted in transit and at rest, and every business's data is fully isolated from every other. Your records are never shared with third parties.",
+  },
+  {
+    q: "How do I pay?",
+    a: "Through our secure payment gateway — M-Pesa, card or bank transfer. Choose what works for you, and your subscription renews automatically so you never have to remember.",
   },
 ];
 
-export default function PricingPage() {
+const INCLUDED_FEATURES = [
+  { icon: Users, title: "Customer Management", desc: "Profiles, measurements and complete order history, forever in one place." },
+  { icon: ShoppingBag, title: "Orders", desc: "Create, track and deliver work with confidence — from first intake to final handover." },
+  { icon: Ruler, title: "Measurements", desc: "Record every measurement accurately, so nothing is ever misremembered." },
+  { icon: Layers, title: "Production", desc: "Move work through every stage of your workflow with full visibility." },
+  { icon: Boxes, title: "Inventory", desc: "Track every fabric, accessory and material with confidence — and never run out of what sells." },
+  { icon: Wallet, title: "Payments", desc: "Record cash, M-Pesa and card payments, and always know who has paid." },
+  { icon: LineChart, title: "Finance", desc: "See your earnings, expenses and profit clearly, without waiting for month end." },
+  { icon: Globe, title: "Customer Portal", desc: "Let customers check order status and payments themselves — on every plan." },
+  { icon: WifiOff, title: "Offline Mode", desc: "Keep working when the internet doesn't. Everything syncs automatically." },
+  { icon: BarChart3, title: "Reports", desc: "Daily, weekly, monthly and yearly numbers that tell you how you're doing." },
+  { icon: TrendingUp, title: "Analytics", desc: "Spot trends, best sellers and areas to improve — before they become problems." },
+  { icon: Store, title: "Marketplace", desc: "List your work on the Global Sell marketplace and reach buyers worldwide." },
+  { icon: Bot, title: "AI Assistant", desc: "Ask your business anything and get clear, honest answers in seconds." },
+  { icon: MessageSquare, title: "SMS", desc: "Keep customers informed with automatic, professional SMS notifications." },
+  { icon: MessageCircle, title: "WhatsApp", desc: "Reach customers where they already are, automatically." },
+];
+
+const AI_CREDIT_EXAMPLES = [
+  { task: "Summarise today's sales", cost: "1 credit" },
+  { task: "Write an SMS to customers", cost: "1 credit" },
+  { task: "Analyse this month's profit", cost: "2 credits" },
+  { task: "Forecast the next six months", cost: "5 credits" },
+];
+
+const AI_TOP_UPS = [
+  { credits: "100", price: "KES 150" },
+  { credits: "500", price: "KES 650" },
+  { credits: "1,000", price: "KES 1,200" },
+  { credits: "5,000", price: "KES 5,000" },
+];
+
+const SMS_BUNDLES = [
+  { sms: "100", price: "KES 90" },
+  { sms: "500", price: "KES 450" },
+  { sms: "1,000", price: "KES 900" },
+  { sms: "5,000", price: "KES 4,500" },
+];
+
+const REFERRAL_REWARDS = [
+  { event: "Successful paying referral", reward: "KES 500 wallet credits" },
+  { event: "New customer joins through your referral", reward: "KES 300 welcome credits" },
+  { event: "5 referrals", reward: "KES 1,000 bonus" },
+  { event: "10 referrals", reward: "KES 2,500 bonus" },
+  { event: "25 referrals", reward: "KES 7,500 bonus" },
+  { event: "50 referrals", reward: "KES 20,000 bonus" },
+];
+
+export default async function PricingPage() {
+  const freeTrialEnabled = await getFreeTrialEnabled();
+  const visibleFAQs = freeTrialEnabled ? FAQS : FAQS.filter((f) => f !== TRIAL_FAQ);
+
   return (
     <MarketingShell>
-      {/* Hero + category picker + plan cards + comparison table (interactive) */}
+      {/* Hero + offer + toggle + cards + comparison (interactive) */}
       <Suspense
         fallback={
           <div className="flex min-h-[40vh] items-center justify-center">
@@ -53,64 +139,192 @@ export default function PricingPage() {
           </div>
         }
       >
-        <PricingClient />
+        <PricingClient freeTrialEnabled={freeTrialEnabled} />
       </Suspense>
 
-      {/* ── INSTALLATION FEE EXPLAINER ── */}
-      <section className="border-y border-amber-100 bg-amber-50 py-12">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6">
-          <div className="mb-8 text-center">
-            <h2 className="text-2xl font-black text-slate-900">Understanding the Installation Fee</h2>
-            <p className="mt-2 text-slate-600">A one-time investment for a smooth, professional start.</p>
+      {/* ── EVERYTHING INCLUDED ── */}
+      <section className="py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="mb-12 text-center">
+            <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
+              Everything included
+            </span>
+            <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
+              One platform. The entire business.
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-slate-500">
+              There is no watered-down version of FundiFlow. Every customer, every order and
+              every shilling is managed in the same powerful platform — whatever plan you choose.
+            </p>
           </div>
-          <div className="grid gap-6 sm:grid-cols-3">
-            {[
-              { plan: "Sindano", fee: "KES 5,075", includes: ["Remote account setup", "Profile & business configuration", "1-hour onboarding call", "Digital training guide"] },
-              { plan: "Fundi", fee: "KES 28,420", includes: ["Full remote setup & configuration", "Data migration assistance", "Team account creation", "3-hour training session (remote)", "30-day post-setup support"] },
-              { plan: "Dhahabu", fee: "KES 43,990", includes: ["On-site setup (Nairobi & major towns)", "Full data migration", "Whole-team training workshop", "Custom configuration", "90-day dedicated onboarding support"] },
-            ].map(({ plan, fee, includes }) => (
-              <div key={plan} className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
-                <p className="text-lg font-black text-slate-900">{plan}</p>
-                <p className="mb-4 mt-1 text-2xl font-black text-amber-700">{fee}</p>
-                <ul className="space-y-2">
-                  {includes.map((item) => (
-                    <li key={item} className="flex items-start gap-2 text-sm text-slate-600">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {INCLUDED_FEATURES.map(({ icon: Icon, title, desc }) => (
+              <div
+                key={title}
+                className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="mb-1.5 font-bold text-slate-900">{title}</h3>
+                <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── FINANCE PRIVACY CALLOUT ── */}
-      <section className="bg-slate-900 py-16 text-white">
-        <div className="mx-auto max-w-4xl px-4 text-center sm:px-6">
-          <Shield className="mx-auto mb-4 h-12 w-12 text-emerald-400" />
-          <h2 className="mb-4 text-3xl font-black sm:text-4xl">
-            Your finances are <span className="text-emerald-400">private by default</span>
-          </h2>
-          <p className="mx-auto max-w-2xl text-lg text-slate-300">
-            Only the business owner sees weekly and monthly earnings, net profit, inventory value,
-            payroll liabilities and AI business insights. Your managers see only what you explicitly allow.
-            You are always in control.
-          </p>
-          <div className="mt-8 grid gap-4 text-sm sm:grid-cols-3">
-            {[
-              { icon: Shield, label: "Owner Only (Default)", desc: "All financial history, profit & loss, inventory value, salary alerts, AI insights" },
-              { icon: Users, label: "Managers (Owner-Controlled)", desc: "Today's finance data only. Weekly/monthly history only when owner unlocks it" },
-              { icon: Users, label: "Other Staff", desc: "No access to finance data unless specifically granted by owner" },
-            ].map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="rounded-xl bg-slate-800 p-4">
-                <Icon className="mb-2 h-5 w-5 text-emerald-400" />
-                <p className="mb-1 font-bold text-white">{label}</p>
-                <p className="text-slate-400">{desc}</p>
+      {/* ── AI CREDITS ── */}
+      <section className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 py-20 text-white sm:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid items-center gap-12 lg:grid-cols-2">
+            <div>
+              <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-amber-300">
+                <Bot className="h-3.5 w-3.5" /> AI Assistant
+              </span>
+              <h2 className="mb-4 text-3xl font-black leading-tight sm:text-4xl">
+                Your business, <span className="text-amber-300">answered.</span>
+              </h2>
+              <p className="mb-4 leading-relaxed text-slate-300">
+                The AI Assistant reads your own data — orders, sales, stock and payments — and
+                turns it into clear answers and honest advice. Different questions take
+                different amounts of work, so we simplified it:{" "}
+                <strong className="text-white">one business question is roughly one AI Credit.</strong>
+              </p>
+              <p className="text-sm leading-relaxed text-slate-400">
+                You never need to understand tokens or models. You simply ask — and every plan
+                includes a generous monthly allowance of credits to get started.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 backdrop-blur-sm">
+              <p className="mb-4 text-sm font-bold text-white">What an AI Credit can do</p>
+              <div className="space-y-3">
+                {AI_CREDIT_EXAMPLES.map((ex) => (
+                  <div
+                    key={ex.task}
+                    className="flex items-center justify-between rounded-xl bg-slate-700/60 px-4 py-3"
+                  >
+                    <span className="text-sm text-slate-200">{ex.task}</span>
+                    <span className="rounded-full bg-amber-400/15 px-2.5 py-0.5 text-xs font-bold text-amber-300">
+                      {ex.cost}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
+
+          <div className="mt-14">
+            <h3 className="mb-5 text-center text-xl font-black text-white">
+              Need more? Top up any time — no contract, no waiting
+            </h3>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {AI_TOP_UPS.map((t) => (
+                <div
+                  key={t.credits}
+                  className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 text-center"
+                >
+                  <p className="text-2xl font-black text-white">{t.credits}</p>
+                  <p className="text-xs text-slate-400">credits</p>
+                  <p className="mt-2 text-sm font-bold text-emerald-400">{t.price}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── SMS CREDITS ── */}
+      <section className="py-20 sm:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid items-center gap-12 lg:grid-cols-2">
+            <div className="order-2 lg:order-1">
+              <h3 className="mb-4 text-xl font-black text-slate-900">Top up in simple bundles</h3>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {SMS_BUNDLES.map((b) => (
+                  <div
+                    key={b.sms}
+                    className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm"
+                  >
+                    <p className="text-2xl font-black text-slate-900">{b.sms}</p>
+                    <p className="text-xs text-slate-400">SMS</p>
+                    <p className="mt-2 text-sm font-bold text-emerald-700">{b.price}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-sm text-slate-500">
+                Simple. Transparent. You always know what you&apos;re paying for.
+              </p>
+            </div>
+
+            <div className="order-1 lg:order-2">
+              <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-emerald-700">
+                <MessageSquare className="h-3.5 w-3.5" /> SMS
+              </span>
+              <h2 className="mb-4 text-3xl font-black text-slate-900 sm:text-4xl">
+                Professional communication, automatically.
+              </h2>
+              <p className="mb-4 leading-relaxed text-slate-600">
+                Every plan includes a monthly SMS allowance so your customers always know what
+                is happening with their orders — ready for pickup, delayed, needs a fitting. It
+                keeps your business looking professional and your phone from ringing off the
+                hook.
+              </p>
+              <p className="text-sm leading-relaxed text-slate-500">
+                Each SMS costs <strong className="text-slate-800">KES 0.90</strong>, and every
+                plan&apos;s included bundle is built around a realistic month of work. When you
+                need more, buy exactly what you need — no contracts, no expiry pressure.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── REFERRAL REWARDS ── */}
+      <section className="bg-slate-50 py-20">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6">
+          <div className="mb-10 text-center">
+            <span className="mb-3 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-amber-700">
+              Referral rewards
+            </span>
+            <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
+              Grow with the people you trust
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-slate-500">
+              The best recommendation a business can get is another business. When you refer
+              FundiFlow to someone who subscribes, we reward you — and them.
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-900 text-white">
+                  <th className="py-4 pl-6 pr-4 text-left font-semibold">When</th>
+                  <th className="px-4 py-4 text-right font-semibold">Reward</th>
+                </tr>
+              </thead>
+              <tbody>
+                {REFERRAL_REWARDS.map((r, i) => (
+                  <tr
+                    key={r.event}
+                    className={cn_row(i)}
+                  >
+                    <td className="py-3.5 pl-6 pr-4 font-medium text-slate-700">{r.event}</td>
+                    <td className="px-4 py-3.5 text-right font-bold text-emerald-700">{r.reward}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mt-6 text-center text-sm text-slate-500">
+            <Link href="/register" className="font-bold text-emerald-700 underline underline-offset-2 hover:text-emerald-600">
+              Start referring →
+            </Link>
+          </p>
         </div>
       </section>
 
@@ -118,10 +332,15 @@ export default function PricingPage() {
       <section className="py-20">
         <div className="mx-auto max-w-3xl px-4 sm:px-6">
           <div className="mb-12 text-center">
-            <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">Frequently asked questions</h2>
+            <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
+              Questions
+            </span>
+            <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
+              Everything you&apos;re wondering, answered
+            </h2>
           </div>
           <div className="space-y-4">
-            {FAQS.map(({ q, a }) => (
+            {visibleFAQs.map(({ q, a }) => (
               <div key={q} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="mb-2 font-bold text-slate-900">{q}</h3>
                 <p className="text-sm leading-relaxed text-slate-600">{a}</p>
@@ -131,20 +350,24 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* ── CTA ── */}
+      {/* ── FINAL CTA ── */}
       <section className="bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 py-20 text-white">
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
-          <h2 className="mb-4 text-4xl font-black sm:text-5xl">Ready to get started?</h2>
-          <p className="mb-8 text-lg text-slate-300">
-            Still have questions? Chat with us on WhatsApp — we will help you choose
-            the right plan for your business.
+          <Sparkles className="mx-auto mb-5 h-10 w-10 text-emerald-400" />
+          <h2 className="mb-4 text-4xl font-black sm:text-5xl">
+            Your best work deserves better management.
+          </h2>
+          <p className="mx-auto mb-8 max-w-xl text-lg leading-relaxed text-slate-300">
+            You already have the skill. FundiFlow gives you the system — customers, orders,
+            production, inventory, finance and communication, working together in one place,
+            even offline. Most businesses see the difference in their very first week.
           </p>
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               href="/register"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-105 hover:bg-emerald-400"
             >
-              Get Started
+              Start your free trial
               <ArrowRight className="h-5 w-5" />
             </Link>
             <a
@@ -154,11 +377,19 @@ export default function PricingPage() {
               className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-8 py-4 text-base font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
             >
               <MessageCircle className="h-5 w-5" />
-              Request a Demo
+              Request a demo
             </a>
           </div>
+          <p className="mt-6 text-sm text-slate-400">
+            14-day free trial · No card required · Cancel anytime
+          </p>
         </div>
       </section>
     </MarketingShell>
   );
+}
+
+// Local helper (kept small so this server page stays readable).
+function cn_row(i: number) {
+  return i % 2 === 0 ? "border-t border-slate-100 bg-white" : "border-t border-slate-100 bg-slate-50";
 }

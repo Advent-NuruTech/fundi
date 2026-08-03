@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { PLAN_CONFIGS, TRIAL_DAYS, isValidPlanSlug } from "@/lib/billing/constants";
 import { formatKes } from "@/lib/billing/fees";
 import { Button } from "@/components/ui/button";
@@ -28,21 +29,21 @@ const PLAN_ORDER: TrialPlan[] = ["sindano", "fundi", "dhahabu"];
 const PLAN_HIGHLIGHTS: Record<TrialPlan, string[]> = {
   sindano: [
     "1 user account",
-    "Up to 100 customers",
+    "Up to 500 customers",
     "Basic inventory & payments",
-    "50 SMS / month",
+    "75 SMS / month",
   ],
   fundi: [
     "Up to 10 user accounts",
-    "Unlimited customers & orders",
+    "Up to 5,000 customers & 2,000 orders/mo",
     "Full finance dashboard & analytics",
-    "Team roles + WhatsApp notifications",
+    "500 SMS + WhatsApp notifications",
   ],
   dhahabu: [
-    "Unlimited users",
+    "Up to 30 users",
     "Everything in Fundi, unlocked",
     "Multi-branch + API access",
-    "AI assistant & forecasting",
+    "2,000 SMS + AI assistant & forecasting",
   ],
 };
 
@@ -56,6 +57,16 @@ export function StartTrialClient() {
   );
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
+
+  // Defense-in-depth: never show the trial chooser when the platform flag is OFF.
+  const { enabled: freeTrialEnabled, loading: trialFlagLoading } = useFreeTrialEnabled();
+
+  useEffect(() => {
+    if (trialFlagLoading) return;
+    if (!freeTrialEnabled) {
+      router.replace(isValidPlanSlug(initialPlan) ? `/checkout?plan=${initialPlan}` : "/pricing");
+    }
+  }, [trialFlagLoading, freeTrialEnabled, initialPlan, router]);
 
   // If the workspace already has a subscription/trial, don't show the chooser.
   useEffect(() => {

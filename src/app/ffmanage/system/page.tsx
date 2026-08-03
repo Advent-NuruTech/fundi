@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { StatCard } from "@/components/admin/stat-card";
 import { InviteLinksPanel } from "@/components/admin/invite-links-panel";
+import { PlatformSettingsPanel } from "@/components/admin/platform-settings-panel";
 import { Badge } from "@/components/ui/badge";
 import { formatDateLabel, cn } from "@/lib/utils";
 import { Server, Database, Activity, Shield, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -25,7 +26,7 @@ export default function AdminSystemPage() {
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [activeSessions, setActiveSessions] = useState<AdminSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"health" | "audit" | "sessions" | "invites">("health");
+  const [activeTab, setActiveTab] = useState<"health" | "audit" | "sessions" | "invites" | "settings">("health");
 
   useEffect(() => {
     fetch("/api/ffmanage/system")
@@ -77,7 +78,7 @@ export default function AdminSystemPage() {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-800 gap-1 overflow-x-auto">
-          {(["health", "audit", "sessions", "invites"] as const).map((tab) => (
+          {(["health", "audit", "sessions", "invites", "settings"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -210,6 +211,10 @@ export default function AdminSystemPage() {
 
         {activeTab === "invites" && (
           <InviteLinksPanel />
+        )}
+
+        {activeTab === "settings" && (
+          <PlatformSettingsPanel />
         )}
       </div>
     </AdminShell>

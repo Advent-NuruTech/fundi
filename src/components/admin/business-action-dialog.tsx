@@ -17,8 +17,8 @@ interface Props {
 
 const PLAN_LABELS: Record<string, string> = {
   sindano: "Sindano (KES 690/mo)",
-  fundi: "Fundi (KES 3,690/mo)",
-  dhahabu: "Dhahabu (KES 9,990/mo)",
+  fundi: "Fundi (KES 3,399/mo)",
+  dhahabu: "Dhahabu (KES 8,999/mo)",
 };
 
 const ACTION_TITLES: Record<ActionType, string> = {

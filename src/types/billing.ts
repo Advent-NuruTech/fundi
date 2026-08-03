@@ -19,7 +19,6 @@ export type BillingPaymentStatus =
   | "refunded";
 
 export type BillingPaymentType =
-  | "installation_fee"
   | "monthly_subscription"
   | "sms_sender_id"
   | "upgrade"
@@ -56,14 +55,23 @@ export interface PlanLimits {
    * trigger in migration 00030.
    */
   maxBranches: number | null;
+  /** AI Assistant credits included per month. null = none/untracked. */
+  aiCreditsPerMonth: number | null;
+  /** File storage included, in GB. null = untracked. */
+  storageGb: number | null;
+  /** Active Global Sell marketplace listings included. null = untracked. */
+  globalSellListings: number | null;
 }
 
 export interface PlanConfig {
   slug: PlanSlug;
   name: string;
   swahiliName: string;
-  installationFee: number; // KES
   monthlyPrice: number;    // KES
+  /** Introductory launch price for the first 2 months (KES/month). */
+  introPrice: number;      // KES
+  /** Annual price = 10 months of the standard monthly rate. */
+  annualPrice: number;     // KES
   limits: PlanLimits;
   features: PlanFeatures;
   color: string;
@@ -81,7 +89,6 @@ export interface Subscription {
   currentPeriodEnd: string | null;
   trialStartedAt: string | null;
   trialEndsAt: string | null;
-  installationFeePaid: boolean;
   smsSenderIdEnabled: boolean;
   smsSenderIdPaid: boolean;
   smsSenderIdPaidAt: string | null;
@@ -148,7 +155,7 @@ export interface BillingAuditLog {
 // ─── Checkout flow ──────────────────────────────────────────────────────────
 
 export interface CheckoutTotals {
-  installationFee: number;
+  firstPayment: number;
   smsSenderIdAmount: number;
   subtotal: number;
   paystackFee: number;
@@ -174,7 +181,6 @@ export interface PaystackTransactionMetadata {
   workspace_id: string;
   payment_type: BillingPaymentType;
   includes_sms_sender_id: boolean;
-  installation_fee_amount: number;
   sms_sender_id_amount: number;
   monthly_price: number;
   // upgrade-specific

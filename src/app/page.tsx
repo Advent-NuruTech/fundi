@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
+import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { useRef, useEffect, useState, type ReactNode } from "react";
 
 const EASE_CUBIC = [0.22, 1, 0.36, 1] as const;
@@ -363,8 +364,8 @@ const MARKETPLACE_PRODUCTS = [
 
 const PRICING_PLANS = [
   { name: "Sindano", swahili: "The Needle", price: "690", color: "border-slate-200", badge: null },
-  { name: "Fundi", swahili: "The Craftsman", price: "3,690", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
-  { name: "Dhahabu", swahili: "Golden Standard", price: "9,990", color: "border-slate-200", badge: null },
+  { name: "Fundi", swahili: "The Craftsman", price: "3,399", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
+  { name: "Dhahabu", swahili: "Golden Standard", price: "8,999", color: "border-slate-200", badge: null },
 ];
 
 // ─── Hero Dashboard with Animations ───────────────────────────────────────────
@@ -620,6 +621,7 @@ export default function HomePage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [loopIndex, setLoopIndex] = useState(0);
   const [typingSpeed, setTypingSpeed] = useState(80);
+  const { enabled: freeTrialEnabled } = useFreeTrialEnabled();
   const words = [
     "Track customer measurements & orders",
     "Manage fabric & ready-made inventory",
@@ -739,7 +741,7 @@ export default function HomePage() {
                   href="/register"
                   className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400"
                 >
-                  Get Started Free Trial
+                  Get Started{freeTrialEnabled ? " Free Trial" : ""}
                   <motion.span
                     animate={{ x: [0, 5, 0] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
@@ -813,7 +815,7 @@ export default function HomePage() {
               Built for Tailors. Designed for Growth.
             </p>
             <p className="text-sm text-emerald-700">
-              Plans starting at <strong>KES 690 / month</strong> — Installation from KES 5,000
+              Plans starting at <strong>KES 690 / month</strong> — Start free with a 14-day trial
             </p>
             <Link
               href="/pricing"

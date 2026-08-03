@@ -9,17 +9,21 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
     slug: "sindano",
     name: "Sindano",
     swahiliName: "The Needle",
-    installationFee: 5_075,
     monthlyPrice: 690,
+    introPrice: 580,
+    annualPrice: 6_900,
     color: "border-slate-200",
     accentColor: "text-slate-700",
     limits: {
       maxUsers: 1,
-      maxCustomers: 100,
-      maxOrdersPerMonth: 80,
-      maxInventoryItems: 50,
-      smsPerMonth: 50,
+      maxCustomers: 500,
+      maxOrdersPerMonth: 250,
+      maxInventoryItems: 500,
+      smsPerMonth: 75,
       maxBranches: 1,
+      aiCreditsPerMonth: 100,
+      storageGb: 2,
+      globalSellListings: 30,
     },
     features: {
       analytics: false,
@@ -36,17 +40,21 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
     slug: "fundi",
     name: "Fundi",
     swahiliName: "The Craftsman",
-    installationFee: 28_420,
-    monthlyPrice: 3_690,
+    monthlyPrice: 3_399,
+    introPrice: 2_850,
+    annualPrice: 33_990,
     color: "border-emerald-400",
     accentColor: "text-emerald-700",
     limits: {
       maxUsers: 10,
-      maxCustomers: null,
-      maxOrdersPerMonth: null,
-      maxInventoryItems: null,
-      smsPerMonth: 700,
-      maxBranches: 4,
+      maxCustomers: 5_000,
+      maxOrdersPerMonth: 2_000,
+      maxInventoryItems: 5_000,
+      smsPerMonth: 500,
+      maxBranches: 5,
+      aiCreditsPerMonth: 800,
+      storageGb: 20,
+      globalSellListings: 300,
     },
     features: {
       analytics: true,
@@ -63,17 +71,21 @@ export const PLAN_CONFIGS: Record<Exclude<PlanSlug, "custom">, PlanConfig> = {
     slug: "dhahabu",
     name: "Dhahabu",
     swahiliName: "Golden Standard",
-    installationFee: 43_990,
-    monthlyPrice: 9_990,
+    monthlyPrice: 8_999,
+    introPrice: 7_550,
+    annualPrice: 89_990,
     color: "border-amber-400",
     accentColor: "text-amber-700",
     limits: {
-      maxUsers: null,
-      maxCustomers: null,
-      maxOrdersPerMonth: null,
-      maxInventoryItems: null,
-      smsPerMonth: null,
-      maxBranches: 9,
+      maxUsers: 30,
+      maxCustomers: 25_000,
+      maxOrdersPerMonth: 10_000,
+      maxInventoryItems: 20_000,
+      smsPerMonth: 2_000,
+      maxBranches: 15,
+      aiCreditsPerMonth: 3_000,
+      storageGb: 100,
+      globalSellListings: 2_000,
     },
     features: {
       analytics: true,
@@ -114,8 +126,11 @@ export function isTrialExpired(trialEndsAt?: string | null): boolean {
 
 // ─── Billing rules ──────────────────────────────────────────────────────────
 
-/** Days after installation fee payment before first recurring charge */
-export const NEXT_BILLING_DAYS = 60;
+/**
+ * Length of one subscription billing period, in days. The first payment at
+ * checkout covers the first month; subsequent renewals repeat every 30 days.
+ */
+export const BILLING_INTERVAL_DAYS = 30;
 
 /** Paystack Kenya local-card fee rate */
 export const PAYSTACK_FEE_RATE = 0.015; // 1.5%
@@ -128,12 +143,12 @@ export const ACTIVE_SUBSCRIPTION_STATUSES: readonly string[] = ["active"] as con
 
 // ─── Branch (outlet) limits ───────────────────────────────────────────────────
 // Maximum branches per plan, INCLUDING the auto-created main branch.
-// Must mirror business_branch_limit() in migration 00030 (the DB backstop).
+// Must mirror business_branch_limit() in migration 00040 (the DB backstop).
 
 export const PLAN_BRANCH_LIMITS: Record<Exclude<PlanSlug, "custom">, number> = {
   sindano: 1, // main outlet only — no extra branches
-  fundi: 4,
-  dhahabu: 9,
+  fundi: 5,
+  dhahabu: 15,
 };
 
 /**

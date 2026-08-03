@@ -23,7 +23,7 @@ const SITE_URL = "https://www.fundiflow.co.ke";
 const SITE_NAME = "FundiFlow";
 const TITLE_DEFAULT = "FundiFlow – Kenya's #1 Tailoring & SME Business Software";
 const DESCRIPTION =
-  "Kenya's leading business OS for tailors, wholesalers, retailers & hardware stores. Orders, measurements, inventory, finance & M-Pesa payments — offline-first. Free 14-day trial.";
+  "Kenya's leading business OS for tailors, wholesalers, retailers & hardware stores. Orders, measurements, inventory, finance & M-Pesa payments — offline-first.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

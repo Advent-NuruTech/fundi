@@ -128,7 +128,6 @@ export async function GET(
           id: sub.id as string,
           planSlug: sub.plan_slug as string,
           status: sub.status as string,
-          installationFeePaid: sub.installation_fee_paid as boolean,
           currentPeriodStart: sub.current_period_start as string | null,
           currentPeriodEnd: sub.current_period_end as string | null,
           nextBillingDate: sub.next_billing_date as string | null,

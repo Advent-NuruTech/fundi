@@ -21,8 +21,7 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const planParam = searchParams.get("plan");
-  const defaultRedirect = planParam ? `/start-trial?plan=${planParam}` : "/start-trial";
-  const redirectTo = searchParams.get("redirect") ?? defaultRedirect;
+  const explicitRedirect = searchParams.get("redirect");
   const categoryParam = searchParams.get("category");
   const initialType = isBusinessType(categoryParam) ? categoryParam : DEFAULT_BUSINESS_TYPE;
   const { registerOwner } = useAuth();
@@ -46,6 +45,29 @@ function RegisterForm() {
       await registerOwner(values);
       setStep("redirecting");
       toast.success("Workshop created. Welcome to FundiFlow!");
+
+      // Resolve where to send the new owner based on the platform free-trial flag:
+      // trial LIVE → /start-trial?plan=X ; trial OFF → straight to checkout.
+      let trialEnabled = false;
+      try {
+        const res = await fetch("/api/platform/free-trial", { cache: "no-store" });
+        const data = await res.json();
+        trialEnabled = data.enabled === true;
+      } catch {
+        trialEnabled = false;
+      }
+
+      let redirectTo = explicitRedirect;
+      if (!redirectTo) {
+        redirectTo = planParam
+          ? trialEnabled
+            ? `/start-trial?plan=${planParam}`
+            : `/checkout?plan=${planParam}`
+          : trialEnabled
+            ? "/start-trial"
+            : "/pricing";
+      }
+
       setTimeout(() => {
         router.push(redirectTo);
       }, 700);

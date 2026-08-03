@@ -317,8 +317,8 @@ export function ThankYouClient() {
             )}
             {plan && (
               <div className="flex justify-between">
-                <span className="text-slate-500">Installation fee paid</span>
-                <span className="font-semibold text-emerald-700">{formatKes(plan.installationFee)}</span>
+                <span className="text-slate-500">First month subscription</span>
+                <span className="font-semibold text-emerald-700">{formatKes(plan.monthlyPrice)}</span>
               </div>
             )}
             {subscription?.smsSenderIdPaid && (

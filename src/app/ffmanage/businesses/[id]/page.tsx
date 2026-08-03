@@ -208,7 +208,6 @@ export default function AdminBusinessDetailPage() {
                   {[
                     ["Plan", business.subscription.planSlug?.toUpperCase()],
                     ["Status", business.subscription.status],
-                    ["Installation fee", business.subscription.installationFeePaid ? "Paid" : "Pending"],
                     ["Period start", business.subscription.currentPeriodStart ? formatDateLabel(business.subscription.currentPeriodStart) : "—"],
                     ["Period end", business.subscription.currentPeriodEnd ? formatDateLabel(business.subscription.currentPeriodEnd) : "—"],
                     ["Next billing", business.subscription.nextBillingDate ? formatDateLabel(business.subscription.nextBillingDate) : "—"],

@@ -216,15 +216,24 @@ function OrderCard({
       <Card className="hover:border-emerald-300 transition-colors">
         <CardContent className="p-4">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-sm font-bold text-slate-900">{order.orderNumber}</p>
-                {orderName && (
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 truncate max-w-[50%]">
-                    {orderName}
-                  </span>
-                )}
-              </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-slate-900">{order.orderNumber}</p>
+              {order.garments.length > 0 ? (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {order.garments.map((g, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                    >
+                      {g.name} ×{g.quantity}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                orderName && (
+                  <p className="text-xs text-slate-500 mt-1">{orderName}</p>
+                )
+              )}
               <p className="text-xs text-slate-400 mt-1">
                 {order.businessName} · Due {new Date(order.dueDate).toLocaleDateString()}
               </p>

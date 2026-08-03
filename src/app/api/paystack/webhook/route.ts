@@ -210,12 +210,15 @@ async function handleChargeSuccess(
     return; // Already processed
   }
 
-  const paymentType = meta.payment_type ?? "installation_fee";
+  const paymentType = meta.payment_type ?? "monthly_subscription";
 
   switch (paymentType) {
-    case "installation_fee": {
+    // "installation_fee" is legacy — kept so in-flight transactions started
+    // before the installation fee was removed still activate correctly.
+    case "installation_fee":
+    case "monthly_subscription": {
       if (!meta.plan_slug) {
-        console.warn("[webhook] Missing plan_slug for installation_fee", reference);
+        console.warn("[webhook] Missing plan_slug for first payment", reference);
         return;
       }
       await activateSubscription(admin, {
@@ -279,8 +282,7 @@ async function handleChargeSuccess(
       break;
     }
 
-    case "renewal":
-    case "monthly_subscription": {
+    case "renewal": {
       const planSlug = (meta.plan_slug) as PlanSlug | undefined;
       if (!planSlug) {
         console.warn("[webhook] Missing plan_slug for renewal", reference);

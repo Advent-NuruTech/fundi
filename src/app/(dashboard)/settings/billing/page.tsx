@@ -48,8 +48,7 @@ const STATUS_CONFIG = {
 } as const;
 
 const PAYMENT_TYPE_LABELS: Record<string, string> = {
-  installation_fee:    "Installation Fee",
-  monthly_subscription: "Monthly Subscription",
+  monthly_subscription: "First Payment",
   sms_sender_id:       "Custom SMS Sender ID",
   upgrade:             "Plan Upgrade",
   renewal:             "Subscription Renewal",
@@ -349,7 +348,7 @@ export default function BillingDashboardPage() {
                   <span className="text-sm font-normal text-slate-400">/month</span>
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Installation fee paid ✓
+                  No installation or setup fees
                 </p>
                 {subscription.smsSenderIdStatus === "approved" && (
                   <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-700">
@@ -860,7 +859,7 @@ function UpgradePlanModal({
               <span>{formatKes(PLAN_CONFIGS[selectedPlan as Exclude<PlanSlug, "custom">]?.monthlyPrice ?? 0)}</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Payment via Paystack. Billing period resets from today for {60} days.
+              Payment via Paystack. Billing period resets from today for 30 days.
             </p>
           </div>
         )}
@@ -1313,7 +1312,7 @@ function RenewModal({
       <div className="space-y-4 p-1">
         <p className="text-sm text-slate-600">
           Renew your <strong>{plan.name}</strong> plan to restore full dashboard access.
-          Your billing period will reset from today for 60 days.
+          Your billing period will reset from today for 30 days.
         </p>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
@@ -1321,7 +1320,7 @@ function RenewModal({
             <span>Renewal amount</span>
             <span>{formatKes(plan.monthlyPrice)}</span>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">Paid via Paystack. Billing period: 60 days from today.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Paid via Paystack. Billing period: 30 days from today.</p>
         </div>
 
         {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}

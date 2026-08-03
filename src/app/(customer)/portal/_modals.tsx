@@ -152,7 +152,7 @@ export function OutstandingBalancesDialog({
                   <p className="text-sm font-bold text-rose-600 shrink-0">{formatKes(order.balanceAmount)}</p>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5 truncate">
-                  {order.garments.map((g) => g.name).join(", ") || "Order"}
+                  {order.garments.map((g) => `${g.name} ×${g.quantity}`).join(", ") || "Order"}
                 </p>
                 <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
                   <Calendar className="h-3 w-3" />

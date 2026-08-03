@@ -110,7 +110,6 @@ export async function POST(request: Request) {
         workspace_id: workspaceId,
         payment_type: "upgrade",
         includes_sms_sender_id: false,
-        installation_fee_amount: 0,
         sms_sender_id_amount: 0,
         monthly_price: newPlan.monthlyPrice,
         from_plan_slug: sub.plan_slug,

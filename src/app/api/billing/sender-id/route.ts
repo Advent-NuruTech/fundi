@@ -111,7 +111,6 @@ export async function POST(request: Request) {
         workspace_id: workspaceId,
         payment_type: "sms_sender_id",
         includes_sms_sender_id: true,
-        installation_fee_amount: 0,
         sms_sender_id_amount: SMS_SENDER_ID_PRICE,
         monthly_price: 0,
         sender_id_name: senderIdName,

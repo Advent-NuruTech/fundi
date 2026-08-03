@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { calculateCheckoutTotals, formatKes } from "@/lib/billing/fees";
 import { SMS_SENDER_ID_PRICE, getPlanConfig } from "@/lib/billing/constants";
 import { Button } from "@/components/ui/button";
@@ -31,35 +32,36 @@ import type { PlanSlug } from "@/types/billing";
 const PLAN_FEATURES: Record<string, string[]> = {
   sindano: [
     "1 user account (owner only)",
-    "Up to 100 customer records",
-    "Up to 80 active orders/month",
+    "Up to 500 customer records",
+    "Up to 250 orders/month",
     "Customer measurements & fitting notes",
-    "Basic inventory tracking (up to 50 items)",
+    "Inventory tracking (up to 500 items)",
     "Payment recording (Cash & M-Pesa)",
-    "50 SMS notifications/month",
+    "75 SMS notifications/month",
     "Mobile dashboard (PWA) + offline mode",
-    "AI Assistant — limited access",
+    "AI Assistant — 100 credits/month",
     "Email support (48 hr response)",
   ],
   fundi: [
     "Up to 10 user accounts",
-    "Unlimited customers & orders",
+    "Up to 5,000 customers & 2,000 orders/month",
     "Full measurements, fittings & style records",
     "Full production workflow (6 stages)",
     "Full inventory + purchase orders",
     "Complete finance dashboard",
-    "700 SMS notifications/month",
+    "500 SMS notifications/month",
     "WhatsApp order notifications",
     "Analytics — sales trends & KPIs",
     "Role-based team management (6 roles)",
-    "AI Assistant",
+    "AI Assistant — 800 credits/month",
     "Priority support (12 hr response)",
   ],
   dhahabu: [
-    "Unlimited user accounts",
+    "Up to 30 user accounts",
+    "Up to 25,000 customers & 10,000 orders/month",
     "Everything in Fundi, fully unlocked",
-    "AI Assistant — full access & forecasting",
-    "Unlimited SMS notifications",
+    "2,000 SMS notifications/month",
+    "AI Assistant — 3,000 credits/month",
     "Advanced analytics & profit forecasting",
     "Multi-location / branch support",
     "API access for custom integrations",
@@ -80,6 +82,7 @@ interface Props {
 export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
   const router = useRouter();
   const plan = getPlanConfig(planSlug);
+  const { enabled: freeTrialEnabled } = useFreeTrialEnabled();
   const [addSenderId, setAddSenderId] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -168,8 +171,8 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
           <span className="font-semibold text-slate-900">Checkout — {plan.name}</span>
         </nav>
 
-        {/* Trial-ended notice */}
-        {trialExpired && (
+        {/* Trial-ended notice (only shown while the platform free-trial flag is live) */}
+        {trialExpired && freeTrialEnabled && (
           <div className="mb-8 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
             <div>
@@ -177,7 +180,7 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
               <p className="mt-1 text-sm text-slate-600">
                 Pay to continue using FundiFlow. Your {plan.name} workspace, customers,
                 orders and settings are safe and stay exactly as you left them — complete
-                the one-time installation payment below to pick up right where you stopped.
+                your first month&apos;s payment below to pick up right where you stopped.
               </p>
             </div>
           </div>
@@ -208,11 +211,11 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
               <div className="mt-6 grid grid-cols-2 gap-4 rounded-2xl bg-black/20 p-4">
                 <div>
                   <p className="text-xs opacity-70">First payment</p>
-                  <p className="text-2xl font-black">{formatKes(plan.installationFee)}</p>
-                  <p className="text-xs opacity-70">installation fee</p>
+                  <p className="text-2xl font-black">{formatKes(plan.monthlyPrice)}</p>
+                  <p className="text-xs opacity-70">1 month subscription</p>
                 </div>
                 <div>
-                  <p className="text-xs opacity-70">Then after 60 days</p>
+                  <p className="text-xs opacity-70">Then every 30 days</p>
                   <p className="text-2xl font-black">{formatKes(plan.monthlyPrice)}</p>
                   <p className="text-xs opacity-70">/month recurring</p>
                 </div>
@@ -226,16 +229,16 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                 <li className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">1</span>
                   <span>
-                    <strong>Today:</strong> Pay the one-time installation fee of{" "}
-                    <strong>{formatKes(plan.installationFee)}</strong>.
+                    <strong>Today:</strong> Pay your first month&apos;s subscription of{" "}
+                    <strong>{formatKes(plan.monthlyPrice)}</strong>.
                     Your workspace activates immediately.
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-400 text-[10px] font-bold text-white">2</span>
                   <span>
-                    <strong>In 60 days:</strong> First monthly subscription of{" "}
-                    <strong>{formatKes(plan.monthlyPrice)}/month</strong> begins.
+                    <strong>In 30 days:</strong> Your subscription renews at{" "}
+                    <strong>{formatKes(plan.monthlyPrice)}/month</strong>.
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
@@ -274,8 +277,8 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                 {/* Line items */}
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Installation fee ({plan.name})</span>
-                    <span className="font-semibold text-slate-900">{formatKes(plan.installationFee)}</span>
+                    <span className="text-slate-600">First month subscription ({plan.name})</span>
+                    <span className="font-semibold text-slate-900">{formatKes(plan.monthlyPrice)}</span>
                   </div>
 
                   {addSenderId && (
@@ -320,9 +323,9 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                   </label>
                 </div>
 
-                {/* After 60 days note */}
+                {/* Renewal note */}
                 <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  After 60 days, your subscription renews at{" "}
+                  Your subscription renews every 30 days at{" "}
                   <strong className="text-slate-700">{formatKes(plan.monthlyPrice)}/month</strong>.
                   No hidden charges. Cancel anytime.
                 </div>

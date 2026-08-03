@@ -2,7 +2,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlanSlug, Subscription, BillingAuditLog } from "@/types/billing";
-import { NEXT_BILLING_DAYS, TRIAL_DAYS } from "./constants";
+import { BILLING_INTERVAL_DAYS, TRIAL_DAYS } from "./constants";
 import { koboToKes } from "./fees";
 
 function addDays(date: Date, days: number): Date {
@@ -15,7 +15,7 @@ function addDays(date: Date, days: number): Date {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DbRow = Record<string, any>;
 
-// ─── Activate subscription after first (installation-fee) payment ───────────
+// ─── Activate subscription after first monthly payment ──────────────────────
 
 export interface ActivateSubscriptionInput {
   workspaceId: string;
@@ -53,7 +53,7 @@ export async function activateSubscription(
   const paystackFeeKes = koboToKes(paystackFeeKobo);
 
   const paidAtDate = new Date(paidAt);
-  const nextBillingDate = addDays(paidAtDate, NEXT_BILLING_DAYS);
+  const nextBillingDate = addDays(paidAtDate, BILLING_INTERVAL_DAYS);
 
   // ── 1. Upsert subscription ─────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ export async function activateSubscription(
       amount: totalAmountKes,
       currency: "KES",
       payment_status: "success",
-      payment_type: "installation_fee",
+      payment_type: "monthly_subscription",
       includes_sms_sender_id: includesSmsSenderId,
       sms_sender_id_amount: includesSmsSenderId ? smsSenderIdAmountKes : null,
       paystack_fee: paystackFeeKes,
@@ -224,7 +224,7 @@ export async function processUpgrade(
 
   const totalAmountKes = koboToKes(totalAmountKobo);
   const paystackFeeKes = koboToKes(paystackFeeKobo);
-  const nextBillingDate = addDays(new Date(paidAt), NEXT_BILLING_DAYS);
+  const nextBillingDate = addDays(new Date(paidAt), BILLING_INTERVAL_DAYS);
 
   const { data: current } = await admin
     .from("subscriptions")
@@ -541,7 +541,7 @@ export async function processRenewal(
 
   const totalAmountKes = koboToKes(totalAmountKobo);
   const paystackFeeKes = koboToKes(paystackFeeKobo);
-  const nextBillingDate = addDays(new Date(paidAt), NEXT_BILLING_DAYS);
+  const nextBillingDate = addDays(new Date(paidAt), BILLING_INTERVAL_DAYS);
 
   const { data: current } = await admin
     .from("subscriptions")
@@ -669,7 +669,6 @@ export function mapDbToSubscription(row: DbRow): Subscription {
     currentPeriodEnd: row.current_period_end ?? null,
     trialStartedAt: row.trial_started_at ?? null,
     trialEndsAt: row.trial_ends_at ?? null,
-    installationFeePaid: row.installation_fee_paid,
     smsSenderIdEnabled: row.sms_sender_id_enabled,
     smsSenderIdPaid: row.sms_sender_id_paid,
     smsSenderIdPaidAt: row.sms_sender_id_paid_at ?? null,

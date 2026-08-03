@@ -1,6 +1,6 @@
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 
-const LAST_UPDATED = "5 June 2026";
+const LAST_UPDATED = "3 August 2026";
 const COMPANY = "Advent Nurutech";
 const PRODUCT = "FundiFlow";
 const EMAIL = "adventnurutech@gmail.com";
@@ -69,25 +69,25 @@ export default function TermsPage() {
         <Section title="3. Subscription Plans and Payment">
           <p>
             {PRODUCT} is offered on a subscription basis. By selecting a plan, you agree to pay the
-            applicable monthly subscription fee plus the one-time installation fee.
+            applicable monthly subscription fee. There are no installation or setup fees.
           </p>
 
           <p><strong>Current plans:</strong></p>
           <ul className="list-disc pl-5 space-y-1">
             <li>
-              <strong>Sindano Plan</strong> — KES 690/month + KES 5,000 installation fee
+              <strong>Sindano Plan</strong> — KES 690/month
             </li>
             <li>
-              <strong>Fundi Plan</strong> — KES 3,690/month + KES 28,000 installation fee
+              <strong>Fundi Plan</strong> — KES 3,399/month
             </li>
             <li>
-              <strong>Dhahabu Plan</strong> — KES 9,990/month + KES 43,990 installation fee
+              <strong>Dhahabu Plan</strong> — KES 8,999/month
             </li>
           </ul>
 
           <p><strong>Payment terms:</strong></p>
           <ul className="list-disc pl-5 space-y-1">
-            <li>The installation fee is due before account activation</li>
+            <li>Your first month&apos;s subscription is due before account activation</li>
             <li>Monthly subscription fees are billed on the same date each month</li>
             <li>Accepted payment methods: M-Pesa, bank transfer</li>
             <li>All prices are in Kenya Shillings (KES) and inclusive of applicable taxes</li>
@@ -96,10 +96,9 @@ export default function TermsPage() {
           </ul>
 
           <p>
-            <strong>No refund policy:</strong> The installation fee is non-refundable once setup has
-            commenced. Monthly subscription fees are non-refundable for the current billing period.
-            In exceptional circumstances, refund requests may be considered at our sole discretion —
-            contact {EMAIL}.
+            <strong>No refund policy:</strong> Monthly subscription fees are non-refundable for the
+            current billing period. In exceptional circumstances, refund requests may be considered
+            at our sole discretion — contact {EMAIL}.
           </p>
         </Section>
 

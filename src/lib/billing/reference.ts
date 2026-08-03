@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 
-type ReferenceType = "install" | "monthly" | "sms" | "upgrade";
+type ReferenceType = "first" | "monthly" | "sms" | "upgrade";
 
 /**
  * Generates a globally unique, cryptographically random Paystack reference.

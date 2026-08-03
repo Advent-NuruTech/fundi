@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { ACTIVE_SUBSCRIPTION_STATUSES, isTrialExpired } from "@/lib/billing/constants";
 import type { Subscription } from "@/types/billing";
@@ -33,6 +34,7 @@ function ownerHasAccess(subscription: Subscription | null): boolean {
 export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
   const { user, loading: authLoading } = useAuth();
   const { subscription, loading: subLoading } = useSubscription();
+  const { enabled: freeTrialEnabled, loading: trialFlagLoading } = useFreeTrialEnabled();
   const router = useRouter();
 
   const isOwner = user?.role === "owner";
@@ -42,8 +44,9 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
     if (!isOwner) return; // non-owners bypass subscription enforcement
 
     if (subscription === null) {
-      // Brand-new workspace → offer the free trial first
-      router.replace("/start-trial");
+      // Brand-new workspace → free trial (if live) or choose a plan (if off)
+      if (trialFlagLoading) return;
+      router.replace(freeTrialEnabled ? "/start-trial" : "/pricing");
       return;
     }
 
@@ -64,10 +67,14 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
     if (!ownerHasAccess(subscription)) {
       router.replace("/pricing");
     }
-  }, [authLoading, subLoading, subscription, isOwner, router]);
+  }, [authLoading, subLoading, subscription, isOwner, router, freeTrialEnabled, trialFlagLoading]);
 
   // Show nothing while checking (avoids flash of protected content)
-  if (authLoading || (isOwner && subLoading)) {
+  if (
+    authLoading ||
+    (isOwner && subLoading) ||
+    (isOwner && subscription === null && trialFlagLoading)
+  ) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">

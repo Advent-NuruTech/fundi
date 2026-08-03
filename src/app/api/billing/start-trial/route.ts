@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { startTrial } from "@/lib/billing/subscription-service";
+import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
 import { isValidPlanSlug } from "@/lib/billing/constants";
 import type { PlanSlug } from "@/types/billing";
 
@@ -49,6 +50,14 @@ export async function POST(request: Request) {
     if (profile.role !== "owner") {
       return NextResponse.json(
         { error: "Only the workspace owner can start a trial." },
+        { status: 403 }
+      );
+    }
+
+    // ── Platform flag: no trials when the free trial is turned OFF ──────────
+    if (!(await getFreeTrialEnabled())) {
+      return NextResponse.json(
+        { error: "Free trials are currently disabled. Choose a plan to continue." },
         { status: 403 }
       );
     }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sparkles, AlertTriangle, X, CreditCard } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { getTrialDaysLeft, TRIAL_REMINDER_DAYS } from "@/lib/billing/constants";
 
 const DISMISSED_KEY = "trial_banner_dismissed";
@@ -19,6 +20,7 @@ const DISMISSED_KEY = "trial_banner_dismissed";
 export function TrialBanner() {
   const { user } = useAuth();
   const { subscription } = useSubscription();
+  const { enabled: freeTrialEnabled, loading: trialFlagLoading } = useFreeTrialEnabled();
   const router = useRouter();
   const [dismissed, setDismissed] = useState(false);
 
@@ -32,6 +34,10 @@ export function TrialBanner() {
   const visibleRoles = ["owner", "admin_manager", "cashier"];
   if (!user || !visibleRoles.includes(user.role)) return null;
   if (!subscription || subscription.status !== "trialing") return null;
+
+  // Trial UI is fully hidden when the platform free-trial flag is OFF.
+  if (trialFlagLoading) return null;
+  if (!freeTrialEnabled) return null;
 
   const daysLeft = getTrialDaysLeft(subscription.trialEndsAt);
   if (daysLeft === null || daysLeft <= 0) return null; // expired → guard handles it
