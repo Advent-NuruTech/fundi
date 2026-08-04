@@ -240,6 +240,8 @@ export interface MeasurementSet {
   [key: string]: number | string | null | undefined;
 }
 
+export type CustomerType = "individual" | "group";
+
 export interface Customer {
   id: string;
   businessId: string;
@@ -261,6 +263,27 @@ export interface Customer {
   portalProvisionNeeded?: boolean;
   /** Whether the portal-onboarding SMS block has been sent to this customer. */
   portalOnboardingSent?: boolean;
+  /**
+   * "individual" or "group". A group customer is a billing account for an
+   * organization (company, school, church, hotel, family…) whose members are
+   * ordinary customers linked via `parentCustomerId`.
+   */
+  customerType?: CustomerType;
+  /** Set on member customers → points at the group account that bills for them. */
+  parentCustomerId?: string;
+  /** Display name of the organization (used instead of fullName for groups). */
+  organizationName?: string;
+  /** The person responsible for ordering/paying (John Kamau). */
+  contactPerson?: string;
+  /** Custom title of the contact person (HR Manager, School Principal…). */
+  contactRole?: string;
+  taxId?: string;
+  paymentTerms?: string;
+  address?: string;
+  /** Member-level field, e.g. "Security", "Production". */
+  department?: string;
+  /** Number of members under this group (populated in list queries). */
+  memberCount?: number;
 }
 
 export interface OrderGarmentItem {
@@ -295,6 +318,117 @@ export interface MaterialUsageRecord {
   recordedAt: string;
 }
 
+export interface OrderMemberGarment {
+  id: string;
+  name: string;
+  quantity: number;
+  agreedPrice: number;
+  styleNotes?: string;
+  fabricUsed?: number;
+  notes?: string;
+  sortOrder?: number;
+}
+
+export interface OrderMember {
+  id: string;
+  orderId: string;
+  memberCustomerId: string;
+  memberName: string;
+  gender?: string;
+  department?: string;
+  measurementsSnapshot?: MeasurementSet;
+  stage: ProductionStage;
+  deliveryStatus: DeliveryStatus;
+  notes?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  garments?: OrderMemberGarment[];
+}
+
+/**
+ * What a single inventory record is. Everything that can be stocked belongs to
+ * inventory; the item type decides how it is displayed and consumed.
+ */
+export type InventoryItemType =
+  | "fabric"
+  | "ready_made"
+  | "material"
+  | "accessory"
+  | "consumable"
+  | "other";
+
+/**
+ * The workflow a single line item on an order follows. Each order item picks its
+ * own type so one customer order can mix tailoring, ready-made sales,
+ * alterations, material sales and services.
+ */
+export type OrderItemType =
+  | "tailored"
+  | "ready_made"
+  | "alteration"
+  | "material"
+  | "service";
+
+/** The overall order flavour, derived from its line items. */
+export type OrderType =
+  | "tailoring"
+  | "ready_made_sale"
+  | "ready_made_alteration"
+  | "material_sale"
+  | "mixed";
+
+export interface OrderItemMaterialUsage {
+  id: string;
+  orderItemId: string;
+  materialId?: string;
+  materialName: string;
+  quantityUsed: number;
+  unit: string;
+  recordedByUid?: string;
+  recordedByName?: string;
+  recordedAt: string;
+}
+
+/**
+ * One line on an order. Stores price/cost snapshots taken at sale time so
+ * profit stays accurate even if the inventory item's prices change later.
+ */
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  itemType: OrderItemType;
+  /** The shared inventory record — the single source of truth. */
+  inventoryItemId?: string;
+  inventoryItemName?: string;
+  sku?: string;
+  categoryName?: string;
+  size?: string;
+  color?: string;
+  brand?: string;
+  quantity: number;
+  unit?: string;
+  /** Actual selling price charged at the time of the transaction. */
+  unitPrice: number;
+  /** Cost price snapshot at the time of the transaction. */
+  costPrice?: number;
+  discount?: number;
+  totalAmount: number;
+  measurements?: MeasurementSet;
+  styleNotes?: string;
+  assignedTailorId?: string;
+  assignedTailorName?: string;
+  stage?: ProductionStage;
+  deliveryStatus: DeliveryStatus;
+  status?: string;
+  readyDate?: string;
+  notes?: string;
+  sortOrder?: number;
+  materialUsage?: OrderItemMaterialUsage[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Order {
   id: string;
   businessId: string;
@@ -302,9 +436,13 @@ export interface Order {
   customerId: string;
   customerName: string;
   customerPhone: string;
+  /** Overall order flavour (tailoring / ready-made sale / … / mixed). */
+  orderType?: OrderType;
   assignedTailorId?: string;
   assignedTailorName?: string;
   garments: OrderGarmentItem[];
+  /** Unified line items — each with its own type, stage and lifecycle. */
+  items?: OrderItem[];
   measurementsSnapshot: MeasurementSet;
   designNotes?: string;
   fabricSelections: FabricSelection[];
@@ -328,6 +466,11 @@ export interface Order {
   delayReason?: string | null;
   imageUrls?: string[];
   trackingToken?: string;
+  /** True when the order is a group order (customer is a group account). */
+  isGroupOrder?: boolean;
+  /** Per-person lines on a group order, each with its own production stage. */
+  members?: OrderMember[];
+  memberCount?: number;
 }
 
 export interface FabricMeta {
@@ -363,6 +506,16 @@ export interface InventoryMaterial {
   imagePublicId?: string;
   images?: MaterialImage[];
   fabricMeta?: FabricMeta;
+  /** Unified item type — fabric | ready_made | material | accessory | … */
+  itemType?: InventoryItemType;
+  /** Auto-generated from the name, editable by the business. */
+  sku?: string;
+  size?: string;
+  color?: string;
+  brand?: string;
+  sellingPrice?: number;
+  wholesalePrice?: number;
+  minimumSellingPrice?: number;
   updatedAt: string;
   createdAt: string;
 }

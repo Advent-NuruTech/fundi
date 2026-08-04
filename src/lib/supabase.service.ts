@@ -23,11 +23,19 @@ import {
 } from "@/lib/offline-write";
 import type {
   Customer,
+  CustomerType,
   MeasurementSet,
+  DeliveryStatus,
   EmployeeInvitation,
   Business,
   InventoryMaterial,
   Order,
+  OrderItem,
+  OrderItemType,
+  OrderItemMaterialUsage,
+  OrderType,
+  OrderMember,
+  OrderMemberGarment,
   Payment,
   PurchaseOrder,
   StockMovement,
@@ -589,18 +597,55 @@ export async function updateFinanceAccess(businessId: string, settings: import("
 
 // â”€â”€â”€ CUSTOMERS â”€â”€â”€
 
-export async function createCustomer(businessId: string, payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">) {
+export interface CreateCustomerInput {
+  businessId?: string;
+  fullName: string;
+  phone: string;
+  email?: string;
+  gender?: 'male' | 'female';
+  preferences?: string;
+  notes?: string;
+  measurements?: Record<string, unknown>;
+  /** 'individual' (default) or 'group' (organization billing account). */
+  customerType?: CustomerType;
+  /** For members: the group account they belong to. Billing is inherited from it. */
+  parentCustomerId?: string;
+  organizationName?: string;
+  contactPerson?: string;
+  contactRole?: string;
+  taxId?: string;
+  paymentTerms?: string;
+  address?: string;
+  department?: string;
+}
+
+export async function createCustomer(
+  businessId: string,
+  payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">
+) {
   const { measurements, ...customerData } = payload as typeof payload & { measurements?: Record<string, unknown> };
+  const isMember = Boolean(customerData.parentCustomerId);
+  const isGroup = customerData.customerType === "group";
+
+  // Group accounts display their organization name; members keep their own
+  // full name. The DB name column stays `full_name` for backwards compat.
+  const fullName = isGroup
+    ? customerData.organizationName || customerData.fullName
+    : customerData.fullName;
 
   // ── Offline path ─────────────────────────────────────────────────────────
   const createOffline = async () => {
-    // Duplicate-phone guard against the local cache (best effort offline)
-    const cached = await getCachedCollection<Customer>('customers', businessId).catch(() => [] as Customer[]);
-    if (cached.some((c) => c.phone === customerData.phone)) {
-      throw new Error("A customer with this phone number already exists.");
+    // Duplicate-phone guard against the local cache (best effort offline) —
+    // skipped for members, who may share a phone within the organization.
+    if (!isMember) {
+      const cached = await getCachedCollection<Customer>('customers', businessId).catch(() => [] as Customer[]);
+      if (cached.some((c) => c.phone === customerData.phone)) {
+        throw new Error("A customer with this phone number already exists.");
+      }
     }
     const customerId = await offlineCreate(businessId, 'customers', {
       ...customerData,
+      fullName,
       outstandingBalance: 0,
     } as unknown as Record<string, unknown>);
     // measurements live in their own table — queue separately so the replay
@@ -620,25 +665,27 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
   };
   if (isOffline()) return createOffline();
 
-  const { data: phoneExisting } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('business_id', businessId)
-    .eq('phone', customerData.phone)
-    .maybeSingle();
-  if (phoneExisting) {
-    throw new Error("A customer with this phone number already exists.");
-  }
-
-  if (customerData.email) {
-    const { data: emailExisting } = await supabase
+  if (!isMember) {
+    const { data: phoneExisting } = await supabase
       .from('customers')
       .select('id')
       .eq('business_id', businessId)
-      .eq('email', customerData.email)
+      .eq('phone', customerData.phone)
       .maybeSingle();
-    if (emailExisting) {
-      throw new Error("A customer with this email already exists.");
+    if (phoneExisting) {
+      throw new Error("A customer with this phone number already exists.");
+    }
+
+    if (customerData.email) {
+      const { data: emailExisting } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('email', customerData.email)
+        .maybeSingle();
+      if (emailExisting) {
+        throw new Error("A customer with this email already exists.");
+      }
     }
   }
 
@@ -646,6 +693,7 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
     .from('customers')
     .insert(transformKeysToSnake({
       ...customerData,
+      fullName,
       outstandingBalance: 0,
       ...branchFields('customers'),
     } as Record<string, unknown>))
@@ -660,20 +708,85 @@ export async function createCustomer(businessId: string, payload: Omit<Customer,
       .insert(transformKeysToSnake({ customerId: insertData.id, values: measurements } as Record<string, unknown>));
   }
 
-  // Automatically provision the customer's portal account (login id + default
-  // password = normalized phone). Best-effort: on failure the customer row is
-  // left flagged `portal_provision_needed = true` and the background sync
-  // processor retries it when the dashboard is online.
-  try {
-    const provision = await provisionPortalAccount(businessId, insertData.id);
-    if ("error" in provision && provision.error) {
-      console.warn("[customer-portal] Provisioning failed:", provision.error);
+  // Members inherit billing from the parent account — they don't get their
+  // own customer-portal login. Only standalone individuals and group accounts
+  // (whose contact person manages invoices) are provisioned.
+  if (!isMember) {
+    try {
+      const provision = await provisionPortalAccount(businessId, insertData.id);
+      if ("error" in provision && provision.error) {
+        console.warn("[customer-portal] Provisioning failed:", provision.error);
+      }
+    } catch (error) {
+      console.warn("[customer-portal] Provisioning error:", error);
     }
-  } catch (error) {
-    console.warn("[customer-portal] Provisioning error:", error);
   }
 
   return insertData.id;
+}
+
+/**
+ * Create a member under a group customer. The member is an ordinary customer
+ * row (own measurements, gender, notes, history) linked to the group via
+ * `parentCustomerId` — billing, invoices and balances stay on the group.
+ */
+export async function createGroupMember(
+  businessId: string,
+  parentCustomerId: string,
+  payload: Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt" | "parentCustomerId" | "customerType">
+) {
+  const { data: parent } = await supabase
+    .from('customers')
+    .select('id, customer_type')
+    .eq('id', parentCustomerId)
+    .eq('business_id', businessId)
+    .maybeSingle();
+  if (!parent) throw new Error("Group customer not found");
+  if (parent.customer_type !== "group") {
+    throw new Error("Members can only be added under a Group customer.");
+  }
+  return createCustomer(businessId, {
+    ...payload,
+    customerType: "individual",
+    parentCustomerId,
+  } as unknown as Omit<Customer, "id" | "createdAt" | "updatedAt" | "outstandingBalance" | "lastOrderAt">);
+}
+
+/** All members under a group customer. */
+export function listenGroupMembers(
+  businessId: string,
+  parentCustomerId: string,
+  callback: (rows: Customer[]) => void
+): () => void {
+  let destroyed = false;
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    if (isOffline()) {
+      const cached = await getCachedCollection<Customer>('customers', businessId).catch(() => [] as Customer[]);
+      if (!destroyed) callback(cached.filter((c) => c.parentCustomerId === parentCustomerId));
+      return;
+    }
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('parent_customer_id', parentCustomerId)
+      .order('created_at', { ascending: false });
+    if (!destroyed && data) {
+      callback(transformArrayToCamel<Customer>(data as Record<string, unknown>[]));
+    } else if (!destroyed && error) {
+      const cached = await getCachedCollection<Customer>('customers', businessId).catch(() => [] as Customer[]);
+      if (!destroyed) callback(cached.filter((c) => c.parentCustomerId === parentCustomerId));
+    }
+  };
+  fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['customers'], fetchAndCallback);
+  const channel = supabase
+    .channel(`group-members-${parentCustomerId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `parent_customer_id=eq.${parentCustomerId}` }, fetchAndCallback)
+    .subscribe();
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
 
 export function listenCustomers(businessId: string, callback: (rows: Customer[]) => void) {
@@ -739,7 +852,11 @@ export function listenCustomer(businessId: string, customerId: string, callback:
 
 function computeDiff(oldData: Partial<Customer>, newData: Partial<Customer>): Array<{ field: string; oldValue: unknown; newValue: unknown }> {
   const changes: Array<{ field: string; oldValue: unknown; newValue: unknown }> = [];
-  const fields: (keyof Customer)[] = ["fullName", "phone", "email", "gender", "preferences", "notes"];
+  const fields: (keyof Customer)[] = [
+    "fullName", "phone", "email", "gender", "preferences", "notes",
+    "customerType", "parentCustomerId", "organizationName", "contactPerson",
+    "contactRole", "taxId", "paymentTerms", "address", "department",
+  ];
   for (const key of fields) {
     const oldVal = oldData[key];
     const newVal = newData[key];
@@ -789,7 +906,11 @@ export async function updateCustomer(
 
   const current = transformKeysToCamel<Customer>(currentData as Record<string, unknown>);
 
-  if (customerFields.phone && customerFields.phone !== current.phone) {
+  // Group members may share phone/email within the organization — only guard
+  // uniqueness for standalone customers and group billing accounts.
+  const isMember = Boolean(current.parentCustomerId || customerFields.parentCustomerId);
+
+  if (customerFields.phone && customerFields.phone !== current.phone && !isMember) {
     const { data: phoneExisting } = await supabase
       .from('customers')
       .select('id')
@@ -799,7 +920,7 @@ export async function updateCustomer(
     if (phoneExisting) throw new Error("A customer with this phone number already exists.");
   }
 
-  if (customerFields.email && customerFields.email !== current.email) {
+  if (customerFields.email && customerFields.email !== current.email && !isMember) {
     const { data: emailExisting } = await supabase
       .from('customers')
       .select('id')
@@ -1239,32 +1360,269 @@ export async function getNextEmployeeNumber(businessId: string): Promise<string>
 
 // â”€â”€â”€ ORDERS â”€â”€â”€
 
+export interface OrderMemberInput {
+  memberCustomerId: string;
+  memberName: string;
+  gender?: string;
+  department?: string;
+  measurements?: Record<string, unknown>;
+  notes?: string;
+  garments?: Array<{ name: string; quantity: number; agreedPrice: number; styleNotes?: string }>;
+}
+
+/**
+ * One unified line item on an order. itemType decides the workflow the item
+ * follows; inventoryItemId points at the shared inventory record (the single
+ * source of truth) when the item comes from stock.
+ */
+export interface OrderItemInput {
+  itemType: OrderItemType;
+  inventoryItemId?: string;
+  inventoryItemName?: string;
+  sku?: string;
+  categoryName?: string;
+  size?: string;
+  color?: string;
+  brand?: string;
+  quantity: number;
+  unit?: string;
+  /** Actual selling price charged at the time of the transaction. */
+  unitPrice: number;
+  /** Cost price snapshot at the time of the transaction. */
+  costPrice?: number;
+  discount?: number;
+  totalAmount?: number;
+  measurements?: Record<string, unknown>;
+  styleNotes?: string;
+  assignedTailorId?: string;
+  assignedTailorName?: string;
+  status?: string;
+  readyDate?: string;
+  notes?: string;
+}
+
+export const ORDER_ITEM_TYPES: OrderItemType[] = [
+  "tailored",
+  "ready_made",
+  "alteration",
+  "material",
+  "service",
+];
+
+export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
+  tailoring: "Tailoring Order",
+  ready_made_sale: "Ready-made Sale",
+  ready_made_alteration: "Ready-made + Alteration",
+  material_sale: "Material Sale",
+  mixed: "Mixed Order",
+};
+
+/** Default production stage a new line item starts at, per item type. */
+export function defaultOrderItemStage(itemType: OrderItemType): ProductionStage {
+  switch (itemType) {
+    case "tailored":
+    case "alteration":
+      return "cutting";
+    case "ready_made":
+    case "material":
+    case "service":
+      return "ready_for_pickup";
+    default:
+      return "cutting";
+  }
+}
+
+/** Infer the order-level type from its line items. */
+export function deriveOrderType(items: OrderItemInput[]): OrderType {
+  if (items.length === 0) return "tailoring";
+  const types = new Set(items.map((i) => i.itemType));
+  if (types.size > 1) return "mixed";
+  switch (items[0].itemType) {
+    case "tailored":
+      return "tailoring";
+    case "ready_made":
+      return "ready_made_sale";
+    case "alteration":
+      return "ready_made_alteration";
+    case "material":
+      return "material_sale";
+    case "service":
+      return "tailoring";
+    default:
+      return "tailoring";
+  }
+}
+
+/** Map a client OrderItemInput into the snake_case row persisted to order_items. */
+function buildOrderItemRow(orderId: string, item: OrderItemInput, sortOrder: number): Record<string, unknown> {
+  const quantity = Number(item.quantity) || 1;
+  const unitPrice = Number(item.unitPrice) || 0;
+  const discount = Number(item.discount) || 0;
+  const totalAmount = item.totalAmount != null
+    ? Number(item.totalAmount)
+    : Math.max(0, unitPrice * quantity - discount);
+  return {
+    order_id: orderId,
+    item_type: item.itemType,
+    inventory_item_id: item.inventoryItemId ?? null,
+    inventory_item_name: item.inventoryItemName ?? null,
+    sku: item.sku ?? null,
+    category_name: item.categoryName ?? null,
+    size: item.size ?? null,
+    color: item.color ?? null,
+    brand: item.brand ?? null,
+    quantity,
+    unit: item.unit ?? "pcs",
+    unit_price: unitPrice,
+    cost_price: Number(item.costPrice) || 0,
+    discount,
+    total_amount: totalAmount,
+    measurements: item.measurements ?? {},
+    style_notes: item.styleNotes ?? null,
+    assigned_tailor_id: item.assignedTailorId ?? null,
+    assigned_tailor_name: item.assignedTailorName ?? null,
+    stage: defaultOrderItemStage(item.itemType),
+    delivery_status: defaultOrderItemStage(item.itemType) === "ready_for_pickup" ? "ready" : "pending",
+    status: item.status ?? "active",
+    ready_date: item.readyDate ?? null,
+    notes: item.notes ?? null,
+    sort_order: sortOrder,
+  };
+}
+
+/** OrderItem rows that come out of inventory stock (deduct + movement). */
+function inventoryBoundOrderItems(items: OrderItemInput[]): OrderItemInput[] {
+  return items.filter(
+    (i) =>
+      (i.itemType === "ready_made" || i.itemType === "material") &&
+      !!i.inventoryItemId
+  );
+}
+
+/**
+ * Deduct stock for ready-made / material sale items and log a stock_out
+ * movement. Called immediately after an order is created so the ledger stays
+ * in sync with the sale (online path).
+ */
+async function deductOrderItemStockOnline(
+  businessId: string,
+  orderId: string,
+  orderNumber: string,
+  items: OrderItemInput[],
+  actor: { uid: string; name: string }
+) {
+  const saleItems = inventoryBoundOrderItems(items);
+  if (saleItems.length === 0) return;
+  const now = new Date().toISOString();
+  for (const item of saleItems) {
+    const { data: materialData } = await supabase
+      .from("inventory_materials")
+      .select("quantity, unit_name")
+      .eq("id", item.inventoryItemId)
+      .single();
+    const currentQty = Number((materialData as any)?.quantity ?? 0);
+    const newQty = Math.max(0, currentQty - Math.abs(Number(item.quantity) || 1));
+    await supabase
+      .from("inventory_materials")
+      .update({ quantity: newQty, updated_at: now })
+      .eq("id", item.inventoryItemId);
+    await supabase.from("stock_movements").insert(
+      transformKeysToSnake({
+        businessId,
+        ...branchFields("stock_movements"),
+        movementType: "stock_out",
+        materialId: item.inventoryItemId,
+        materialName: item.inventoryItemName ?? "",
+        orderId,
+        quantityChange: -Math.abs(Number(item.quantity) || 1),
+        unit: item.unit ?? (materialData as any)?.unit_name ?? "pcs",
+        reason: `Sold in order ${orderNumber}`,
+        createdByUid: actor.uid,
+        createdByName: actor.name,
+      } as unknown as Record<string, unknown>)
+    );
+  }
+}
+
+/**
+ * Queue the same stock deduction + movements offline (offline path of
+ * createOrder). The sync engine replays them once the connection returns.
+ */
+async function deductOrderItemStockOffline(
+  businessId: string,
+  orderId: string,
+  orderNumber: string,
+  items: OrderItemInput[],
+  actor: { uid: string; name: string }
+) {
+  const saleItems = inventoryBoundOrderItems(items);
+  if (saleItems.length === 0) return;
+  for (const item of saleItems) {
+    const qty = Math.abs(Number(item.quantity) || 1);
+    const cachedMat = await getCachedById<InventoryMaterial>(
+      "inventory_materials",
+      businessId,
+      item.inventoryItemId as string
+    );
+    const newQty = Math.max(0, Number(cachedMat?.quantity ?? 0) - qty);
+    await offlineUpdate(businessId, "inventory_materials", item.inventoryItemId as string, {
+      quantity: newQty,
+    });
+    await offlineCreate(businessId, "stock_movements", {
+      businessId,
+      ...branchFields("stock_movements"),
+      movementType: "stock_out",
+      materialId: item.inventoryItemId,
+      materialName: item.inventoryItemName ?? "",
+      orderId,
+      quantityChange: -qty,
+      unit: item.unit ?? cachedMat?.unitName ?? "pcs",
+      reason: `Sold in order ${orderNumber}`,
+      createdByUid: actor.uid,
+      createdByName: actor.name,
+    });
+  }
+}
+
+export type CreateOrderInput = Omit<
+  Order,
+  | "id"
+  | "orderNumber"
+  | "createdAt"
+  | "updatedAt"
+  | "paymentStatus"
+  | "amountPaid"
+  | "balanceAmount"
+  | "fittingRecords"
+  | "materialUsage"
+  | "imageIds"
+  | "deliveryStatus"
+  | "stage"
+  | "garments"
+  | "items"
+  | "members"
+> & {
+  garments?: Array<{ name: string; quantity: number; agreedPrice: number; styleNotes?: string }>;
+  items?: OrderItemInput[];
+  members?: OrderMemberInput[];
+  isGroupOrder?: boolean;
+  fabricSelections?: unknown[];
+};
+
 export async function createOrder(
   businessId: string,
-  payload: Omit<
-    Order,
-    | "id"
-    | "orderNumber"
-    | "createdAt"
-    | "updatedAt"
-    | "paymentStatus"
-    | "amountPaid"
-    | "balanceAmount"
-    | "fittingRecords"
-    | "materialUsage"
-    | "imageIds"
-    | "deliveryStatus"
-    | "stage"
-  >,
+  payload: CreateOrderInput,
   depositAmount: number,
   actor: { uid: string; name: string }
 ) {
-  // garments and fabricSelections live in separate tables â€” strip them before inserting into orders
-  const { garments, fabricSelections, ...orderFields } = payload as typeof payload & {
-    garments?: Array<{ name: string; quantity: number; agreedPrice: number; styleNotes?: string }>;
-    fabricSelections?: unknown[];
-  };
+  // garments, fabricSelections, members and items live in separate tables —
+  // strip them before inserting into orders
+  const { garments, fabricSelections, members, items, isGroupOrder, ...orderFields } = payload;
   void fabricSelections;
+
+  const orderItems: OrderItemInput[] = items ?? [];
+  const groupMembers: OrderMemberInput[] = members ?? [];
+  const inferredOrderType = deriveOrderType(orderItems);
 
   // ── Offline path ─────────────────────────────────────────────────────────
   // The order is created locally with a provisional number; the sync engine
@@ -1282,6 +1640,8 @@ export async function createOrder(
       businessId,
       orderNumber: provisionalNumber,
       trackingToken: offlineTrackingToken,
+      isGroupOrder: groupMembers.length > 0,
+      orderType: orderFields.orderType ?? inferredOrderType,
       stage: "cutting",
       deliveryStatus: "pending",
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
@@ -1299,6 +1659,28 @@ export async function createOrder(
     await cacheLocalRecord('orders', orderId, businessId, {
       ...orderRecord,
       garments: garments ?? [],
+      items: orderItems.map((item, index) => ({
+        id: generateId(),
+        orderId,
+        ...item,
+        stage: defaultOrderItemStage(item.itemType),
+        deliveryStatus: defaultOrderItemStage(item.itemType) === "ready_for_pickup" ? "ready" : "pending",
+        totalAmount: item.totalAmount ?? Math.max(0, Number(item.unitPrice || 0) * (Number(item.quantity) || 1) - (Number(item.discount) || 0)),
+        sortOrder: index,
+      })),
+      members: groupMembers.map((m, index) => ({
+        id: generateId(),
+        memberCustomerId: m.memberCustomerId,
+        memberName: m.memberName,
+        gender: m.gender,
+        department: m.department,
+        measurementsSnapshot: m.measurements ?? {},
+        stage: "cutting",
+        deliveryStatus: "pending",
+        notes: m.notes,
+        sortOrder: index,
+        garments: m.garments ?? [],
+      })),
       _localOnly: true,
     }).catch(() => {});
 
@@ -1315,6 +1697,53 @@ export async function createOrder(
         },
         generateId(), 'high'
       );
+    }
+
+    for (const [index, item] of orderItems.entries()) {
+      const itemId = generateId();
+      await enqueueSyncOperation(
+        businessId, 'order_items', 'create',
+        buildOrderItemRow(orderId, item, index),
+        itemId, 'high'
+      );
+    }
+    await deductOrderItemStockOffline(businessId, orderId, provisionalNumber, orderItems, actor);
+
+    // Group members each get their own order_members + order_member_garments
+    // rows so production can be tracked per person even offline.
+    for (const [index, m] of groupMembers.entries()) {
+      const memberRowId = generateId();
+      await enqueueSyncOperation(
+        businessId, 'order_members', 'create',
+        {
+          id: memberRowId,
+          orderId,
+          memberCustomerId: m.memberCustomerId,
+          memberName: m.memberName,
+          gender: m.gender ?? null,
+          department: m.department ?? null,
+          measurementsSnapshot: m.measurements ?? {},
+          stage: "cutting",
+          deliveryStatus: "pending",
+          notes: m.notes ?? null,
+          sortOrder: index,
+        },
+        memberRowId, 'high'
+      );
+      for (const [gIndex, g] of (m.garments ?? []).entries()) {
+        await enqueueSyncOperation(
+          businessId, 'order_member_garments', 'create',
+          {
+            orderMemberId: memberRowId,
+            name: g.name,
+            quantity: g.quantity,
+            agreedPrice: g.agreedPrice,
+            styleNotes: g.styleNotes ?? "",
+            sortOrder: gIndex,
+          },
+          generateId(), 'high'
+        );
+      }
     }
 
     const cachedCustomer = await getCachedById<Customer>('customers', businessId, payload.customerId);
@@ -1364,6 +1793,8 @@ export async function createOrder(
       ...branchFields('orders'),
       orderNumber,
       trackingToken,
+      isGroupOrder: groupMembers.length > 0,
+      orderType: orderFields.orderType ?? inferredOrderType,
       stage: "cutting",
       deliveryStatus: "pending",
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
@@ -1387,6 +1818,48 @@ export async function createOrder(
         sortOrder: index,
       } as Record<string, unknown>))
     );
+  }
+
+  if (orderItems.length > 0) {
+    await supabase.from('order_items').insert(
+      orderItems.map((item, index) => buildOrderItemRow(orderId, item, index))
+    );
+    // Ready-made / material sales leave inventory immediately.
+    await deductOrderItemStockOnline(businessId, orderId, orderData.order_number as string, orderItems, actor);
+  }
+
+  // Group orders: persist each member line + their garments so production can
+  // be tracked per person.
+  for (const [index, m] of groupMembers.entries()) {
+    const { data: memberRow } = await supabase
+      .from('order_members')
+      .insert(transformKeysToSnake({
+        orderId,
+        memberCustomerId: m.memberCustomerId,
+        memberName: m.memberName,
+        gender: m.gender ?? null,
+        department: m.department ?? null,
+        measurementsSnapshot: m.measurements ?? {},
+        stage: "cutting",
+        deliveryStatus: "pending",
+        notes: m.notes ?? null,
+        sortOrder: index,
+      } as Record<string, unknown>))
+      .select('id')
+      .single();
+    if (!memberRow) continue;
+    if (m.garments && m.garments.length > 0) {
+      await supabase.from('order_member_garments').insert(
+        m.garments.map((g, gIndex) => transformKeysToSnake({
+          orderMemberId: memberRow.id,
+          name: g.name,
+          quantity: g.quantity,
+          agreedPrice: g.agreedPrice,
+          styleNotes: g.styleNotes ?? "",
+          sortOrder: gIndex,
+        } as Record<string, unknown>))
+      );
+    }
   }
 
   const { data: customerData } = await supabase
@@ -1445,14 +1918,37 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
       return;
     }
 
-    let ordersQuery = supabase
-      .from('orders')
-      .select('*, order_garments(name, quantity, agreed_price, sort_order)')
-      .eq('business_id', businessId);
-    if (isBranchScoped('orders')) {
-      ordersQuery = ordersQuery.eq('branch_id', activeBranchId as string);
+    const runOrdersQuery = () => {
+      let ordersQuery = supabase
+        .from('orders')
+        .select('*, order_garments(name, quantity, agreed_price, sort_order), order_items(id, item_type, inventory_item_id, inventory_item_name, sku, quantity, unit, unit_price, cost_price, discount, total_amount, size, color, brand, assigned_tailor_name, stage, delivery_status, status, sort_order)')
+        .eq('business_id', businessId);
+      if (isBranchScoped('orders')) {
+        ordersQuery = ordersQuery.eq('branch_id', activeBranchId as string);
+      }
+      return ordersQuery.order('updated_at', { ascending: false });
+    };
+
+    let { data, error } = await runOrdersQuery();
+
+    // Fetch the (lightweight) member summary for every order in one extra query
+    // so the list can show member counts and per-member progress.
+    let memberRowsByOrder = new Map<string, Array<Record<string, unknown>>>();
+    if (data && !destroyed) {
+      const orderIds = (data as Record<string, unknown>[]).map((row) => row.id as string);
+      const { data: memberRows } = await supabase
+        .from('order_members')
+        .select('order_id, id, member_name, stage, delivery_status, sort_order')
+        .in('order_id', orderIds)
+        .order('sort_order', { ascending: true });
+      memberRowsByOrder = new Map();
+      for (const row of (memberRows ?? []) as Record<string, unknown>[]) {
+        const orderId = row.order_id as string;
+        const list = memberRowsByOrder.get(orderId) ?? [];
+        list.push(row);
+        memberRowsByOrder.set(orderId, list);
+      }
     }
-    const { data, error } = await ordersQuery.order('updated_at', { ascending: false });
     if (error && isMissingColumnError(error)) {
       branchScopingAvailable = false;
       if (!destroyed) fetchAndCallback();
@@ -1461,7 +1957,9 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
     if (data && !destroyed) {
       const rows = (data as Record<string, unknown>[]).map((row) => {
         const garmentRows = (row.order_garments as Record<string, unknown>[] | null) ?? [];
-        const base = transformKeysToCamel<Order>({ ...row, order_garments: undefined } as Record<string, unknown>);
+        const itemRows = (row.order_items as Record<string, unknown>[] | null) ?? [];
+        const memberRows = memberRowsByOrder.get(row.id as string) ?? [];
+        const base = transformKeysToCamel<Order>({ ...row, order_garments: undefined, order_items: undefined } as Record<string, unknown>);
         return {
           ...base,
           garments: garmentRows
@@ -1471,6 +1969,41 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
               quantity: Number(g.quantity),
               agreedPrice: Number(g.agreed_price),
               styleNotes: g.style_notes as string | undefined,
+            })),
+          items: itemRows
+            .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+            .map((i) => ({
+              id: i.id as string,
+              orderId: row.id as string,
+              itemType: i.item_type as OrderItemType,
+              inventoryItemId: i.inventory_item_id as string | undefined,
+              inventoryItemName: i.inventory_item_name as string | undefined,
+              sku: i.sku as string | undefined,
+              size: i.size as string | undefined,
+              color: i.color as string | undefined,
+              brand: i.brand as string | undefined,
+              quantity: Number(i.quantity),
+              unit: i.unit as string | undefined,
+              unitPrice: Number(i.unit_price),
+              costPrice: i.cost_price == null ? undefined : Number(i.cost_price),
+              discount: Number(i.discount) || 0,
+              totalAmount: Number(i.total_amount),
+              assignedTailorName: i.assigned_tailor_name as string | undefined,
+              stage: i.stage as ProductionStage | undefined,
+              deliveryStatus: i.delivery_status as DeliveryStatus,
+              status: i.status as string | undefined,
+              sortOrder: Number(i.sort_order) || 0,
+            })) as OrderItem[],
+          memberCount: memberRows.length,
+          members: memberRows
+            .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+            .map((m) => ({
+              id: m.id as string,
+              memberCustomerId: m.member_customer_id as string,
+              memberName: m.member_name as string,
+              stage: m.stage as ProductionStage,
+              deliveryStatus: m.delivery_status as string,
+              sortOrder: Number(m.sort_order) || 0,
             })),
         } as Order;
       }).sort((a, b) => orderStageSort[a.stage] - orderStageSort[b.stage]);
@@ -1489,6 +2022,8 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
     .channel(`orders-list-${businessId}-${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_garments' }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_members' }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
@@ -1536,13 +2071,124 @@ async function assembleOrder(orderId: string): Promise<Order | null> {
     .maybeSingle();
   if (!data) return null;
 
-  const [{ data: garments }, { data: materialUsage }, { data: fittingRecords }, { data: directImages }, { data: junctionImageIds }] = await Promise.all([
+  const [{ data: garments }, { data: materialUsage }, { data: fittingRecords }, { data: directImages }, { data: junctionImageIds }, { data: memberRows }, { data: itemRows }] = await Promise.all([
     supabase.from('order_garments').select('*').eq('order_id', orderId).order('sort_order', { ascending: true }),
     supabase.from('order_material_usage').select('*').eq('order_id', orderId).order('recorded_at', { ascending: true }),
     supabase.from('order_fitting_records').select('*').eq('order_id', orderId).order('created_at', { ascending: true }),
     supabase.from('images').select('id,url').eq('order_id', orderId),
     supabase.from('order_images').select('image_id').eq('order_id', orderId),
+    supabase.from('order_members').select('*').eq('order_id', orderId).order('sort_order', { ascending: true }),
+    supabase.from('order_items').select('*').eq('order_id', orderId).order('sort_order', { ascending: true }),
   ]);
+
+  // Load per-item material usage for every order item in one batched query.
+  const orderItems: OrderItem[] = [];
+  if (itemRows && itemRows.length > 0) {
+    const itemIds = (itemRows as Record<string, unknown>[]).map((r) => r.id as string);
+    const { data: itemUsageRows } = await supabase
+      .from('order_item_material_usage')
+      .select('*')
+      .in('order_item_id', itemIds)
+      .order('recorded_at', { ascending: true });
+    const usageByItem = new Map<string, OrderItemMaterialUsage[]>();
+    for (const row of (itemUsageRows ?? []) as Record<string, unknown>[]) {
+      const itemId = row.order_item_id as string;
+      const list = usageByItem.get(itemId) ?? [];
+      list.push({
+        id: row.id as string,
+        orderItemId: itemId,
+        materialId: row.material_id as string | undefined,
+        materialName: row.material_name as string,
+        quantityUsed: Number(row.quantity_used),
+        unit: row.unit as string,
+        recordedByUid: row.recorded_by_uid as string | undefined,
+        recordedByName: row.recorded_by_name as string | undefined,
+        recordedAt: row.recorded_at as string,
+      });
+      usageByItem.set(itemId, list);
+    }
+    for (const row of (itemRows as Record<string, unknown>[]).sort(
+      (a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)
+    )) {
+      const itemId = row.id as string;
+      orderItems.push({
+        id: itemId,
+        orderId: row.order_id as string,
+        itemType: row.item_type as OrderItemType,
+        inventoryItemId: row.inventory_item_id as string | undefined,
+        inventoryItemName: row.inventory_item_name as string | undefined,
+        sku: row.sku as string | undefined,
+        categoryName: row.category_name as string | undefined,
+        size: row.size as string | undefined,
+        color: row.color as string | undefined,
+        brand: row.brand as string | undefined,
+        quantity: Number(row.quantity),
+        unit: row.unit as string | undefined,
+        unitPrice: Number(row.unit_price),
+        costPrice: row.cost_price == null ? undefined : Number(row.cost_price),
+        discount: Number(row.discount) || 0,
+        totalAmount: Number(row.total_amount),
+        measurements: (row.measurements as unknown as MeasurementSet) ?? undefined,
+        styleNotes: row.style_notes as string | undefined,
+        assignedTailorId: row.assigned_tailor_id as string | undefined,
+        assignedTailorName: row.assigned_tailor_name as string | undefined,
+        stage: row.stage as ProductionStage | undefined,
+        deliveryStatus: row.delivery_status as DeliveryStatus,
+        status: row.status as string | undefined,
+        readyDate: row.ready_date as string | undefined,
+        notes: row.notes as string | undefined,
+        sortOrder: Number(row.sort_order) || 0,
+        materialUsage: usageByItem.get(itemId) ?? [],
+        createdAt: row.created_at as string | undefined,
+        updatedAt: row.updated_at as string | undefined,
+      });
+    }
+  }
+
+  const members: OrderMember[] = [];
+  if (memberRows && memberRows.length > 0) {
+    const memberIds = (memberRows as Record<string, unknown>[]).map((r) => r.id as string);
+    const { data: memberGarmentRows } = await supabase
+      .from('order_member_garments')
+      .select('*')
+      .in('order_member_id', memberIds)
+      .order('sort_order', { ascending: true });
+    const garmentsByMember = new Map<string, OrderMemberGarment[]>();
+    for (const row of (memberGarmentRows ?? []) as Record<string, unknown>[]) {
+      const memberId = row.order_member_id as string;
+      const list = garmentsByMember.get(memberId) ?? [];
+      list.push({
+        id: row.id as string,
+        name: row.name as string,
+        quantity: Number(row.quantity),
+        agreedPrice: Number(row.agreed_price),
+        styleNotes: row.style_notes as string | undefined,
+        fabricUsed: row.fabric_used == null ? undefined : Number(row.fabric_used),
+        notes: row.notes as string | undefined,
+        sortOrder: Number(row.sort_order) || 0,
+      });
+      garmentsByMember.set(memberId, list);
+    }
+    for (const row of memberRows as Record<string, unknown>[]) {
+      const memberId = row.id as string;
+      members.push({
+        id: memberId,
+        orderId: row.order_id as string,
+        memberCustomerId: row.member_customer_id as string,
+        memberName: row.member_name as string,
+        gender: row.gender as string | undefined,
+        department: row.department as string | undefined,
+        measurementsSnapshot: (row.measurements_snapshot as unknown as MeasurementSet) ?? {},
+        stage: row.stage as ProductionStage,
+        deliveryStatus: row.delivery_status as DeliveryStatus,
+        notes: row.notes as string | undefined,
+        sortOrder: Number(row.sort_order) || 0,
+        createdAt: row.created_at as string,
+        updatedAt: row.updated_at as string,
+        garments: garmentsByMember.get(memberId) ?? [],
+      });
+    }
+  }
 
   // Collect all unique image IDs from both sources
   const directImageIdSet = new Set((directImages ?? []).map((img: Record<string, unknown>) => img.id as string));
@@ -1564,6 +2210,7 @@ async function assembleOrder(orderId: string): Promise<Order | null> {
   return {
     ...base,
     garments: transformArrayToCamel(((garments ?? []) as Record<string, unknown>[])),
+    items: orderItems,
     materialUsage: (materialUsage ?? []).map((r: Record<string, unknown>) => ({
       materialId: r.material_id as string,
       materialName: r.material_name as string,
@@ -1582,6 +2229,7 @@ async function assembleOrder(orderId: string): Promise<Order | null> {
     })),
     imageIds: allImageIds,
     imageUrls,
+    members,
   } as Order & { imageUrls: string[] };
 }
 
@@ -1622,7 +2270,11 @@ export function listenOrder(businessId: string, orderId: string, callback: (row:
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_garments', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_material_usage', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_item_material_usage' }, fetchAndCallback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'order_fitting_records', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_members', filter: `order_id=eq.${orderId}` }, fetchAndCallback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_member_garments' }, fetchAndCallback)
     .subscribe();
   return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
 }
@@ -1640,6 +2292,213 @@ export async function updateOrderStage(businessId: string, orderId: string, stag
     },
     () => offlineUpdate(businessId, 'orders', orderId, { stage, deliveryStatus }, 'high')
   );
+}
+
+/**
+ * Advance a single member's production stage within a group order. The master
+ * order's stage is only advanced (by the caller, e.g. the order-detail page)
+ * once every member has moved on, so the group stays coherent.
+ */
+export async function updateOrderMemberStage(
+  businessId: string,
+  orderMemberId: string,
+  stage: ProductionStage
+) {
+  const deliveryStatus = stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending";
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('order_members')
+        .update({ stage, delivery_status: deliveryStatus })
+        .eq('id', orderMemberId);
+      if (error) throw error;
+    },
+    () => enqueueSyncOperation(
+      businessId,
+      'order_members',
+      'update',
+      { id: orderMemberId, stage, deliveryStatus },
+      orderMemberId,
+      'high'
+    ).then(() => undefined)
+  );
+}
+
+/**
+ * Advance a single order item's production stage. Each item owns its own
+ * lifecycle (trouser goes through cutting → stitching, while a ready-made
+ * t-shirt on the same order is already ready for pickup).
+ */
+export async function updateOrderItemStage(
+  businessId: string,
+  orderItemId: string,
+  stage: ProductionStage
+) {
+  const deliveryStatus = stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending";
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('order_items')
+        .update({ stage, delivery_status: deliveryStatus, updated_at: new Date().toISOString() })
+        .eq('id', orderItemId);
+      if (error) throw error;
+    },
+    () => enqueueSyncOperation(
+      businessId,
+      'order_items',
+      'update',
+      { id: orderItemId, stage, deliveryStatus },
+      orderItemId,
+      'high'
+    ).then(() => undefined)
+  );
+}
+
+/**
+ * Edit a line item (price, quantity, tailor, notes…). Recomputes the item's
+ * total and the order subtotal so the invoice stays accurate.
+ */
+export async function updateOrderItem(
+  businessId: string,
+  orderId: string,
+  orderItemId: string,
+  fields: Partial<
+    Pick<OrderItem, 'unitPrice' | 'discount' | 'quantity' | 'styleNotes' | 'notes' | 'status' | 'assignedTailorId' | 'assignedTailorName' | 'readyDate'>
+  >
+) {
+  const withOffline = async (onlineFn: () => Promise<void>) =>
+    withOfflineFallback(
+      async () => { await onlineFn(); },
+      async () => {
+        await enqueueSyncOperation(
+          businessId,
+          'order_items',
+          'update',
+          { id: orderItemId, ...fields } as Record<string, unknown>,
+          orderItemId,
+          'normal'
+        );
+        notifyLocalWrite('orders');
+      }
+    );
+
+  return withOffline(async () => {
+    const { data: itemData } = await supabase
+      .from('order_items')
+      .select('quantity, unit_price, discount')
+      .eq('id', orderItemId)
+      .single();
+    const quantity = Number(fields.quantity ?? (itemData as any)?.quantity ?? 1);
+    const unitPrice = Number(fields.unitPrice ?? (itemData as any)?.unit_price ?? 0);
+    const discount = Number(fields.discount ?? (itemData as any)?.discount ?? 0);
+    const totalAmount = Math.max(0, unitPrice * quantity - discount);
+    const { error } = await supabase
+      .from('order_items')
+      .update({ ...transformKeysToSnake(fields as Record<string, unknown>), total_amount: totalAmount, updated_at: new Date().toISOString() })
+      .eq('id', orderItemId);
+    if (error) throw error;
+    await recomputeOrderSubtotal(businessId, orderId);
+  });
+}
+
+/** Sum order_items (+ legacy order_garments as fallback) into orders.subtotal_amount. */
+async function recomputeOrderSubtotal(businessId: string, orderId: string) {
+  const { data: itemRows } = await supabase
+    .from('order_items')
+    .select('total_amount')
+    .eq('order_id', orderId);
+  const { data: orderData } = await supabase
+    .from('orders')
+    .select('subtotal_amount')
+    .eq('id', orderId)
+    .single();
+  const currentSubtotal = Number((orderData as any)?.subtotal_amount ?? 0);
+  if (itemRows && itemRows.length > 0) {
+    const subtotal = (itemRows as Array<{ total_amount: number }>).reduce(
+      (sum, r) => sum + Number(r.total_amount),
+      0
+    );
+    if (Math.abs(subtotal - currentSubtotal) > 0.01) {
+      await supabase
+        .from('orders')
+        .update({ subtotal_amount: subtotal, updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+    }
+  }
+}
+
+/**
+ * Record material consumption against a specific order item (e.g. the fabric
+ * used to make the trouser). Deducts inventory and logs a used_in_order stock
+ * movement, mirroring the order-level recordMaterialUsage.
+ */
+export async function recordOrderItemMaterialUsage(
+  businessId: string,
+  orderId: string,
+  orderItemId: string,
+  items: Omit<MaterialUsageRecord, 'recordedAt'>[],
+  actor: { uid: string; name: string }
+) {
+  const { data: orderData } = await supabase
+    .from('orders')
+    .select('order_number')
+    .eq('id', orderId)
+    .single();
+  const orderNumber = orderData?.order_number ?? '';
+  const now = new Date().toISOString();
+
+  const usageRecords: MaterialUsageRecord[] = items.map((item) => ({
+    ...item,
+    recordedByUid: actor.uid,
+    recordedByName: actor.name,
+    recordedAt: now,
+  }));
+
+  await supabase.from('order_item_material_usage').insert(
+    usageRecords.map((record) => transformKeysToSnake({
+      orderItemId,
+      materialId: record.materialId || null,
+      materialName: record.materialName,
+      quantityUsed: record.quantityUsed,
+      unit: record.unit,
+      recordedByUid: record.recordedByUid || null,
+      recordedByName: record.recordedByName,
+    } as Record<string, unknown>))
+  );
+
+  for (const record of usageRecords) {
+    if (!record.materialId) continue;
+    const { data: materialData } = await supabase
+      .from('inventory_materials')
+      .select('quantity')
+      .eq('id', record.materialId)
+      .single();
+    const currentQty = Number((materialData as any)?.quantity ?? 0);
+    const newQty = Math.max(0, currentQty - Math.abs(record.quantityUsed));
+    await supabase
+      .from('inventory_materials')
+      .update({ quantity: newQty, updated_at: now })
+      .eq('id', record.materialId);
+    await supabase.from('stock_movements').insert(
+      transformKeysToSnake({
+        businessId,
+        ...branchFields('stock_movements'),
+        movementType: 'used_in_order',
+        materialId: record.materialId,
+        materialName: record.materialName,
+        orderId,
+        quantityChange: -Math.abs(record.quantityUsed),
+        unit: record.unit,
+        reason: `Used in order ${orderNumber}`,
+        createdByUid: actor.uid,
+        createdByName: actor.name,
+      } as unknown as Record<string, unknown>)
+    );
+  }
+
+  notifyLocalWrite('orders');
+  return usageRecords;
 }
 
 export async function logSmsEntry(

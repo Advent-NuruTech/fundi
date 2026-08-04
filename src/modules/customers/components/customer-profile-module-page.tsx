@@ -23,6 +23,11 @@ import {
   Venus,
   Mars,
   X,
+  Building2,
+  Users,
+  Briefcase,
+  Banknote,
+  MapPin,
 } from "lucide-react";
 
 import type { Customer, Order, Payment, CustomerChangeEntry } from "@/types/domain";
@@ -39,6 +44,8 @@ import {
   listenPayments,
   updateCustomer,
   listenCustomerChanges,
+  listenGroupMembers,
+  createGroupMember,
 } from "@/services/firestore.service";
 import {
   updateCustomerSchema,
@@ -115,10 +122,27 @@ export function CustomerProfileModulePage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [changes, setChanges] = useState<CustomerChangeEntry[]>([]);
+  const [members, setMembers] = useState<Customer[]>([]);
+  const [parentGroup, setParentGroup] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
+
+  // Add-member form (group customers)
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [savingMember, setSavingMember] = useState(false);
+  const [memberForm, setMemberForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    gender: "",
+    department: "",
+    bust: "",
+    waist: "",
+    hips: "",
+    length: "",
+  });
 
   const { register, handleSubmit, reset, formState, control } = useForm<
     UpdateCustomerValues
@@ -154,6 +178,65 @@ export function CustomerProfileModulePage() {
     };
   }, [businessId, customerId, ready]);
 
+  // Group members / parent group
+  const isGroup = customer?.customerType === "group";
+  const isMemberCustomer = Boolean(customer?.parentCustomerId);
+
+  useEffect(() => {
+    if (!ready || !businessId || !customerId || !isGroup) return;
+    const unsub = listenGroupMembers(businessId, customerId, setMembers);
+    return () => unsub();
+  }, [businessId, customerId, ready, isGroup]);
+
+  useEffect(() => {
+    if (!ready || !businessId || !customer?.parentCustomerId) return;
+    const unsub = listenCustomer(businessId, customer.parentCustomerId, setParentGroup);
+    return () => unsub();
+  }, [businessId, customer?.parentCustomerId, ready]);
+
+  const handleAddMember = async () => {
+    if (!user || !businessId || !customer) return;
+    const name = memberForm.name.trim();
+    const phone = memberForm.phone.trim();
+    if (!name || phone.length < 9) {
+      toast.error("Member name and a valid phone are required");
+      return;
+    }
+    const measurements: Record<string, number> = {};
+    for (const [key, value] of [
+      ["bust", memberForm.bust],
+      ["waist", memberForm.waist],
+      ["hips", memberForm.hips],
+      ["length", memberForm.length],
+    ] as const) {
+      const parsed = Number(value);
+      if (value && !Number.isNaN(parsed)) measurements[key] = parsed;
+    }
+    setSavingMember(true);
+    try {
+      await createGroupMember(businessId, customer.id, {
+        businessId,
+        fullName: name,
+        phone,
+        email: memberForm.email.trim() || undefined,
+        gender: memberForm.gender === "male" || memberForm.gender === "female"
+          ? memberForm.gender
+          : undefined,
+        department: memberForm.department.trim() || undefined,
+        preferences: "",
+        notes: "",
+        measurements,
+      });
+      toast.success("Member added");
+      setMemberForm({ name: "", phone: "", email: "", gender: "", department: "", bust: "", waist: "", hips: "", length: "" });
+      setShowAddMember(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add member");
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
   const startEditing = useCallback(() => {
     if (!customer) return;
     reset({
@@ -163,6 +246,13 @@ export function CustomerProfileModulePage() {
       gender: customer.gender,
       preferences: customer.preferences ?? "",
       notes: customer.notes ?? "",
+      organizationName: customer.organizationName ?? customer.fullName,
+      contactPerson: customer.contactPerson ?? "",
+      contactRole: customer.contactRole ?? "",
+      taxId: customer.taxId ?? "",
+      paymentTerms: customer.paymentTerms ?? "",
+      address: customer.address ?? "",
+      department: customer.department ?? "",
       measurements: Object.entries(customer.measurements ?? {})
         .filter(([k, v]) => k !== "notes" && v !== null && v !== undefined && String(v) !== "")
         .map(([name, value]) => ({ name, value: Number(value) })),
@@ -198,6 +288,16 @@ export function CustomerProfileModulePage() {
     if ((values.preferences ?? "") !== (customer.preferences ?? "")) payload.preferences = values.preferences;
     if ((values.notes ?? "") !== (customer.notes ?? "")) payload.notes = values.notes;
     if (Object.keys(measurements).length > 0) payload.measurements = measurements;
+
+    if (customer.customerType === "group") {
+      if (values.organizationName !== customer.organizationName) payload.organizationName = values.organizationName;
+      if (values.contactPerson !== (customer.contactPerson ?? "")) payload.contactPerson = values.contactPerson || undefined;
+      if (values.contactRole !== (customer.contactRole ?? "")) payload.contactRole = values.contactRole || undefined;
+      if (values.taxId !== (customer.taxId ?? "")) payload.taxId = values.taxId || undefined;
+      if (values.paymentTerms !== (customer.paymentTerms ?? "")) payload.paymentTerms = values.paymentTerms || undefined;
+      if (values.address !== (customer.address ?? "")) payload.address = values.address || undefined;
+      if (values.fullName !== customer.fullName) payload.fullName = values.organizationName;
+    }
 
     if (Object.keys(payload).length === 0) {
       toast.info("No changes to save");
@@ -418,26 +518,43 @@ export function CustomerProfileModulePage() {
         /* ── EDIT MODE ── */
         <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
           <div className="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
-            <h3 className="font-bold text-slate-900 text-sm">Basic Information</h3>
+            <h3 className="font-bold text-slate-900 text-sm">
+              {isGroup ? "Organization Information" : "Basic Information"}
+            </h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <Label>Full name</Label>
+                <Label>{isGroup ? "Organization name" : "Full name"}</Label>
                 <Input {...register("fullName")} />
                 {formState.errors.fullName && (
                   <p className="mt-1 text-xs text-rose-500">{formState.errors.fullName.message}</p>
                 )}
               </div>
-              <div>
-                <Label>Gender</Label>
-                <select
-                  {...register("gender")}
-                  className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                >
-                  <option value="">Select gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                </select>
-              </div>
+
+              {isGroup ? (
+                <>
+                  <div>
+                    <Label>Contact person</Label>
+                    <Input {...register("contactPerson")} />
+                  </div>
+                  <div>
+                    <Label>Contact role</Label>
+                    <Input {...register("contactRole")} />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <Label>Gender</Label>
+                  <select
+                    {...register("gender")}
+                    className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  >
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+              )}
+
               <div>
                 <Label>Phone</Label>
                 <Input type="tel" {...register("phone")} />
@@ -452,9 +569,28 @@ export function CustomerProfileModulePage() {
                   <p className="mt-1 text-xs text-rose-500">{formState.errors.email.message}</p>
                 )}
               </div>
+
+              {isGroup && (
+                <>
+                  <div>
+                    <Label>Tax ID (PIN)</Label>
+                    <Input {...register("taxId")} />
+                  </div>
+                  <div>
+                    <Label>Payment terms</Label>
+                    <Input {...register("paymentTerms")} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label>Address</Label>
+                    <Input {...register("address")} />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
+          {!isGroup && (
+            <>
           <div className="rounded-3xl border border-slate-200 bg-white p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-slate-900 text-sm">Measurements (cm)</h3>
@@ -522,6 +658,8 @@ export function CustomerProfileModulePage() {
               />
             </div>
           </div>
+            </>
+          )}
         </form>
       ) : (
         /* ── VIEW MODE (default) ── */
@@ -529,17 +667,27 @@ export function CustomerProfileModulePage() {
           {/* Profile card */}
           <div className="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
             <div className="flex items-start gap-4">
-              <div className="h-14 w-14 shrink-0 rounded-full bg-emerald-100 flex items-center justify-center text-xl font-bold text-emerald-700">
-                {customer.fullName.charAt(0).toUpperCase()}
+              <div className={`h-14 w-14 shrink-0 rounded-full flex items-center justify-center text-xl font-bold ${
+                isGroup ? "bg-indigo-100 text-indigo-700" : "bg-emerald-100 text-emerald-700"
+              }`}>
+                {isGroup ? <Building2 className="h-6 w-6" /> : customer.fullName.charAt(0).toUpperCase()}
               </div>
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-bold text-slate-900 text-lg leading-tight truncate">
-                      {customer.fullName}
+                      {isGroup ? customer.organizationName || customer.fullName : customer.fullName}
                     </p>
-                    {customer.gender && (
+                    {isMemberCustomer && parentGroup ? (
+                      <Link
+                        href={`/customers/${parentGroup.id}`}
+                        className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline mt-0.5"
+                      >
+                        <Users className="h-3 w-3" />
+                        Member of {parentGroup.organizationName || parentGroup.fullName}
+                      </Link>
+                    ) : customer.gender ? (
                       <span className="inline-flex items-center gap-1 text-xs text-slate-500 mt-0.5">
                         {customer.gender === "male" ? (
                           <Mars className="h-3 w-3 text-blue-500" />
@@ -547,6 +695,18 @@ export function CustomerProfileModulePage() {
                           <Venus className="h-3 w-3 text-pink-500" />
                         )}
                         {customer.gender.charAt(0).toUpperCase() + customer.gender.slice(1)}
+                        {customer.department ? ` · ${customer.department}` : ""}
+                      </span>
+                    ) : customer.department ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                        <Briefcase className="h-3 w-3 text-slate-400" />
+                        {customer.department}
+                      </span>
+                    ) : null}
+                    {isGroup && customer.contactPerson && (
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        {customer.contactPerson}
+                        {customer.contactRole ? ` · ${customer.contactRole}` : ""}
                       </span>
                     )}
                   </div>
@@ -566,9 +726,15 @@ export function CustomerProfileModulePage() {
                       {customer.email}
                     </div>
                   )}
+                  {customer.address && (
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      {customer.address}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    Customer since{" "}
+                    {isGroup ? "Client since" : "Customer since"}{" "}
                     {new Date(customer.createdAt).toLocaleDateString("en-KE", {
                       day: "numeric",
                       month: "short",
@@ -578,6 +744,30 @@ export function CustomerProfileModulePage() {
                 </div>
               </div>
             </div>
+
+            {/* Org billing info */}
+            {isGroup && (customer.taxId || customer.paymentTerms) && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                {customer.taxId && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Banknote className="h-3.5 w-3.5 text-slate-400" />
+                    Tax ID: <span className="font-semibold text-slate-800">{customer.taxId}</span>
+                  </span>
+                )}
+                {customer.paymentTerms && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <ClipboardList className="h-3.5 w-3.5 text-slate-400" />
+                    Terms: <span className="font-semibold text-slate-800">{customer.paymentTerms}</span>
+                  </span>
+                )}
+                {isGroup && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 text-slate-400" />
+                    {members.length} {members.length === 1 ? "member" : "members"}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-3 gap-2">
@@ -655,6 +845,155 @@ export function CustomerProfileModulePage() {
                   <span className="font-semibold">Measurement notes:</span>{" "}
                   {String(measurementEntries.find(([k]) => k === "notes")?.[1] ?? "")}
                 </p>
+              )}
+            </div>
+          )}
+
+          {/* Members (group accounts only) */}
+          {isGroup && (
+            <div className="rounded-3xl border border-slate-200 bg-white p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-slate-500" />
+                  <h3 className="font-bold text-slate-900">Members</h3>
+                  <span className="text-xs text-slate-400">({members.length})</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1"
+                  onClick={() => setShowAddMember((v) => !v)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {showAddMember ? "Close" : "Add member"}
+                </Button>
+              </div>
+
+              {showAddMember && (
+                <div className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Full name *</Label>
+                      <Input
+                        value={memberForm.name}
+                        onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })}
+                        placeholder="e.g. Achieng Otieno"
+                        className="bg-white"
+                      />
+                    </div>
+                    <div>
+                      <Label>Phone *</Label>
+                      <Input
+                        type="tel"
+                        value={memberForm.phone}
+                        onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
+                        placeholder="+254 7XX XXX XXX"
+                        className="bg-white"
+                      />
+                    </div>
+                    <div>
+                      <Label>Email</Label>
+                      <Input
+                        type="email"
+                        value={memberForm.email}
+                        onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
+                        placeholder="optional"
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label>Gender</Label>
+                        <select
+                          value={memberForm.gender}
+                          onChange={(e) => setMemberForm({ ...memberForm, gender: e.target.value })}
+                          className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                        >
+                          <option value="">Select</option>
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Department</Label>
+                        <Input
+                          value={memberForm.department}
+                          onChange={(e) => setMemberForm({ ...memberForm, department: e.target.value })}
+                          placeholder="optional"
+                          className="bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 mb-1.5">Measurements (cm)</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(
+                        [
+                          ["bust", "Bust"],
+                          ["waist", "Waist"],
+                          ["hips", "Hips"],
+                          ["length", "Length"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div key={key}>
+                          <Label className="text-[10px]">{label}</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={memberForm[key]}
+                            onChange={(e) => setMemberForm({ ...memberForm, [key]: e.target.value })}
+                            className="bg-white"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full"
+                    disabled={savingMember}
+                    onClick={handleAddMember}
+                  >
+                    {savingMember ? "Adding…" : "Add member"}
+                  </Button>
+                  <p className="text-xs text-slate-400">
+                    Members are billed under this group — invoices and balances stay on
+                    the {customer.organizationName || customer.fullName} account.
+                  </p>
+                </div>
+              )}
+
+              {members.length === 0 && !showAddMember ? (
+                <p className="text-sm text-slate-400 text-center py-6">
+                  No members yet. Add the people you make clothes for under this group.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {members.map((member) => (
+                    <Link
+                      key={member.id}
+                      href={`/customers/${member.id}`}
+                      className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors"
+                    >
+                      <div className="h-9 w-9 shrink-0 rounded-full bg-emerald-100 flex items-center justify-center text-sm font-bold text-emerald-700">
+                        {member.fullName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900 truncate">
+                          {member.fullName}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {member.department ? `${member.department} · ` : ""}
+                          {member.phone}
+                          {member.email ? ` · ${member.email}` : ""}
+                        </p>
+                      </div>
+                      <span className="text-xs text-emerald-600 font-medium shrink-0">
+                        Profile →
+                      </span>
+                    </Link>
+                  ))}
+                </div>
               )}
             </div>
           )}

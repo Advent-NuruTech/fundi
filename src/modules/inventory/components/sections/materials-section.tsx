@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, X, Pencil, Trash2, Upload, SlidersHorizontal, ChevronLeft, ChevronRight, MinusCircle, PlusCircle } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Upload, SlidersHorizontal, ChevronLeft, ChevronRight, MinusCircle, PlusCircle, Sparkles } from "lucide-react";
 import {
   createMaterial, updateMaterial, deleteMaterial,
   createUnit, createCategory, updateCategory, deleteCategory,
@@ -12,25 +12,45 @@ import {
 } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
 import { notifyMaterialAdded } from "@/services/notification-catalog";
+import { generateSku } from "@/lib/utils";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect, type SearchableOption } from "@/components/ui/searchable-select";
-import type { InventoryMaterial, Supplier, DbUnit, DbCategory, FabricMeta, MaterialImage } from "@/types/domain";
+import type { InventoryMaterial, Supplier, DbUnit, DbCategory, FabricMeta, MaterialImage, InventoryItemType } from "@/types/domain";
 
 const PAGE_SIZE = 10;
 
+const ITEM_TYPE_OPTIONS: SearchableOption[] = [
+  { value: "fabric", label: "Fabric" },
+  { value: "ready_made", label: "Ready-Made" },
+  { value: "material", label: "Material" },
+  { value: "accessory", label: "Accessory" },
+  { value: "consumable", label: "Consumable" },
+  { value: "other", label: "Other" },
+];
+
+const toNum = (v: number | undefined): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
 interface MaterialForm {
   name: string;
+  itemType: InventoryItemType;
+  sku: string;
   categoryId: string;
   unitId: string;
   supplierId: string;
   quantity: number;
   reorderLevel: number;
   averageUnitCost: number;
+  sellingPrice?: number;
+  wholesalePrice?: number;
+  minimumSellingPrice?: number;
   color: string;
+  size: string;
+  brand: string;
   gsm: string;
   rollLength: string;
   pattern: string;
@@ -84,13 +104,20 @@ export function MaterialsSection({
 
   const { register, handleSubmit, reset, setValue, watch } = useForm<MaterialForm>({
     defaultValues: {
+      itemType: "fabric",
+      sku: "",
       categoryId: "",
       unitId: "",
       supplierId: "",
       quantity: 0,
       reorderLevel: 0,
       averageUnitCost: 0,
+      sellingPrice: undefined,
+      wholesalePrice: undefined,
+      minimumSellingPrice: undefined,
       color: "",
+      size: "",
+      brand: "",
       gsm: "",
       rollLength: "",
       pattern: "",
@@ -101,6 +128,15 @@ export function MaterialsSection({
   const categoryId = watch("categoryId");
   const unitId = watch("unitId");
   const supplierId = watch("supplierId");
+  const name = watch("name");
+  const sku = watch("sku");
+  const itemType = watch("itemType");
+
+  useEffect(() => {
+    if (name && name.trim() && !sku?.trim()) {
+      setValue("sku", generateSku(name.trim()), { shouldValidate: false });
+    }
+  }, [name, sku, setValue]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -143,13 +179,20 @@ export function MaterialsSection({
 
   const resetForm = () => {
     reset({
+      itemType: "fabric",
+      sku: "",
       categoryId: selectedCategoryId || "",
       unitId: "",
       supplierId: "",
       quantity: 0,
       reorderLevel: 0,
       averageUnitCost: 0,
+      sellingPrice: undefined,
+      wholesalePrice: undefined,
+      minimumSellingPrice: undefined,
       color: "",
+      size: "",
+      brand: "",
       gsm: "",
       rollLength: "",
       pattern: "",
@@ -165,14 +208,21 @@ export function MaterialsSection({
   const populateForm = (mat: InventoryMaterial) => {
     setEditingMaterial(mat);
     setValue("name", mat.name);
+    setValue("itemType", mat.itemType || "fabric");
+    setValue("sku", mat.sku || "");
     setValue("categoryId", mat.categoryId);
     setValue("unitId", mat.unitId);
     setValue("supplierId", mat.supplierId || "");
     setValue("quantity", mat.quantity);
     setValue("reorderLevel", mat.reorderLevel);
     setValue("averageUnitCost", mat.averageUnitCost);
+    setValue("sellingPrice", mat.sellingPrice ?? undefined);
+    setValue("wholesalePrice", mat.wholesalePrice ?? undefined);
+    setValue("minimumSellingPrice", mat.minimumSellingPrice ?? undefined);
+    setValue("color", mat.color || mat.fabricMeta?.color || "");
+    setValue("size", mat.size || "");
+    setValue("brand", mat.brand || "");
     if (mat.fabricMeta) {
-      setValue("color", mat.fabricMeta.color || "");
       setValue("gsm", mat.fabricMeta.gsm?.toString() || "");
       setValue("rollLength", mat.fabricMeta.rollLength?.toString() || "");
       setValue("pattern", mat.fabricMeta.pattern || "");
@@ -246,7 +296,8 @@ export function MaterialsSection({
       const imagePublicId = allImages[0]?.publicId || "";
 
       const fabricMeta: FabricMeta | undefined =
-        values.color || values.gsm || values.rollLength || values.pattern || values.composition || customFields.length > 0
+        values.itemType === "fabric" &&
+        (values.color || values.gsm || values.rollLength || values.pattern || values.composition || customFields.length > 0)
           ? {
               color: values.color || undefined,
               gsm: values.gsm ? Number(values.gsm) : undefined,
@@ -263,6 +314,8 @@ export function MaterialsSection({
       if (editingMaterial) {
         await updateMaterial(businessId, editingMaterial.id, {
           name: values.name.trim(),
+          itemType: values.itemType,
+          sku: (values.sku || generateSku(values.name)).trim(),
           categoryId: values.categoryId,
           categoryName: cat.name,
           unitId: values.unitId,
@@ -270,6 +323,12 @@ export function MaterialsSection({
           quantity: values.quantity,
           reorderLevel: values.reorderLevel,
           averageUnitCost: values.averageUnitCost,
+          sellingPrice: toNum(values.sellingPrice),
+          wholesalePrice: toNum(values.wholesalePrice),
+          minimumSellingPrice: toNum(values.minimumSellingPrice),
+          size: values.size || undefined,
+          color: values.color || undefined,
+          brand: values.brand || undefined,
           supplierId: values.supplierId || undefined,
           imageUrl: imageUrl || undefined,
           imagePublicId: imagePublicId || undefined,
@@ -281,6 +340,8 @@ export function MaterialsSection({
         await createMaterial(businessId, {
           businessId,
           name: values.name.trim(),
+          itemType: values.itemType,
+          sku: (values.sku || generateSku(values.name)).trim(),
           categoryId: values.categoryId,
           categoryName: cat.name,
           unitId: values.unitId,
@@ -288,6 +349,12 @@ export function MaterialsSection({
           quantity: values.quantity,
           reorderLevel: values.reorderLevel,
           averageUnitCost: values.averageUnitCost,
+          sellingPrice: toNum(values.sellingPrice),
+          wholesalePrice: toNum(values.wholesalePrice),
+          minimumSellingPrice: toNum(values.minimumSellingPrice),
+          size: values.size || undefined,
+          color: values.color || undefined,
+          brand: values.brand || undefined,
           supplierId: values.supplierId || undefined,
           imageUrl: imageUrl || undefined,
           imagePublicId: imagePublicId || undefined,
@@ -496,7 +563,26 @@ export function MaterialsSection({
           {showForm && (
             <form className="grid gap-4 md:grid-cols-2 border-t pt-4" onSubmit={saveMaterial}>
               <div className="space-y-3">
+                <div>
+                  <p className="mb-1 text-xs text-slate-500">Item type</p>
+                  <SearchableSelect
+                    options={ITEM_TYPE_OPTIONS} value={itemType} onChange={(v) => setValue("itemType", v as InventoryItemType)}
+                    placeholder="Select item type"
+                  />
+                </div>
                 <Input placeholder="Material name *" {...register("name", { required: true })} />
+                <div className="flex items-center gap-2">
+                  <Input placeholder="SKU" {...register("sku")} />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Auto-generate from name"
+                    onClick={() => setValue("sku", generateSku((name || "").trim() || ""))}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                  </Button>
+                </div>
                 <div>
                   <p className="mb-1 text-xs text-slate-500">Category</p>
                   <SearchableSelect options={categoryOptions} value={categoryId} onChange={(v) => setValue("categoryId", v)} placeholder="Select or create category" onCreate={handleCreateCategory} />
@@ -515,7 +601,7 @@ export function MaterialsSection({
                 </div>
                 <Input type="number" placeholder="Quantity" {...register("quantity", { valueAsNumber: true })} />
                 <Input type="number" placeholder="Reorder level" {...register("reorderLevel", { valueAsNumber: true })} />
-                <Input type="number" step="0.01" placeholder="Price per item (KES)" {...register("averageUnitCost", { valueAsNumber: true })} />
+                <Input type="number" step="0.01" placeholder="Cost price per item (KES)" {...register("averageUnitCost", { valueAsNumber: true })} />
               </div>
 
               <div className="space-y-3">
@@ -551,13 +637,28 @@ export function MaterialsSection({
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Fabric Details</p>
-                  <Input placeholder="Color" {...register("color")} />
-                  <Input type="number" placeholder="GSM" {...register("gsm", { valueAsNumber: true })} />
-                  <Input type="number" step="0.1" placeholder="Roll length (m)" {...register("rollLength", { valueAsNumber: true })} />
-                  <Input placeholder="Pattern" {...register("pattern")} />
-                  <Input placeholder="Composition (e.g. 100% Cotton)" {...register("composition")} />
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Sales Pricing</p>
+                  <Input type="number" step="0.01" placeholder="Selling price (KES)" {...register("sellingPrice", { valueAsNumber: true })} />
+                  <Input type="number" step="0.01" placeholder="Wholesale price (KES)" {...register("wholesalePrice", { valueAsNumber: true })} />
+                  <Input type="number" step="0.01" placeholder="Minimum selling price (KES)" {...register("minimumSellingPrice", { valueAsNumber: true })} />
                 </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Attributes</p>
+                  <Input placeholder="Color" {...register("color")} />
+                  <Input placeholder="Size" {...register("size")} />
+                  <Input placeholder="Brand" {...register("brand")} />
+                </div>
+
+                {itemType === "fabric" && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Fabric Details</p>
+                    <Input type="number" placeholder="GSM" {...register("gsm", { valueAsNumber: true })} />
+                    <Input type="number" step="0.1" placeholder="Roll length (m)" {...register("rollLength", { valueAsNumber: true })} />
+                    <Input placeholder="Pattern" {...register("pattern")} />
+                    <Input placeholder="Composition (e.g. 100% Cotton)" {...register("composition")} />
+                  </div>
+                )}
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
                   <div className="flex items-center justify-between">
@@ -621,7 +722,7 @@ export function MaterialsSection({
                         )}
                         <div className="min-w-0">
                           <p className="font-medium text-slate-900 truncate">{m.name}</p>
-                          <p className="text-xs text-slate-500">{m.categoryName} · KES {m.averageUnitCost.toFixed(2)}/{m.unitName}</p>
+                          <p className="text-xs text-slate-500">{m.categoryName} · KES {m.averageUnitCost.toFixed(2)}/{m.unitName}{m.sku ? ` · ${m.sku}` : ""}</p>
                         </div>
                       </div>
                     </Link>

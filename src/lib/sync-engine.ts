@@ -11,6 +11,8 @@ import {
 
 const COLLECTION_TABLE_MAP: Record<string, string> = {
   orders: "orders",
+  order_items: "order_items",
+  order_item_material_usage: "order_item_material_usage",
   customers: "customers",
   inventory_materials: "inventory_materials",
   stock_movements: "stock_movements",
@@ -32,6 +34,8 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   invitations: "employee_invitations",
   images: "images",
   users: "profiles",
+  order_members: "order_members",
+  order_member_garments: "order_member_garments",
 };
 
 // Child tables keyed by a parent row rather than a business — the sync engine
@@ -43,6 +47,10 @@ const TABLES_WITHOUT_BUSINESS_ID = new Set([
   "order_material_usage",
   "customer_measurements",
   "inventory_material_images",
+  "order_members",
+  "order_member_garments",
+  "order_items",
+  "order_item_material_usage",
 ]);
 
 // Conflict targets for idempotent replays (default is the primary key `id`).

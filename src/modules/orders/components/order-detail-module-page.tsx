@@ -9,12 +9,12 @@ import {
   CheckCircle2, Circle, Clock, ArrowLeft, Phone, Mail,
   ClipboardList, Shirt, AlertTriangle, Receipt as ReceiptIcon,
 } from "lucide-react";
-import type { Order, Customer, InventoryMaterial, OrderGarmentItem } from "@/types/domain";
+import type { Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItemType } from "@/types/domain";
 import {
   listenOrder, listenCustomer, updateOrderStage,
   addFittingRecord, updateOrderProductionNotes, recordMaterialUsage,
   listenMaterials, updateOrderSmsFields, logSmsEntry,
-  updateOrderDetails, updateOrderGarments,
+  updateOrderDetails, updateOrderGarments, ORDER_TYPE_LABELS,
 } from "@/services/firestore.service";
 import { notifyOrderStageChanged, notifyOrderCompleted, notifyMaterialsConsumed } from "@/services/notification-catalog";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
@@ -44,9 +44,25 @@ function timeGreeting(): string {
 }
 
 function orderLabel(order: Order): string {
-  const first = order.garments?.[0]?.name;
+  const first = order.items?.[0]?.inventoryItemName || order.garments?.[0]?.name;
   return first ? `${first} - ${order.orderNumber}` : order.orderNumber;
 }
+
+const ITEM_TYPE_LABELS: Record<OrderItemType, string> = {
+  tailored: "Tailored",
+  ready_made: "Ready-made",
+  alteration: "Alteration",
+  material: "Material",
+  service: "Service",
+};
+
+const ITEM_TYPE_BADGE: Record<OrderItemType, string> = {
+  tailored: "bg-indigo-100 text-indigo-700",
+  ready_made: "bg-emerald-100 text-emerald-700",
+  alteration: "bg-amber-100 text-amber-800",
+  material: "bg-sky-100 text-sky-700",
+  service: "bg-violet-100 text-violet-700",
+};
 
 const STAGES: Array<{ key: Order["stage"]; label: string }> = [
   { key: "cutting",          label: "Cutting" },
@@ -632,21 +648,78 @@ export function OrderDetailModulePage() {
                     </div>
                   </div>
 
-                  {/* Garments */}
-                  <div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Garments</p>
-                    <div className="space-y-2">
-                      {order.garments.map((g, i) => (
-                        <div key={i} className="flex items-start justify-between rounded-xl bg-slate-50 px-3 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium text-slate-800 text-sm">{g.name} <span className="text-slate-400">× {g.quantity}</span></p>
-                            {g.styleNotes && <p className="text-xs text-slate-500 mt-0.5">{g.styleNotes}</p>}
+                  {/* Order items */}
+                  {(order.items && order.items.length > 0) ? (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Order Items</p>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                          {ORDER_TYPE_LABELS[order.orderType || "tailoring"]}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {order.items.map((item) => (
+                          <div key={item.id} className="flex items-start justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <p className="font-medium text-slate-800 text-sm">
+                                  {item.inventoryItemName || "Untitled item"} <span className="text-slate-400">× {item.quantity}</span>
+                                </p>
+                                <Badge variant="default" className={cn("text-[10px]", ITEM_TYPE_BADGE[item.itemType])}>
+                                  {ITEM_TYPE_LABELS[item.itemType]}
+                                </Badge>
+                                {item.sku && <span className="text-[11px] font-mono text-slate-400">{item.sku}</span>}
+                              </div>
+                              {item.measurements && Object.keys(item.measurements).length > 0 && (
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  {Object.entries(item.measurements).map(([k, v]) => `${k}: ${String(v)}`).join(" · ")}
+                                </p>
+                              )}
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                                {item.stage && (
+                                  <span className="flex items-center gap-1 text-[11px] text-slate-500 capitalize">
+                                    <span className={cn("h-1.5 w-1.5 rounded-full", stageColor(item.stage))} />
+                                    {item.stage.replace(/_/g, " ")}
+                                  </span>
+                                )}
+                                {item.deliveryStatus && (
+                                  <span className="flex items-center gap-1 text-[11px] text-slate-500 capitalize">
+                                    <Package className="h-3 w-3" /> {item.deliveryStatus.replace(/_/g, " ")}
+                                  </span>
+                                )}
+                                {item.assignedTailorName && (
+                                  <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                                    <User className="h-3 w-3" /> {item.assignedTailorName}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 ml-3">
+                              <p className="font-semibold text-slate-700 text-sm">{formatKes(item.unitPrice)}</p>
+                              {item.quantity > 1 && (
+                                <p className="text-[11px] text-slate-400">{formatKes(item.totalAmount)} total</p>
+                              )}
+                            </div>
                           </div>
-                          <p className="font-semibold text-slate-700 text-sm ml-3 shrink-0">{formatKes(g.agreedPrice)}</p>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Garments</p>
+                      <div className="space-y-2">
+                        {order.garments.map((g, i) => (
+                          <div key={i} className="flex items-start justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-slate-800 text-sm">{g.name} <span className="text-slate-400">× {g.quantity}</span></p>
+                              {g.styleNotes && <p className="text-xs text-slate-500 mt-0.5">{g.styleNotes}</p>}
+                            </div>
+                            <p className="font-semibold text-slate-700 text-sm ml-3 shrink-0">{formatKes(g.agreedPrice)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Design notes */}
                   {order.designNotes && (

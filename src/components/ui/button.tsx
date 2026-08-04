@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "outline" | "ghost" | "danger";
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "icon";
 }
 
 export function Button({ className, variant = "default", size = "md", ...props }: ButtonProps) {
@@ -18,6 +18,7 @@ export function Button({ className, variant = "default", size = "md", ...props }
         size === "sm" && "h-9 px-3 text-sm",
         size === "md" && "h-10 px-4 text-sm",
         size === "lg" && "h-11 px-6 text-base",
+        size === "icon" && "h-9 w-9 px-0",
         className
       )}
       {...props}
