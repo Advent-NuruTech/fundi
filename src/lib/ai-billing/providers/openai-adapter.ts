@@ -111,8 +111,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     const completion = await client.chat.completions.create({
       model: this.model,
       messages: request.messages,
-      ...(request.maxTokens != null ? { max_tokens: request.maxTokens } : {}),
-      ...(request.temperature != null ? { temperature: request.temperature } : {}),
+      ...(request.maxTokens != null ? { max_completion_tokens: request.maxTokens } : {}),
       ...(request.options ?? {}),
     });
     return {

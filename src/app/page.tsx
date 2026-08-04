@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
+import { PublicChatWidget } from "@/modules/ai/components/public-chat-widget";
 import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
 import { useRef, useEffect, useState, type ReactNode } from "react";
 
@@ -633,9 +634,7 @@ export default function HomePage() {
   ];
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    const handleTyping = () => {
-      const currentWord = words[loopIndex % words.length];
+    const handleTyping = () => {      const currentWord = words[loopIndex % words.length];
       if (!isDeleting) {
         setDisplayText(currentWord.substring(0, displayText.length + 1));
         setTypingSpeed(80);
@@ -653,7 +652,7 @@ export default function HomePage() {
         }
       }
     };
-    timer = setTimeout(handleTyping, typingSpeed);
+    const timer = setTimeout(handleTyping, typingSpeed);
     return () => clearTimeout(timer);
   }, [displayText, isDeleting, loopIndex, typingSpeed, words]);
 
@@ -1634,6 +1633,8 @@ export default function HomePage() {
           </AnimatedSection>
         </div>
       </section>
+
+      <PublicChatWidget />
     </MarketingShell>
   );
 }

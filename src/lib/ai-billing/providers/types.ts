@@ -23,7 +23,6 @@ export interface AIExecutionRequest {
   model: string;
   messages: { role: "system" | "user" | "assistant"; content: string }[];
   maxTokens?: number;
-  temperature?: number;
   /** Extra provider-specific options. */
   options?: Record<string, unknown>;
 }

@@ -79,7 +79,6 @@ export class AIBillingEngine {
     model?: string;
     messages: { role: "system" | "user" | "assistant"; content: string }[];
     maxTokens?: number;
-    temperature?: number;
     options?: Record<string, unknown>;
   }): Promise<AIBillingResult> {
     const { config } = await getActiveAIConfig(this.db);
@@ -99,7 +98,6 @@ export class AIBillingEngine {
       model: input.model ?? provider.model,
       messages: input.messages,
       maxTokens: input.maxTokens,
-      temperature: input.temperature,
       options: input.options,
     });
 

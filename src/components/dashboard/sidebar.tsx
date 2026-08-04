@@ -21,6 +21,7 @@ import {
   Store,
   Building2,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ import { SyncIndicator } from "@/components/pwa/sync-indicator";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "AI Assistant", href: "/ai", icon: Sparkles },
   { label: "Finance", href: "/finance", icon: Landmark },
   { label: "Customers", href: "/customers", icon: Users },
   { label: "Orders", href: "/orders", icon: ShoppingBag },
