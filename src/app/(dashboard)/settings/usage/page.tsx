@@ -25,7 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import {
-  TOPUP_PACKAGES,
   USAGE_RESOURCE_META,
   formatUsageUnits,
   pricePerUnit,
@@ -334,7 +333,7 @@ export default function UsageTopupsPage() {
       {topupResource && (
         <TopupModal
           resource={topupResource}
-          packages={TOPUP_PACKAGES[topupResource]}
+          packages={(data?.packages ?? []).filter((p) => p.resource === topupResource)}
           selected={selectedPackage}
           onSelect={setSelectedPackage}
           open={true}

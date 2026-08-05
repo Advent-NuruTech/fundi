@@ -203,6 +203,12 @@ export async function getCreditPacks(db?: SupabaseClient): Promise<AICreditPack[
   }));
 }
 
+/** Only active credit packs — what customers see when topping up. */
+export async function getActiveCreditPacks(db?: SupabaseClient): Promise<AICreditPack[]> {
+  const packs = await getCreditPacks(db);
+  return packs.filter((p) => p.active);
+}
+
 export type CreditPackInput = Omit<AICreditPack, "updatedAt" | "createdAt">;
 
 export async function saveCreditPacks(

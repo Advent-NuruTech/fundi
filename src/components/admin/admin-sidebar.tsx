@@ -69,8 +69,8 @@ const NAV_ITEMS = [
   {
     href: "/ffmanage/sms",
     icon: MessageSquare,
-    label: "SMS Analytics",
-    description: "Usage & trends",
+    label: "SMS & Packs",
+    description: "Usage, trends & pack pricing",
   },
   {
     href: "/ffmanage/support",

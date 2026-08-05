@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { getWorkspaceUsage } from "@/lib/billing/usage-metering";
 import { getAllTopupPackages } from "@/lib/billing/topup-packages";
+import { getSmsTopupPackages } from "@/lib/sms/config-store";
 
 export async function GET(request: Request) {
   try {
@@ -28,9 +29,14 @@ export async function GET(request: Request) {
 
     const usage = await getWorkspaceUsage(admin, profile.business_id as string);
 
+    // SMS packs come from the DB (admin-editable, only active ones shown); the
+    // rest are the static packages in code.
+    const smsPacks = await getSmsTopupPackages(admin);
+    const staticPacks = getAllTopupPackages().filter((p) => p.resource !== "sms");
+
     return NextResponse.json({
       ...usage,
-      packages: getAllTopupPackages(),
+      packages: [...smsPacks, ...staticPacks],
     });
   } catch (err) {
     console.error("[billing/usage]", err);

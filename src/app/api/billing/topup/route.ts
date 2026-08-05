@@ -5,12 +5,38 @@ import { initializeTransaction, getAppBaseUrl } from "@/lib/billing/paystack-cli
 import { kesToKobo } from "@/lib/billing/fees";
 import { generateReference } from "@/lib/billing/reference";
 import { getTopupPackage } from "@/lib/billing/topup-packages";
+import { getActiveSmsPackById } from "@/lib/sms/config-store";
+import type { TopupPackage } from "@/lib/billing/topup-packages";
 import type { UsageResource } from "@/types/billing";
 
 const bodySchema = z.object({
   resource: z.enum(["sms", "ai_credits", "storage"]),
   packageId: z.string().min(1),
 });
+
+/**
+ * Resolves a purchasable package. SMS packs are DB-backed — the server reads the
+ * price + units straight from the `sms_packs` table so the admin's live edits
+ * (price, activation) are enforced exactly, never a hardcoded fallback.
+ */
+async function resolveTopupPackage(
+  admin: ReturnType<typeof getBillingAdminClient>,
+  resource: UsageResource,
+  packageId: string
+): Promise<TopupPackage | undefined> {
+  if (resource === "sms") {
+    const pack = await getActiveSmsPackById(admin, packageId);
+    if (!pack) return undefined;
+    return {
+      id: pack.id,
+      resource: "sms",
+      label: pack.label,
+      units: pack.units,
+      priceKes: pack.priceKes,
+    };
+  }
+  return getTopupPackage(resource, packageId);
+}
 
 export async function POST(request: Request) {
   try {
@@ -32,7 +58,7 @@ export async function POST(request: Request) {
     }
     const { resource, packageId } = parsed.data;
 
-    const pkg = getTopupPackage(resource as UsageResource, packageId);
+    const pkg = await resolveTopupPackage(admin, resource as UsageResource, packageId);
     if (!pkg) {
       return NextResponse.json({ error: "Invalid top-up package" }, { status: 400 });
     }

@@ -62,7 +62,7 @@ export async function GET(request: Request) {
     .slice(0, 10)
     .map(([id]) => id);
 
-  let bizNameMap = new Map<string, string>();
+  const bizNameMap = new Map<string, string>();
   if (topBizIds.length > 0) {
     const { data: bizData } = await db
       .from("businesses")

@@ -21,6 +21,10 @@ import {
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
+import { getEffectivePlanConfigs, type PlanConfigsMap } from "@/lib/billing/dynamic-config";
+import { formatKes } from "@/lib/billing/fees";
+import { getActiveSmsPacks } from "@/lib/sms/config-store";
+import { getActiveCreditPacks } from "@/lib/ai-billing/config-store";
 import { PricingClient } from "./pricing-client";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +53,7 @@ const FAQS = [
   },
   {
     q: "What is an SMS credit, and how much do they cost?",
-    a: "Each SMS you send costs KES 0.90. Every plan includes a monthly bundle — from 75 to 2,000 SMS — and when you need more, top-ups start at just KES 90 for 100 SMS. You only ever pay for what you use.",
+    a: "Every SMS pack is priced per SMS — the more you buy, the less each one costs. Every plan includes a monthly SMS bundle, and when you need more, top-ups start small and scale up. You only ever pay for what you use. (Live pack prices are loaded here automatically.)",
   },
   {
     q: "What happens if my business grows beyond my plan's capacity?",
@@ -102,19 +106,29 @@ const AI_CREDIT_EXAMPLES = [
   { task: "Forecast the next six months", cost: "5 credits" },
 ];
 
-const AI_TOP_UPS = [
-  { credits: "100", price: "KES 150" },
-  { credits: "500", price: "KES 650" },
-  { credits: "1,000", price: "KES 1,200" },
-  { credits: "5,000", price: "KES 5,000" },
+// Fallbacks only — the real packs come from the DB and these are ignored once
+// the sms_packs / ai_credit_packs tables are populated (see migration 0050).
+const FALLBACK_AI_TOP_UPS = [
+  { credits: 100, priceKes: 900 },
+  { credits: 500, priceKes: 4000 },
+  { credits: 1000, priceKes: 7500 },
+  { credits: 5000, priceKes: 35000 },
 ];
 
-const SMS_BUNDLES = [
-  { sms: "100", price: "KES 90" },
-  { sms: "500", price: "KES 450" },
-  { sms: "1,000", price: "KES 900" },
-  { sms: "5,000", price: "KES 4,500" },
+const FALLBACK_SMS_BUNDLES = [
+  { units: 100, priceKes: 300 },
+  { units: 500, priceKes: 1400 },
+  { units: 1000, priceKes: 2500 },
+  { units: 5000, priceKes: 11250 },
 ];
+
+/** Lowest per-SMS rate across the active packs, or null when there are none. */
+function cheapestPerSms(packs: { units: number; priceKes: number }[]): number | null {
+  const rates = packs
+    .map((p) => p.priceKes / p.units)
+    .sort((a, b) => a - b);
+  return rates[0] ?? null;
+}
 
 const REFERRAL_REWARDS = [
   { event: "Successful paying referral", reward: "KES 500 wallet credits" },
@@ -127,7 +141,34 @@ const REFERRAL_REWARDS = [
 
 export default async function PricingPage() {
   const freeTrialEnabled = await getFreeTrialEnabled();
-  const visibleFAQs = freeTrialEnabled ? FAQS : FAQS.filter((f) => f !== TRIAL_FAQ);
+
+  const [smsPacks, aiPacks, planConfigs] = await Promise.all([
+    getActiveSmsPacks(),
+    getActiveCreditPacks(),
+    getEffectivePlanConfigs(),
+  ]);
+
+  const aiTopUps = (aiPacks.length > 0 ? aiPacks : FALLBACK_AI_TOP_UPS).map((p) => ({
+    credits: p.credits.toLocaleString("en-KE"),
+    price: formatKes(p.priceKes),
+  }));
+
+  const smsBundles = (smsPacks.length > 0 ? smsPacks : FALLBACK_SMS_BUNDLES).map((p) => ({
+    sms: p.units.toLocaleString("en-KE"),
+    price: formatKes(p.priceKes),
+  }));
+
+  const perSms = cheapestPerSms(smsPacks);
+
+  const smsFaq = {
+    q: "What is an SMS credit, and how much do they cost?",
+    a: buildSmsFaqAnswer(smsPacks, planConfigs),
+  };
+
+  const baseFAQs = freeTrialEnabled ? FAQS : FAQS.filter((f) => f !== TRIAL_FAQ);
+  const visibleFAQs = baseFAQs.map((f) =>
+    f.q === smsFaq.q ? smsFaq : f,
+  );
 
   return (
     <MarketingShell>
@@ -221,7 +262,7 @@ export default async function PricingPage() {
               Need more? Top up any time — no contract, no waiting
             </h3>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {AI_TOP_UPS.map((t) => (
+              {aiTopUps.map((t) => (
                 <div
                   key={t.credits}
                   className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 text-center"
@@ -243,7 +284,7 @@ export default async function PricingPage() {
             <div className="order-2 lg:order-1">
               <h3 className="mb-4 text-xl font-black text-slate-900">Top up in simple bundles</h3>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {SMS_BUNDLES.map((b) => (
+                {smsBundles.map((b) => (
                   <div
                     key={b.sms}
                     className="rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm"
@@ -273,9 +314,14 @@ export default async function PricingPage() {
                 hook.
               </p>
               <p className="text-sm leading-relaxed text-slate-500">
-                Each SMS costs <strong className="text-slate-800">KES 0.90</strong>, and every
-                plan&apos;s included bundle is built around a realistic month of work. When you
-                need more, buy exactly what you need — no contracts, no expiry pressure.
+                {perSms != null && (
+                  <>
+                    Every SMS pack is priced per SMS — the more you buy, the less each one costs,{" "}
+                    from <strong className="text-slate-800">{formatKes(perSms)}</strong>.{" "}
+                  </>
+                )}
+                Every plan&apos;s included bundle is built around a realistic month of work. When
+                you need more, buy exactly what you need — no contracts, no expiry pressure.
               </p>
             </div>
           </div>
@@ -394,4 +440,41 @@ export default async function PricingPage() {
 // Local helper (kept small so this server page stays readable).
 function cn_row(i: number) {
   return i % 2 === 0 ? "border-t border-slate-100 bg-white" : "border-t border-slate-100 bg-slate-50";
+}
+
+/** FAQ answer built from the live DB packs + effective plan allowances. */
+function buildSmsFaqAnswer(
+  smsPacks: { units: number; priceKes: number }[],
+  plans: PlanConfigsMap,
+): string {
+  const perSms = cheapestPerSms(smsPacks);
+  const cheapest = [...smsPacks].sort((a, b) => a.priceKes - b.priceKes)[0];
+
+  const allowances = Object.values(plans)
+    .map((p) => p.limits.smsPerMonth ?? null)
+    .filter((n): n is number => n != null)
+    .sort((a, b) => a - b);
+  const minAllowance = allowances[0];
+  const maxAllowance = allowances[allowances.length - 1];
+
+  const parts: string[] = [];
+  if (perSms != null) {
+    parts.push(`Each SMS costs from ${formatKes(perSms)}, depending on the bundle you pick.`);
+  }
+  if (minAllowance != null && maxAllowance != null) {
+    parts.push(
+      `Every plan includes a monthly bundle — from ${minAllowance.toLocaleString("en-KE")} to ${maxAllowance.toLocaleString("en-KE")} SMS —`,
+    );
+  } else {
+    parts.push("Every plan includes a monthly SMS bundle,");
+  }
+  if (cheapest) {
+    parts.push(
+      `and when you need more, top-ups start at just ${formatKes(cheapest.priceKes)} for ${cheapest.units.toLocaleString("en-KE")} SMS.`,
+    );
+  } else {
+    parts.push("and you can add more any time.");
+  }
+  parts.push("You only ever pay for what you use.");
+  return parts.join(" ");
 }

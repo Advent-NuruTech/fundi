@@ -1,11 +1,16 @@
 import type { UsageResource } from "@/types/billing";
 
 /**
- * Top-up packages customers can buy in-app when their plan capacity runs out.
+ * Static top-up packages customers can buy in-app when their plan capacity runs out.
  *
  * Every package maps an exact unit count to an exact price (KES) — the system
- * credits precisely what is paid, never more or less. Prices are transparent
- * (unit price is shown in the UI). Adjust here or extend later.
+ * credits precisely what is paid, never more or less.
+ *
+ * NOTE: SMS packs are NO LONGER hardcoded here. They live in the `sms_packs`
+ * table and are managed live by the Super Admin in /ffmanage/sms (label, units,
+ * price, active). The `sms` entries below are only a legacy mirror used by the
+ * seed — the customer-facing usage API and the top-up API both read SMS packs
+ * straight from the database, so the DB is the single source of truth.
  *
  * CLIENT-SAFE — import from components, hooks and API routes.
  */

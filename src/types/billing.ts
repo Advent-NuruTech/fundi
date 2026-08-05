@@ -99,6 +99,24 @@ export type SenderIdStatus =
   | "approved"
   | "rejected";
 
+// ─── SMS packs (admin-managed, DB-backed) ──────────────────────────────────
+
+/**
+ * A purchasable SMS top-up pack. Source of truth is the `sms_packs` table —
+ * the Super Admin edits these live from /ffmanage/sms. Customers only ever see
+ * `active` packs, and prices are enforced server-side from this row.
+ */
+export interface SmsPack {
+  id: string;
+  label: string;
+  units: number;
+  priceKes: number;
+  active: boolean;
+  sortOrder: number;
+  updatedAt: string | null;
+  createdAt: string;
+}
+
 export interface PlanFeatures {
   analytics: boolean;
   financeFullDashboard: boolean;
