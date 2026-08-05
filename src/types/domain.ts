@@ -19,6 +19,35 @@ export type DeliveryStatus = "pending" | "ready" | "picked";
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 export type PaymentMethod = "cash" | "mpesa";
 
+/**
+ * Marks what a production stage means in the broader lifecycle. Kept small and
+ * semantic so the legacy compatibility stage can be derived from ANY custom
+ * pipeline: `ready_for_pickup` and `delivered` are the two milestones that
+ * matter for delivery status, the "delivered" filter and customer messaging.
+ */
+export type StageMilestone = "none" | "ready_for_pickup" | "delivered";
+
+/**
+ * One configurable step in a business's production pipeline. Businesses build
+ * their own ordered list (up to 20 stages) and choose which stages notify the
+ * customer. `is_seeded` marks the six defaults that mirror the legacy enum.
+ */
+export interface ProductionStageConfig {
+  id: string;
+  businessId: string;
+  name: string;
+  description?: string;
+  displayOrder: number;
+  color?: string;
+  icon?: string;
+  isActive: boolean;
+  notifyCustomer: boolean;
+  milestone: StageMilestone;
+  isSeeded?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export type NotificationType =
   | "order_assigned"
   | "order_updated"
@@ -449,6 +478,12 @@ export interface Order {
   stage: ProductionStage;
   deliveryStatus: DeliveryStatus;
   paymentStatus: PaymentStatus;
+  /** Custom production stage this order currently sits on (from production_stages). */
+  currentStageId?: string | null;
+  /** Denormalized label of the current stage — safe for the public customer portal. */
+  currentStageName?: string | null;
+  /** Ids of every stage reached so far (prefix of the business pipeline). */
+  completedStageIds?: string[];
   dueDate: string;
   subtotalAmount: number;
   amountPaid: number;
@@ -756,7 +791,7 @@ export interface SmsLog {
   orderId: string;
   recipient: string;
   message: string;
-  type: "ready_for_pickup" | "delay_notification";
+  type: "ready_for_pickup" | "delay_notification" | "stage_notification";
   status: "success" | "failed";
   response: unknown;
   createdAt: string;

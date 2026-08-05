@@ -3,22 +3,15 @@
 import { useEffect, useMemo, useState, useCallback, useRef, memo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import type { Order, ProductionStage } from "@/types/domain";
-import { listenOrders, updateOrderStage } from "@/services/firestore.service";
+import type { Order, ProductionStageConfig } from "@/types/domain";
+import { listenOrders, listenProductionStages } from "@/services/firestore.service";
+import { advanceOrderStage } from "@/services/order-progress.service";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatKes } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Clock, RefreshCw, GripVertical } from "lucide-react";
-
-const columns: { key: ProductionStage; label: string }[] = [
-  { key: "cutting", label: "Cutting" },
-  { key: "stitching", label: "Stitching" },
-  { key: "fitting", label: "Fitting" },
-  { key: "finishing", label: "Finishing" },
-  { key: "ready_for_pickup", label: "Ready for Pickup" },
-];
 
 // Memoized order card component
 const OrderCard = memo(function OrderCard({ 
@@ -67,11 +60,12 @@ const OrderCard = memo(function OrderCard({
 export function ProductionKanbanModulePage() {
   const { businessId, ready } = useBusinessContext();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [stages, setStages] = useState<ProductionStageConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dragOrderId, setDragOrderId] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [draggingOverColumn, setDraggingOverColumn] = useState<ProductionStage | null>(null);
-  const containerRefs = useRef<Record<ProductionStage, HTMLDivElement | null>>({} as Record<ProductionStage, HTMLDivElement | null>);
+  const [draggingOverColumn, setDraggingOverColumn] = useState<string | null>(null);
+  const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const updateTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -92,26 +86,44 @@ export function ProductionKanbanModulePage() {
       });
     });
 
+    const unsubscribeStages = listenProductionStages(businessId, setStages);
+
     return () => {
       isSubscribed = false;
       unsubscribe();
+      unsubscribeStages();
     };
   }, [businessId, ready]);
 
+  // Active pipeline columns (the delivered milestone is intentionally left off
+  // the board — completed orders are filtered out before rendering).
+  const boardColumns = stages.filter((s) => s.isActive && s.milestone !== "delivered");
+
+  const resolveOrderStageId = useCallback((order: Order): string | null => {
+    if (order.currentStageId) return order.currentStageId;
+    const byName = stages.find((s) => s.name.trim().toLowerCase() === order.stage.replaceAll("_", " "));
+    if (byName) return byName.id;
+    if (order.stage === "delivered") return stages.find((s) => s.milestone === "delivered")?.id ?? null;
+    if (order.stage === "ready_for_pickup") return stages.find((s) => s.milestone === "ready_for_pickup")?.id ?? null;
+    return null;
+  }, [stages]);
+
   const { grouped, orderCounts } = useMemo(() => {
-    const groupMap = new Map<ProductionStage, Order[]>();
-    const countMap = new Map<ProductionStage, number>();
+    const groupMap = new Map<string, Order[]>();
+    const countMap = new Map<string, number>();
     
-    columns.forEach(({ key }) => {
-      groupMap.set(key, []);
-      countMap.set(key, 0);
+    boardColumns.forEach((c) => {
+      groupMap.set(c.id, []);
+      countMap.set(c.id, 0);
     });
 
     orders.forEach((order) => {
-      const stageOrders = groupMap.get(order.stage);
+      const stageId = resolveOrderStageId(order);
+      if (!stageId) return;
+      const stageOrders = groupMap.get(stageId);
       if (stageOrders) {
         stageOrders.push(order);
-        countMap.set(order.stage, (countMap.get(order.stage) || 0) + 1);
+        countMap.set(stageId, (countMap.get(stageId) || 0) + 1);
       }
     });
 
@@ -119,7 +131,7 @@ export function ProductionKanbanModulePage() {
       grouped: groupMap,
       orderCounts: countMap,
     };
-  }, [orders]);
+  }, [orders, boardColumns, resolveOrderStageId]);
 
   const handleDragStart = useCallback((orderId: string) => {
     setDragOrderId(orderId);
@@ -129,16 +141,16 @@ export function ProductionKanbanModulePage() {
     setDraggingOverColumn(null);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, stage: ProductionStage) => {
+  const handleDragOver = useCallback((e: React.DragEvent, stageId: string) => {
     e.preventDefault();
-    setDraggingOverColumn(stage);
+    setDraggingOverColumn(stageId);
   }, []);
 
   const handleDragLeave = useCallback(() => {
     setDraggingOverColumn(null);
   }, []);
 
-  const handleDrop = useCallback(async (stage: ProductionStage) => {
+  const handleDrop = useCallback(async (stageId: string) => {
     if (!dragOrderId || isUpdating) return;
 
     if (updateTimeoutRef.current) {
@@ -149,23 +161,25 @@ export function ProductionKanbanModulePage() {
     setDraggingOverColumn(null);
     
     const orderToMove = orders.find(o => o.id === dragOrderId);
+    const targetStage = stages.find(s => s.id === stageId);
     if (orderToMove) {
       setOrders(prevOrders => 
         prevOrders.map(o => 
-          o.id === dragOrderId ? { ...o, stage } : o
+          o.id === dragOrderId ? { ...o, currentStageId: stageId } : o
         )
       );
     }
 
     try {
-      await updateOrderStage(businessId, dragOrderId, stage);
-      toast.success(`Order moved to ${columns.find(c => c.key === stage)?.label}`, {
+      const result = await advanceOrderStage(businessId, orderToMove as Order, stageId, {});
+      if (!result.ok) throw new Error(result.message ?? "Stage not found");
+      toast.success(`Order moved to ${targetStage?.name ?? "stage"}`, {
         duration: 2000,
       });
     } catch (error) {
       setOrders(prevOrders => 
         prevOrders.map(o => 
-          o.id === dragOrderId ? { ...o, stage: orderToMove?.stage || o.stage } : o
+          o.id === dragOrderId ? { ...o, currentStageId: orderToMove?.currentStageId || undefined } : o
         )
       );
       toast.error("Failed to update stage. Please try again.");
@@ -174,7 +188,7 @@ export function ProductionKanbanModulePage() {
       setIsUpdating(false);
       setDragOrderId(null);
     }
-  }, [dragOrderId, businessId, isUpdating, orders]);
+  }, [dragOrderId, businessId, isUpdating, orders, stages]);
 
   // Calculate dynamic height based on viewport
   const getColumnHeight = useCallback(() => {
@@ -198,31 +212,34 @@ export function ProductionKanbanModulePage() {
     return () => window.removeEventListener('resize', updateHeight);
   }, [getColumnHeight]);
 
-  const renderColumn = useCallback((column: { key: ProductionStage; label: string }) => {
-    const columnOrders = grouped.get(column.key) || [];
-    const count = orderCounts.get(column.key) || 0;
-    const isDragOver = draggingOverColumn === column.key;
+  const renderColumn = useCallback((column: ProductionStageConfig) => {
+    const columnOrders = grouped.get(column.id) || [];
+    const count = orderCounts.get(column.id) || 0;
+    const isDragOver = draggingOverColumn === column.id;
 
     const columnRef = (el: HTMLDivElement | null) => {
-      containerRefs.current[column.key] = el;
+      containerRefs.current[column.id] = el;
     };
 
     return (
       <Card 
-        key={column.key}
+        key={column.id}
         className={`
           flex flex-col min-w-[280px] w-full transition-all duration-200
           ${isDragOver ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
           ${isDragOver ? 'bg-blue-50 dark:bg-blue-950/20' : ''}
         `}
         style={{ height: columnHeight }}
-        onDragOver={(event) => handleDragOver(event, column.key)}
+        onDragOver={(event) => handleDragOver(event, column.id)}
         onDragLeave={handleDragLeave}
-        onDrop={() => handleDrop(column.key)}
+        onDrop={() => handleDrop(column.id)}
       >
         <CardHeader className="flex-shrink-0 pb-2">
           <CardTitle className="flex items-center justify-between">
-            <span className="text-sm font-medium">{column.label}</span>
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <span className={`h-2.5 w-2.5 rounded-full ${column.color ?? "bg-slate-400"}`} />
+              {column.name}
+            </span>
             <Badge variant="default">{count}</Badge>
           </CardTitle>
         </CardHeader>
@@ -292,7 +309,13 @@ export function ProductionKanbanModulePage() {
         }}
       >
         <div className="flex gap-4 h-full" style={{ minWidth: 'max-content' }}>
-          {columns.map(renderColumn)}
+          {boardColumns.length === 0 ? (
+            <div className="flex h-full w-full items-center justify-center rounded-xl border-2 border-dashed border-slate-200 text-sm text-slate-400">
+              No active production stages. Configure your workflow in Settings → Production Workflow.
+            </div>
+          ) : (
+            boardColumns.map(renderColumn)
+          )}
         </div>
       </div>
 

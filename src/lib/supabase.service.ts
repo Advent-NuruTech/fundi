@@ -44,6 +44,8 @@ import type {
   UserRole,
   PaymentMethod,
   ProductionStage,
+  ProductionStageConfig,
+  StageMilestone,
   DbUnit,
   DbCategory,
   MaterialUsageRecord,
@@ -1453,6 +1455,387 @@ export function deriveOrderType(items: OrderItemInput[]): OrderType {
   }
 }
 
+// ─── PRODUCTION STAGES (customizable workflow) ────────────────────────────────
+
+/**
+ * The six seeded defaults — mirror the legacy `production_stage` enum 1:1 so
+ * existing orders and the compatibility stage stay intact for every business.
+ */
+export const DEFAULT_PRODUCTION_STAGE_TEMPLATE: Array<{
+  name: string;
+  description: string;
+  color: string;
+  notifyCustomer: boolean;
+  milestone: StageMilestone;
+}> = [
+  { name: "Cutting", description: "Garment has been cut from fabric", color: "bg-sky-500", notifyCustomer: false, milestone: "none" },
+  { name: "Stitching", description: "Garment is being stitched or sewn", color: "bg-blue-500", notifyCustomer: false, milestone: "none" },
+  { name: "Fitting", description: "Garment is being fitted on the customer", color: "bg-indigo-500", notifyCustomer: false, milestone: "none" },
+  { name: "Finishing", description: "Final touches and finishing work", color: "bg-violet-500", notifyCustomer: false, milestone: "none" },
+  { name: "Ready for Pickup", description: "Order is complete and awaiting collection", color: "bg-emerald-500", notifyCustomer: true, milestone: "ready_for_pickup" },
+  { name: "Delivered", description: "Order has been delivered to the customer", color: "bg-green-600", notifyCustomer: true, milestone: "delivered" },
+];
+
+const LEGACY_STAGE_BY_NAME: Record<string, ProductionStage> = {
+  cutting: "cutting",
+  stitching: "stitching",
+  fitting: "fitting",
+  finishing: "finishing",
+  "ready for pickup": "ready_for_pickup",
+  delivered: "delivered",
+};
+
+function sortStages(stages: ProductionStageConfig[]): ProductionStageConfig[] {
+  return [...stages].sort((a, b) => a.displayOrder - b.displayOrder);
+}
+
+function defaultStageRows(businessId: string): Record<string, unknown>[] {
+  return DEFAULT_PRODUCTION_STAGE_TEMPLATE.map((t, i) => ({
+    business_id: businessId,
+    name: t.name,
+    description: t.description,
+    display_order: i + 1,
+    color: t.color,
+    is_active: true,
+    notify_customer: t.notifyCustomer,
+    milestone: t.milestone,
+    is_seeded: true,
+  }));
+}
+
+/** Idempotently create the default pipeline for a business that has none yet. */
+async function ensureProductionStagesOnline(businessId: string): Promise<void> {
+  if (!businessId) return;
+  const { error } = await supabase
+    .from('production_stages')
+    .upsert(defaultStageRows(businessId), { onConflict: 'business_id,name', ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+async function seedProductionStagesOffline(businessId: string): Promise<ProductionStageConfig[]> {
+  const now = new Date().toISOString();
+  const stages = DEFAULT_PRODUCTION_STAGE_TEMPLATE.map((t, i) => ({
+    id: generateId(),
+    businessId,
+    name: t.name,
+    description: t.description,
+    displayOrder: i + 1,
+    color: t.color,
+    isActive: true,
+    notifyCustomer: t.notifyCustomer,
+    milestone: t.milestone,
+    isSeeded: true,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  for (const s of stages) {
+    await offlineCreate(businessId, 'production_stages', s as unknown as Record<string, unknown>, 'high');
+  }
+  return stages;
+}
+
+/** Load a business's production pipeline (all stages, ordered). Seeds defaults when none exist. */
+export async function getProductionStages(businessId: string): Promise<ProductionStageConfig[]> {
+  if (!businessId) return [];
+  if (isOffline()) {
+    const cached = await getCachedCollection<ProductionStageConfig>('production_stages', businessId).catch(() => []);
+    if (cached.length > 0) return sortStages(cached);
+    return sortStages(await seedProductionStagesOffline(businessId));
+  }
+  await ensureProductionStagesOnline(businessId);
+  const { data, error } = await supabase
+    .from('production_stages')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('display_order', { ascending: true });
+  if (error) throw error;
+  const rows = transformArrayToCamel<ProductionStageConfig>((data ?? []) as Record<string, unknown>[]);
+  cacheCollection('production_stages', businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+  return sortStages(rows);
+}
+
+/** Realtime subscription to a business's production pipeline. */
+export function listenProductionStages(businessId: string, callback: (stages: ProductionStageConfig[]) => void): () => void {
+  let destroyed = false;
+  let gotFresh = false;
+  const serveCache = async (force = false) => {
+    const cached = await getCachedCollection<ProductionStageConfig>('production_stages', businessId).catch(() => []);
+    if (!destroyed && (force || !gotFresh) && cached.length > 0) {
+      callback(sortStages(cached));
+    }
+  };
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    if (isOffline()) {
+      await serveCache(true);
+      return;
+    }
+    try {
+      const stages = await getProductionStages(businessId);
+      if (destroyed) return;
+      gotFresh = true;
+      callback(stages);
+    } catch {
+      await serveCache(true);
+    }
+  };
+  serveCache();
+  fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['production_stages'], () => serveCache(true));
+  const channel = supabase
+    .channel(`production-stages-${businessId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'production_stages', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .subscribe();
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
+}
+
+export interface ProductionStageInput {
+  id?: string;
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  isActive: boolean;
+  notifyCustomer: boolean;
+  milestone: StageMilestone;
+}
+
+/**
+ * Replace a business's pipeline with the submitted list. New stages are
+ * inserted, existing ones updated, removed ones hard-deleted when no order
+ * sits on them and deactivated when one does (offline always deactivates,
+ * since the usage check needs the server).
+ */
+export async function saveProductionStages(businessId: string, stages: ProductionStageInput[]): Promise<void> {
+  if (!businessId) return;
+  if (stages.length > 20) throw new Error("A business can have at most 20 production stages");
+
+  if (isOffline()) {
+    const existing = await getCachedCollection<ProductionStageConfig>('production_stages', businessId).catch(() => []);
+    const incomingIds = new Set(stages.map((s) => s.id).filter(Boolean) as string[]);
+    for (const [index, s] of stages.entries()) {
+      const displayOrder = index + 1;
+      if (s.id) {
+        await offlineUpdate(businessId, 'production_stages', s.id, {
+          id: s.id,
+          name: s.name,
+          description: s.description ?? null,
+          color: s.color ?? null,
+          icon: s.icon ?? null,
+          isActive: s.isActive,
+          notifyCustomer: s.notifyCustomer,
+          milestone: s.milestone,
+          displayOrder,
+        } as Record<string, unknown>, 'normal');
+      } else {
+        await offlineCreate(businessId, 'production_stages', {
+          businessId,
+          name: s.name,
+          description: s.description ?? null,
+          color: s.color ?? null,
+          icon: s.icon ?? null,
+          isActive: s.isActive,
+          notifyCustomer: s.notifyCustomer,
+          milestone: s.milestone,
+          displayOrder,
+        } as Record<string, unknown>, 'normal');
+      }
+    }
+    for (const gone of existing) {
+      if (!incomingIds.has(gone.id)) {
+        await offlineUpdate(businessId, 'production_stages', gone.id, { id: gone.id, isActive: false } as Record<string, unknown>, 'normal');
+      }
+    }
+    return;
+  }
+
+  const { data: existingData, error: fetchError } = await supabase
+    .from('production_stages')
+    .select('id')
+    .eq('business_id', businessId);
+  if (fetchError) throw fetchError;
+  const existingIds = new Set((existingData ?? []).map((r: Record<string, unknown>) => r.id as string));
+  const incomingIds = new Set<string>();
+
+  for (const [index, s] of stages.entries()) {
+    const displayOrder = index + 1;
+    const row: Record<string, unknown> = {
+      name: s.name,
+      description: s.description ?? null,
+      display_order: displayOrder,
+      color: s.color ?? null,
+      icon: s.icon ?? null,
+      is_active: s.isActive,
+      notify_customer: s.notifyCustomer,
+      milestone: s.milestone,
+    };
+    if (s.id && existingIds.has(s.id)) {
+      const { error } = await supabase
+        .from('production_stages')
+        .update(row)
+        .eq('id', s.id)
+        .eq('business_id', businessId);
+      if (error) throw error;
+      incomingIds.add(s.id);
+    } else if (!s.id) {
+      const { data: created } = await supabase
+        .from('production_stages')
+        .insert({ ...row, business_id: businessId, is_seeded: false })
+        .select('id')
+        .single();
+      if (created) incomingIds.add(created.id as string);
+    }
+  }
+
+  const removedIds = [...existingIds].filter((id) => !incomingIds.has(id));
+  if (removedIds.length > 0) {
+    const { data: usedRows } = await supabase
+      .from('orders')
+      .select('current_stage_id')
+      .in('current_stage_id', removedIds)
+      .limit(1);
+    const used = new Set((usedRows ?? []).map((r: Record<string, unknown>) => r.current_stage_id as string));
+    for (const id of removedIds) {
+      if (used.has(id)) {
+        await supabase
+          .from('production_stages')
+          .update({ is_active: false })
+          .eq('id', id)
+          .eq('business_id', businessId);
+      } else {
+        await supabase
+          .from('production_stages')
+          .delete()
+          .eq('id', id)
+          .eq('business_id', businessId);
+      }
+    }
+  }
+}
+
+/**
+ * Derive the legacy compatibility stage for a custom stage. Milestones
+ * override everything; otherwise a known default name is used verbatim, and
+ * anything else is bucketed proportionally across the pipeline (cosmetic —
+ * only used for legacy grouping/sorting).
+ */
+export function compatStageFromConfig(target: ProductionStageConfig, index: number, total: number): ProductionStage {
+  if (target.milestone === "delivered") return "delivered";
+  if (target.milestone === "ready_for_pickup") return "ready_for_pickup";
+  const byName = LEGACY_STAGE_BY_NAME[target.name.trim().toLowerCase()];
+  if (byName) return byName;
+  const buckets: ProductionStage[] = ["cutting", "stitching", "fitting", "finishing"];
+  return buckets[Math.min(buckets.length - 1, Math.floor(((index + 1) / Math.max(total, 1)) * buckets.length))];
+}
+
+/**
+ * Compute the persistence payload for an order that now sits on `stageId`:
+ * the custom pointers + maintained compatibility `stage`/`delivery_status`.
+ */
+export function buildOrderProgress(
+  stages: ProductionStageConfig[],
+  stageId: string
+): { progress: {
+  currentStageId: string;
+  currentStageName: string;
+  completedStageIds: string[];
+  stage: ProductionStage;
+  deliveryStatus: DeliveryStatus;
+}; target: ProductionStageConfig; index: number } | null {
+  const ordered = sortStages(stages);
+  const index = ordered.findIndex((s) => s.id === stageId);
+  if (index < 0) return null;
+  const target = ordered[index];
+  const completedStageIds = ordered.slice(0, index + 1).map((s) => s.id);
+  const stage = compatStageFromConfig(target, index, ordered.length);
+  const deliveryStatus: DeliveryStatus = stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending";
+  return {
+    progress: { currentStageId: target.id, currentStageName: target.name, completedStageIds, stage, deliveryStatus },
+    target,
+    index,
+  };
+}
+
+/** Persist custom stage progress (+ maintained compat fields) on an order. */
+export async function setOrderStageProgress(
+  businessId: string,
+  orderId: string,
+  progress: {
+    currentStageId: string;
+    currentStageName: string;
+    completedStageIds: string[];
+    stage: ProductionStage;
+    deliveryStatus: DeliveryStatus;
+  }
+): Promise<void> {
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('orders')
+        .update({ ...transformKeysToSnake(progress as unknown as Record<string, unknown>), updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'orders', orderId, { ...progress, updatedAt: new Date().toISOString() } as unknown as Record<string, unknown>, 'high')
+  );
+}
+
+/**
+ * Find the custom stage a legacy enum value maps onto. Matches the default
+ * six by name first, then by milestone, then proportionally by position.
+ */
+export function resolveLegacyStage(stages: ProductionStageConfig[], legacy: ProductionStage): ProductionStageConfig | null {
+  const normalized = legacy.replaceAll("_", " ").toLowerCase();
+  const byName = stages.find((s) => s.name.trim().toLowerCase() === normalized);
+  if (byName) return byName;
+  if (legacy === "delivered") return stages.find((s) => s.milestone === "delivered") ?? null;
+  if (legacy === "ready_for_pickup") return stages.find((s) => s.milestone === "ready_for_pickup") ?? null;
+  const ordered = sortStages(stages);
+  const buckets: ProductionStage[] = ["cutting", "stitching", "fitting", "finishing"];
+  const bucketIndex = buckets.indexOf(legacy);
+  if (bucketIndex < 0 || ordered.length === 0) return null;
+  const idx = Math.max(0, Math.min(ordered.length - 1, Math.round(((bucketIndex + 1) / 4) * (ordered.length - 1))));
+  return ordered[idx];
+}
+
+/** Map a legacy enum value onto the custom pipeline and persist it. */
+export async function applyLegacyStage(businessId: string, orderId: string, legacy: ProductionStage): Promise<void> {
+  if (!businessId || !orderId) return;
+  const stages = await getProductionStages(businessId);
+  const target = resolveLegacyStage(stages, legacy);
+  if (!target) return;
+  const built = buildOrderProgress(stages, target.id);
+  if (!built) return;
+  await setOrderStageProgress(businessId, orderId, built.progress);
+}
+
+/**
+ * Compute the initial custom-stage point for a brand-new order: the first
+ * active stage of the business's pipeline (or null when the pipeline can't be
+ * resolved, in which case only the legacy fields are written).
+ */
+export async function buildInitialStagePoint(businessId: string): Promise<{
+  currentStageId?: string;
+  currentStageName?: string;
+  completedStageIds?: string[];
+} | null> {
+  try {
+    const stages = await getProductionStages(businessId);
+    const ordered = sortStages(stages);
+    const first = ordered.find((s) => s.isActive) ?? ordered[0];
+    if (!first) return null;
+    return {
+      currentStageId: first.id,
+      currentStageName: first.name,
+      completedStageIds: [first.id],
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Map a client OrderItemInput into the snake_case row persisted to order_items. */
 function buildOrderItemRow(orderId: string, item: OrderItemInput, sortOrder: number): Record<string, unknown> {
   const quantity = Number(item.quantity) || 1;
@@ -1633,6 +2016,7 @@ export async function createOrder(
     const now = new Date().toISOString();
     const provisionalNumber = `PND-${Date.now().toString(36).toUpperCase().slice(-6)}`;
     const balance = Math.max(0, payload.subtotalAmount - depositAmount);
+    const initialStagePoint = await buildInitialStagePoint(businessId);
 
     const orderRecord = {
       ...orderFields,
@@ -1644,6 +2028,9 @@ export async function createOrder(
       orderType: orderFields.orderType ?? inferredOrderType,
       stage: "cutting",
       deliveryStatus: "pending",
+      currentStageId: initialStagePoint?.currentStageId ?? null,
+      currentStageName: initialStagePoint?.currentStageName ?? null,
+      completedStageIds: initialStagePoint?.completedStageIds ?? [],
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
       amountPaid: depositAmount,
       balanceAmount: balance,
@@ -1784,6 +2171,7 @@ export async function createOrder(
     throw error;
   }
   const trackingToken = generateTrackingToken();
+  const initialStagePoint = await buildInitialStagePoint(businessId);
 
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
@@ -1797,6 +2185,9 @@ export async function createOrder(
       orderType: orderFields.orderType ?? inferredOrderType,
       stage: "cutting",
       deliveryStatus: "pending",
+      currentStageId: initialStagePoint?.currentStageId ?? null,
+      currentStageName: initialStagePoint?.currentStageName ?? null,
+      completedStageIds: initialStagePoint?.completedStageIds ?? [],
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
       amountPaid: depositAmount,
       balanceAmount: Math.max(0, payload.subtotalAmount - depositAmount),
@@ -2281,6 +2672,7 @@ export function listenOrder(businessId: string, orderId: string, callback: (row:
 
 export async function updateOrderStage(businessId: string, orderId: string, stage: ProductionStage) {
   const deliveryStatus = stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending";
+  await applyLegacyStage(businessId, orderId, stage);
   return withOfflineFallback(
     async () => {
       const { error } = await supabase
@@ -2507,7 +2899,7 @@ export async function logSmsEntry(
     orderId: string;
     recipient: string;
     message: string;
-    type: "ready_for_pickup" | "delay_notification";
+    type: "ready_for_pickup" | "delay_notification" | "stage_notification";
     status: "success" | "failed";
     response: unknown;
   }

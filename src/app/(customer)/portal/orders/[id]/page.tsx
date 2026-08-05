@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatKes } from "@/lib/utils";
-import { STAGE_LABEL, STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL, STAGE_ORDER } from "../../_shared";
+import { STAGE_LABEL, STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL, STAGE_ORDER, stageLabel } from "../../_shared";
 
 export default function PortalOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -64,7 +64,7 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
                 Created {new Date(order.createdAt).toLocaleDateString()}
               </p>
             </div>
-            <Badge className={STAGE_COLOR[order.stage]}>{STAGE_LABEL[order.stage]}</Badge>
+            <Badge className={STAGE_COLOR[order.stage]}>{stageLabel(order)}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -79,6 +79,7 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
             {STAGE_ORDER.map((stage, idx) => {
               const done = idx < stageIndex;
               const current = idx === stageIndex;
+              const label = current && order.currentStageName ? order.currentStageName : STAGE_LABEL[stage];
               return (
                 <div key={stage} className="flex items-center gap-3">
                   {done ? (
@@ -89,7 +90,7 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
                     <Circle className="h-5 w-5 text-slate-300 shrink-0" />
                   )}
                   <span className={`text-sm ${current ? "font-semibold text-slate-900" : done ? "text-slate-600" : "text-slate-400"}`}>
-                    {STAGE_LABEL[stage]}
+                    {label}
                     {current && <span className="ml-1.5 text-xs text-emerald-600 font-normal">← current</span>}
                   </span>
                 </div>

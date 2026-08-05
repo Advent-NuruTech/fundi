@@ -18,7 +18,7 @@ export async function GET(
   const { data: order, error } = await db
     .from("orders")
     .select(
-      "id, tracking_token, order_number, business_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at, delivery_status"
+      "id, tracking_token, order_number, business_id, customer_name, stage, current_stage_name, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at, delivery_status"
     )
     .eq("tracking_token", trackingId)
     .single();
@@ -50,6 +50,7 @@ export async function GET(
     businessLocation: biz?.location ?? null,
     customerName: order.customer_name,
     stage: order.stage,
+    currentStageName: order.current_stage_name ?? null,
     deliveryStatus: order.delivery_status,
     paymentStatus: order.payment_status,
     dueDate: order.due_date,

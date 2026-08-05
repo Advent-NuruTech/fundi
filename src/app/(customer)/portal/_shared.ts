@@ -38,3 +38,12 @@ export const STAGE_ORDER: ProductionStage[] = [
   "ready_for_pickup",
   "delivered",
 ];
+
+/**
+ * Customer-facing stage label. Prefers the business's custom stage name
+ * (denormalized onto the order for safe public display) and falls back to the
+ * legacy enum label when the custom pipeline isn't in place yet.
+ */
+export function stageLabel(order: { stage: ProductionStage; currentStageName?: string | null }): string {
+  return order.currentStageName || STAGE_LABEL[order.stage];
+}

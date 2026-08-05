@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatKes } from "@/lib/utils";
-import { STAGE_LABEL, STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL } from "../_shared";
+import { STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL, stageLabel } from "../_shared";
 
 export default function PortalOrdersPage() {
   const { customerIds, isLoaded } = useCustomerPortal();
@@ -90,7 +90,7 @@ export default function PortalOrdersPage() {
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       <Badge className={STAGE_COLOR[order.stage]}>
-                        {STAGE_LABEL[order.stage]}
+                        {stageLabel(order)}
                       </Badge>
                       <Badge className={PAYMENT_COLOR[order.paymentStatus]}>
                         {PAYMENT_LABEL[order.paymentStatus]}

@@ -8,6 +8,7 @@ import {
   Check,
   Shield,
   ChevronRight,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -224,6 +225,27 @@ export function BusinessSettingsPage() {
           </div>
         </Link>
       )}
+
+      {/* Production Workflow — order pipeline configuration */}
+      <Link
+        href="/settings/workflow"
+        className="block rounded-3xl border bg-white p-6 transition hover:border-emerald-300 hover:bg-emerald-50 group"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 group-hover:bg-emerald-200 transition">
+              <Workflow className="h-5 w-5 text-emerald-700" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900">Production Workflow</h2>
+              <p className="text-sm text-slate-500">
+                Customize your production stages, their order, and customer SMS notifications.
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-600 transition shrink-0 ml-4" />
+        </div>
+      </Link>
 
       <div className="rounded-3xl border bg-white p-6">
         <div className="flex items-center gap-3">

@@ -9,20 +9,20 @@ import {
   CheckCircle2, Circle, Clock, ArrowLeft, Phone, Mail,
   ClipboardList, Shirt, AlertTriangle, Receipt as ReceiptIcon,
 } from "lucide-react";
-import type { Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItemType } from "@/types/domain";
+import type { Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItemType, ProductionStageConfig } from "@/types/domain";
 import {
-  listenOrder, listenCustomer, updateOrderStage,
+  listenOrder, listenCustomer,
   addFittingRecord, updateOrderProductionNotes, recordMaterialUsage,
   listenMaterials, updateOrderSmsFields, logSmsEntry,
   updateOrderDetails, updateOrderGarments, ORDER_TYPE_LABELS,
+  listenProductionStages,
 } from "@/services/firestore.service";
-import { notifyOrderStageChanged, notifyOrderCompleted, notifyMaterialsConsumed } from "@/services/notification-catalog";
+import { notifyMaterialsConsumed } from "@/services/notification-catalog";
+import { advanceOrderStage, prepareMessageWithOnboarding } from "@/services/order-progress.service";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { sendSms } from "@/lib/sms/sendSms";
-import { appendPortalOnboarding } from "@/lib/customer-portal";
 import {
-  getCustomerMessagingInfo,
   markPortalOnboardingSent,
 } from "@/services/customer-portal.service";
 import { Button } from "@/components/ui/button";
@@ -63,15 +63,6 @@ const ITEM_TYPE_BADGE: Record<OrderItemType, string> = {
   material: "bg-sky-100 text-sky-700",
   service: "bg-violet-100 text-violet-700",
 };
-
-const STAGES: Array<{ key: Order["stage"]; label: string }> = [
-  { key: "cutting",          label: "Cutting" },
-  { key: "stitching",        label: "Stitching" },
-  { key: "fitting",          label: "Fitting" },
-  { key: "finishing",        label: "Finishing" },
-  { key: "ready_for_pickup", label: "Ready for Pickup" },
-  { key: "delivered",        label: "Delivered" },
-];
 
 function stageColor(key: string) {
   const map: Record<string, string> = {
@@ -248,6 +239,7 @@ export function OrderDetailModulePage() {
 
   // Stage
   const [stageLoading, setStageLoading] = useState<string | null>(null);
+  const [stages, setStages] = useState<ProductionStageConfig[]>([]);
 
   // Receipt
   const [showReceipt, setShowReceipt] = useState(false);
@@ -262,7 +254,8 @@ export function OrderDetailModulePage() {
     if (!ready || !orderId) return;
     const unsub = listenOrder(businessId, orderId, setOrder);
     const unsubMat = listenMaterials(businessId, setMaterials);
-    return () => { unsub(); unsubMat(); };
+    const unsubStages = listenProductionStages(businessId, setStages);
+    return () => { unsub(); unsubMat(); unsubStages(); };
   }, [businessId, orderId, ready]);
 
   useEffect(() => {
@@ -320,69 +313,20 @@ export function OrderDetailModulePage() {
     setEditGarments(updated);
   };
 
-  // Appends the Customer Portal onboarding block when this is the FIRST
-  // notification ever sent to the customer (login id + default password).
-  const prepareMessageWithOnboarding = async (baseMessage: string) => {
-    if (!order) return { message: baseMessage, onboardingIncluded: false, customerId: "" };
-    const messagingInfo = await getCustomerMessagingInfo(businessId, order.customerId).catch(() => null);
-    if (messagingInfo && !messagingInfo.portalOnboardingSent) {
-      return {
-        message: appendPortalOnboarding(baseMessage, {
-          email: messagingInfo.email ?? undefined,
-          phone: messagingInfo.phone,
-        }),
-        onboardingIncluded: true,
-        customerId: messagingInfo.id,
-      };
-    }
-    return { message: baseMessage, onboardingIncluded: false, customerId: order.customerId };
-  };
-
-  const handleStageChange = async (stage: Order["stage"]) => {
+  const handleStageChange = async (stageId: string) => {
     if (!order || stageLoading) return;
-    setStageLoading(stage);
+    setStageLoading(stageId);
     try {
-      await updateOrderStage(businessId, orderId, stage);
-      if (user) {
-        if (stage === "delivered") {
-          await notifyOrderCompleted(businessId, order.orderNumber, order.customerName, orderId, user.uid);
-        } else {
-          await notifyOrderStageChanged(businessId, order.orderNumber, stage, orderId, user.uid);
-        }
+      const result = await advanceOrderStage(businessId, order, stageId, {
+        actorUid: user?.uid,
+        businessName: business?.name,
+      });
+      if (!result.ok) {
+        toast.error(result.message ?? "Could not update stage");
+        return;
       }
       toast.success("Stage updated");
-
-      // Send pickup SMS — no sender param (same as delay SMS which works)
-      if (stage === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent) {
-        const name = order.customerName || "Customer";
-        const baseMessage = `${timeGreeting()} ${name},\n\nYour order "${orderLabel(order)}" is complete and ready for pickup within our working hours.\n\nThank you for choosing ${business?.name || "us"}.`;
-        try {
-          const { message, onboardingIncluded, customerId } = await prepareMessageWithOnboarding(baseMessage);
-          const result = await sendSms(order.customerPhone, message);
-          if (result.success) {
-            await updateOrderSmsFields(businessId, orderId, {
-              readyPickupSmsSent: true,
-              readyPickupSmsSentAt: new Date().toISOString(),
-            });
-            await logSmsEntry(businessId, {
-              orderId, recipient: order.customerPhone, message,
-              type: "ready_for_pickup", status: "success", response: result.response,
-            });
-            if (onboardingIncluded) {
-              await markPortalOnboardingSent(businessId, customerId).catch(() => {});
-            }
-            toast.success("Pickup SMS sent to customer");
-          } else {
-            await logSmsEntry(businessId, {
-              orderId, recipient: order.customerPhone, message,
-              type: "ready_for_pickup", status: "failed", response: result.error,
-            });
-            toast.warning("Stage updated — SMS failed: " + result.error);
-          }
-        } catch {
-          toast.warning("Stage updated but SMS could not be sent");
-        }
-      }
+      if (result.smsSent) toast.success("SMS sent to customer");
     } catch {
       toast.error("Could not update stage");
     } finally {
@@ -402,7 +346,7 @@ export function OrderDetailModulePage() {
     const reasonLine = delayReason.trim() ? `\nReason: ${delayReason.trim()}\n` : "";
     const baseMessage = `${timeGreeting()} ${order.customerName || "Customer"},\n\nYour order "${orderLabel(order)}" has been delayed.\n${reasonLine}\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${business?.name ?? "us"}.`;
     try {
-      const { message, onboardingIncluded, customerId } = await prepareMessageWithOnboarding(baseMessage);
+      const { message, onboardingIncluded, customerId } = await prepareMessageWithOnboarding(businessId, order, baseMessage);
       const result = await sendSms(order.customerPhone, message);
       if (result.success) {
         await updateOrderSmsFields(businessId, orderId, {
@@ -522,7 +466,16 @@ export function OrderDetailModulePage() {
   // ── derived values ───────────────────────────────────────────────────────────
 
   const orderImages: string[] = order.imageUrls ?? [];
-  const stageIndex = STAGES.findIndex((s) => s.key === order.stage);
+  const activeStages = stages.filter((s) => s.isActive);
+  const currentStageId =
+    order.currentStageId ??
+    activeStages.find((s) => s.name.trim().toLowerCase() === order.stage.replaceAll("_", " "))?.id ??
+    (order.stage === "delivered"
+      ? activeStages.find((s) => s.milestone === "delivered")?.id
+      : order.stage === "ready_for_pickup"
+      ? activeStages.find((s) => s.milestone === "ready_for_pickup")?.id
+      : undefined);
+  const completedStageIds = new Set(order.completedStageIds ?? []);
   const materialOptions: SearchableOption[] = materials.map((m) => ({
     value: m.id,
     label: `${m.name} (${m.quantity} ${m.unitName} avail.)`,
@@ -1158,19 +1111,23 @@ export function OrderDetailModulePage() {
                 Production Stage
               </h3>
               <div className="space-y-1">
-                {STAGES.map((s, i) => {
-                  const isCurrent = order.stage === s.key;
-                  const isDone = i < stageIndex;
-                  const isFuture = i > stageIndex;
+                {activeStages.length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-3">
+                    No production stages configured.
+                  </p>
+                )}
+                {activeStages.map((s) => {
+                  const isCurrent = s.id === currentStageId;
+                  const isDone = completedStageIds.has(s.id);
                   return (
                     <button
-                      key={s.key}
-                      disabled={isDone || stageLoading !== null}
-                      onClick={() => !isDone && handleStageChange(s.key)}
+                      key={s.id}
+                      disabled={isDone || isCurrent || stageLoading !== null}
+                      onClick={() => !isDone && !isCurrent && handleStageChange(s.id)}
                       className={cn(
                         "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
                         isCurrent
-                          ? cn("text-white shadow-sm", stageColor(s.key))
+                          ? cn("text-white shadow-sm", s.color ?? stageColor(order.stage))
                           : isDone
                           ? "text-slate-400 cursor-default"
                           : "text-slate-600 hover:bg-slate-50 border border-transparent hover:border-slate-200"
@@ -1186,9 +1143,14 @@ export function OrderDetailModulePage() {
                         <Circle className="h-4 w-4 shrink-0 text-slate-300" />
                       )}
                       <span className={isDone ? "line-through" : ""}>
-                        {stageLoading === s.key ? "Updating…" : s.label}
+                        {stageLoading === s.id ? "Updating…" : s.name}
                       </span>
-                      {s.key === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent && !isDone && (
+                      {s.milestone === "ready_for_pickup" && order.customerPhone && !order.readyPickupSmsSent && !isDone && !isCurrent && (
+                        <span className="ml-auto text-[10px] font-normal opacity-60 shrink-0">
+                          + SMS
+                        </span>
+                      )}
+                      {s.notifyCustomer && s.milestone !== "ready_for_pickup" && !isDone && !isCurrent && (
                         <span className="ml-auto text-[10px] font-normal opacity-60 shrink-0">
                           + SMS
                         </span>

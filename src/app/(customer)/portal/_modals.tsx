@@ -7,7 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatKes } from "@/lib/utils";
-import { STAGE_LABEL, STAGE_COLOR, PAYMENT_LABEL, PAYMENT_COLOR } from "./_shared";
+import { STAGE_COLOR, PAYMENT_LABEL, PAYMENT_COLOR, stageLabel } from "./_shared";
 
 export function OrderDetailsDialog({
   order,
@@ -29,7 +29,7 @@ export function OrderDetailsDialog({
         <div>
           <p className="text-xs text-slate-500">{order.businessName}</p>
           <div className="flex items-center gap-2 mt-0.5">
-            <Badge className={STAGE_COLOR[order.stage]}>{STAGE_LABEL[order.stage]}</Badge>
+            <Badge className={STAGE_COLOR[order.stage]}>{stageLabel(order)}</Badge>
             <Badge className={PAYMENT_COLOR[order.paymentStatus]}>{PAYMENT_LABEL[order.paymentStatus]}</Badge>
           </div>
         </div>

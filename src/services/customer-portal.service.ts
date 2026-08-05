@@ -36,6 +36,7 @@ export interface CustomerSafeOrder {
   businessId: string;
   customerName: string;
   stage: ProductionStage;
+  currentStageName?: string | null;
   paymentStatus: PaymentStatus;
   dueDate: string;
   subtotalAmount: number;
@@ -249,7 +250,7 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
   const { data: orders } = await supabase
     .from("orders")
     .select(
-      "id, tracking_token, order_number, business_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at"
+      "id, tracking_token, order_number, business_id, customer_name, stage, current_stage_name, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at"
     )
     .in("customer_id", customerIds)
     .order("created_at", { ascending: false });
@@ -291,6 +292,7 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
     businessName: bizMap[o.business_id as string] ?? "Workshop",
     customerName: o.customer_name as string,
     stage: o.stage as ProductionStage,
+    currentStageName: (o.current_stage_name as string | null) ?? null,
     paymentStatus: o.payment_status as PaymentStatus,
     dueDate: o.due_date as string,
     subtotalAmount: Number(o.subtotal_amount),
@@ -310,7 +312,7 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
   const { data: order } = await supabase
     .from("orders")
     .select(
-      "id, tracking_token, order_number, business_id, customer_id, customer_name, stage, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at"
+      "id, tracking_token, order_number, business_id, customer_id, customer_name, stage, current_stage_name, payment_status, due_date, subtotal_amount, amount_paid, balance_amount, created_at, updated_at"
     )
     .eq("id", orderId)
     .single();
@@ -345,6 +347,7 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     businessName: (biz?.name as string) ?? "Workshop",
     customerName: order.customer_name as string,
     stage: order.stage as ProductionStage,
+    currentStageName: (order.current_stage_name as string | null) ?? null,
     paymentStatus: order.payment_status as PaymentStatus,
     dueDate: order.due_date as string,
     subtotalAmount: Number(order.subtotal_amount),
