@@ -41,7 +41,19 @@ export async function POST(request: Request) {
     const planConfig = await getEffectivePlanConfig(effectivePlanSlug, admin);
     if (!planConfig) return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
 
-    const amountKes = planConfig.monthlyPrice;
+    // Launch offer: the first two months bill at the intro rate. The first
+    // payment at checkout covered month 1; the first renewal covers month 2.
+    const { count } = await admin
+      .from("billing_payments")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .eq("payment_type", "renewal")
+      .eq("payment_status", "success");
+
+    const introMonth = (count ?? 0) === 0;
+    const amountKes = introMonth
+      ? (planConfig.introPrice ?? planConfig.monthlyPrice)
+      : planConfig.monthlyPrice;
     const amountKobo = kesToKobo(amountKes);
     const reference = generateReference("monthly");
 
@@ -62,7 +74,7 @@ export async function POST(request: Request) {
       payment_status: "pending",
       payment_type: "renewal",
       includes_sms_sender_id: false,
-      metadata: { plan_slug: effectivePlanSlug },
+      metadata: { plan_slug: effectivePlanSlug, intro_month: introMonth },
     });
 
     const baseUrl = getAppBaseUrl();
@@ -78,6 +90,7 @@ export async function POST(request: Request) {
         payment_type: "renewal",
         includes_sms_sender_id: false,
         sms_sender_id_amount: 0,
+        intro_price: planConfig.introPrice,
         monthly_price: amountKes,
       },
     });

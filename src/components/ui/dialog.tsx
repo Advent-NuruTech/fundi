@@ -46,12 +46,12 @@ export function Dialog({ open, onClose, children, className, title }: DialogProp
     >
       <div
         className={cn(
-          "w-full max-w-lg rounded-2xl bg-white shadow-2xl",
+          "flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-2xl",
           className
         )}
       >
         {title && (
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
             <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
             <button
               onClick={onClose}
@@ -61,7 +61,7 @@ export function Dialog({ open, onClose, children, className, title }: DialogProp
             </button>
           </div>
         )}
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

@@ -354,6 +354,12 @@ export default function BillingDashboardPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   No installation or setup fees
                 </p>
+                {data?.nextRenewalAmount === plan.introPrice && (
+                  <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                    <Sparkles className="h-3 w-3" />
+                    Launch offer: {formatKes(plan.introPrice)}/month for your first 2 months
+                  </p>
+                )}
                 {subscription.smsSenderIdStatus === "approved" && (
                   <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-emerald-700">
                     <CheckCircle2 className="h-3 w-3" />
@@ -378,7 +384,7 @@ export default function BillingDashboardPage() {
                         ? "Subscription ends — no renewal charge"
                         : subscription.pendingPlanSlug
                         ? `${formatKes(pendingPlanConfig?.monthlyPrice ?? plan.monthlyPrice)} (after downgrade)`
-                        : `${formatKes(plan.monthlyPrice)} will be charged`}
+                        : `${formatKes(data?.nextRenewalAmount ?? plan.monthlyPrice)} will be charged`}
                     </p>
                     {subscription.cancelAtPeriodEnd && periodEndDate && (
                       <p className="mt-1 text-xs text-rose-600 font-medium">
@@ -752,6 +758,7 @@ export default function BillingDashboardPage() {
             open={renewOpen}
             onClose={() => setRenewOpen(false)}
             plan={plan}
+            nextRenewalAmount={data?.nextRenewalAmount ?? null}
           />
         </>
       )}
@@ -1291,10 +1298,12 @@ function RenewModal({
   open,
   onClose,
   plan,
+  nextRenewalAmount,
 }: {
   open: boolean;
   onClose: () => void;
   plan: BillingPortalData["plan"];
+  nextRenewalAmount: number | null;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1327,9 +1336,18 @@ function RenewModal({
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
           <div className="flex items-center justify-between font-semibold text-slate-900">
             <span>Renewal amount</span>
-            <span>{formatKes(plan.monthlyPrice)}</span>
+            <span>{formatKes(nextRenewalAmount ?? plan.monthlyPrice)}</span>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">Paid via Paystack. Billing period: 30 days from today.</p>
+          {nextRenewalAmount === plan.introPrice ? (
+            <p className="mt-0.5 text-xs font-medium text-emerald-700">
+              Launch offer — this is your 2nd month at {formatKes(plan.introPrice)}/month.
+              From month 3 it continues at {formatKes(plan.monthlyPrice)}/month.
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-slate-500">
+              Paid via Paystack. Billing period: 30 days from today.
+            </p>
+          )}
         </div>
 
         {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}

@@ -300,4 +300,6 @@ export interface BillingPortalData {
   payments: BillingPayment[];
   plan: PlanConfig;
   auditLogs: BillingAuditLog[];
+  /** Amount the next renewal will bill at (intro price for the 2nd month). */
+  nextRenewalAmount: number | null;
 }

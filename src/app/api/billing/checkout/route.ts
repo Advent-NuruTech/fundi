@@ -139,6 +139,7 @@ export async function POST(request: Request) {
         payment_type: "monthly_subscription",
         includes_sms_sender_id: addSmsSenderId,
         sms_sender_id_amount: addSmsSenderId ? smsSenderIdPrice : 0,
+        intro_price: planConfig.introPrice,
         monthly_price: planConfig.monthlyPrice,
       },
     });

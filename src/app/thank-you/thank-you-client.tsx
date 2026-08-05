@@ -320,8 +320,8 @@ export function ThankYouClient() {
             )}
             {plan && (
               <div className="flex justify-between">
-                <span className="text-slate-500">First month subscription</span>
-                <span className="font-semibold text-emerald-700">{formatKes(plan.monthlyPrice)}</span>
+                <span className="text-slate-500">First month subscription — launch offer</span>
+                <span className="font-semibold text-emerald-700">{formatKes(plan.introPrice)}</span>
               </div>
             )}
             {subscription?.smsSenderIdPaid && (
@@ -346,7 +346,8 @@ export function ThankYouClient() {
               <p className="text-slate-700">{nextBillingDate}</p>
               {plan && (
                 <p className="mt-1 text-sm text-slate-500">
-                  {formatKes(plan.monthlyPrice)}/month recurring from this date.
+                  {formatKes(plan.introPrice)}/month (launch offer) for your second month, then{" "}
+                  {formatKes(plan.monthlyPrice)}/month from month 3.
                 </p>
               )}
             </div>

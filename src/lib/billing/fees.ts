@@ -26,8 +26,9 @@ export function calculatePaystackFee(subtotalKes: number): number {
 }
 
 /**
- * Calculates the full checkout totals for a given plan + addons.
- * First payment = the first month's standard subscription (no installation fee).
+ * Calculates the full checkout totals for a given plan.
+ * First payment = the first month at the introductory launch rate
+ * (2 months at `introPrice`, then the standard `monthlyPrice`).
  * Processing margin is already included in plan pricing — no separate fee is
  * added to the user-facing total.
  */
@@ -38,7 +39,9 @@ export function calculateCheckoutTotals(
 ): CheckoutTotals {
   const plan = overrides?.plan ?? getPlanConfig(planSlug);
 
-  const firstPayment = plan?.monthlyPrice ?? 0;
+  // First payment is the live intro (launch) price — never hardcoded; it comes
+  // from the effective plan config (defaults + admin overrides from the DB).
+  const firstPayment = plan?.introPrice ?? plan?.monthlyPrice ?? 0;
   const smsSenderIdAmount = addSmsSenderId
     ? (overrides?.smsSenderIdPrice ?? DEFAULT_SMS_SENDER_ID_PRICE)
     : 0;

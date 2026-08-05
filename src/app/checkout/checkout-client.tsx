@@ -4,7 +4,6 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  CheckCircle2,
   Shield,
   Lock,
   Smartphone,
@@ -16,6 +15,7 @@ import {
   Scissors,
   Star,
   MessageCircle,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -40,16 +40,11 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
   const { data: planConfigs } = usePlanConfigs();
   const plan =
     planConfigs.plans[planSlug as Exclude<PlanSlug, "custom">] ?? getPlanConfig(planSlug);
-  const smsSenderIdPrice = planConfigs.smsSenderIdPrice;
   const { enabled: freeTrialEnabled } = useFreeTrialEnabled();
-  const [addSenderId, setAddSenderId] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const totals = calculateCheckoutTotals(planSlug, addSenderId, {
-    plan,
-    smsSenderIdPrice,
-  });
+  const totals = calculateCheckoutTotals(planSlug, false, { plan });
 
   const handleProceed = useCallback(async () => {
     if (loading) return;
@@ -69,7 +64,7 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ planSlug, addSmsSenderId: addSenderId }),
+        body: JSON.stringify({ planSlug }),
       });
 
       const data = await res.json();
@@ -92,7 +87,7 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [loading, planSlug, addSenderId, router]);
+  }, [loading, planSlug, router]);
 
   if (!plan) {
     return (
@@ -172,13 +167,13 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
               <div className="mt-6 grid grid-cols-2 gap-4 rounded-2xl bg-black/20 p-4">
                 <div>
                   <p className="text-xs opacity-70">First payment</p>
-                  <p className="text-2xl font-black">{formatKes(plan.monthlyPrice)}</p>
-                  <p className="text-xs opacity-70">1 month subscription</p>
+                  <p className="text-2xl font-black">{formatKes(plan.introPrice)}</p>
+                  <p className="text-xs opacity-70">1st month — launch offer</p>
                 </div>
                 <div>
                   <p className="text-xs opacity-70">Then every 30 days</p>
                   <p className="text-2xl font-black">{formatKes(plan.monthlyPrice)}</p>
-                  <p className="text-xs opacity-70">/month recurring</p>
+                  <p className="text-xs opacity-70">after your first 2 months</p>
                 </div>
               </div>
             </div>
@@ -186,26 +181,34 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
             {/* Billing timeline */}
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
               <h3 className="mb-3 font-bold text-slate-900">Your billing timeline</h3>
+              <p className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2.5 text-xs font-medium text-amber-800">
+                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <span>
+                  Launch offer: <strong>{formatKes(plan.introPrice)}/month</strong> for your first
+                  two months, then {formatKes(plan.monthlyPrice)}/month.
+                </span>
+              </p>
               <ol className="space-y-3 text-sm">
                 <li className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">1</span>
                   <span>
-                    <strong>Today:</strong> Pay your first month&apos;s subscription of{" "}
-                    <strong>{formatKes(plan.monthlyPrice)}</strong>.
+                    <strong>Today:</strong> Pay your first month at the launch rate of{" "}
+                    <strong>{formatKes(plan.introPrice)}</strong>.
                     Your workspace activates immediately.
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-400 text-[10px] font-bold text-white">2</span>
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">2</span>
                   <span>
-                    <strong>In 30 days:</strong> Your subscription renews at{" "}
-                    <strong>{formatKes(plan.monthlyPrice)}/month</strong>.
+                    <strong>In 30 days:</strong> Your second month renews at the launch rate of{" "}
+                    <strong>{formatKes(plan.introPrice)}</strong> — the offer ends after this.
                   </span>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-400 text-[10px] font-bold text-white">3</span>
                   <span>
-                    <strong>Every 30 days after:</strong> Recurring subscription renewed.
+                    <strong>Every 30 days after:</strong> Your subscription continues at{" "}
+                    <strong>{formatKes(plan.monthlyPrice)}/month</strong>.
                     Cancel anytime from your billing dashboard.
                   </span>
                 </li>
@@ -238,16 +241,23 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                 {/* Line items */}
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-slate-600">First month subscription ({plan.name})</span>
-                    <span className="font-semibold text-slate-900">{formatKes(plan.monthlyPrice)}</span>
+                    <span className="text-slate-600">
+                      First month subscription ({plan.name})
+                      <span className="ml-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        Launch offer
+                      </span>
+                    </span>
+                    <span className="font-semibold text-slate-900">{formatKes(plan.introPrice)}</span>
                   </div>
 
-                  {addSenderId && (
-                    <div className="flex justify-between text-emerald-700">
-                      <span>Custom SMS Sender ID</span>
-                      <span className="font-semibold">{formatKes(smsSenderIdPrice)}</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>Second month (in 30 days) — launch offer</span>
+                    <span className="font-semibold text-emerald-700">{formatKes(plan.introPrice)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>From month 3 — standard rate</span>
+                    <span className="font-semibold text-slate-700">{formatKes(plan.monthlyPrice)}/month</span>
+                  </div>
 
                   <div className="border-t border-slate-200 pt-3">
                     <div className="flex justify-between text-base font-black text-slate-900">
@@ -257,36 +267,10 @@ export function CheckoutClient({ planSlug, trialExpired = false }: Props) {
                   </div>
                 </div>
 
-                {/* Sender ID addon */}
-                <div className="mt-5 rounded-xl border border-slate-200 p-4">
-                  <label className="flex cursor-pointer items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={addSenderId}
-                      onChange={(e) => setAddSenderId(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-emerald-600"
-                    />
-                    <div>
-                      <p className="font-semibold text-slate-900">
-                        Custom SMS Sender ID
-                        <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
-                          One-time
-                        </span>
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Send SMS under your business name instead of a generic code.
-                        Available on all plans. Never billed again after purchase.
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-slate-900">
-                        + {formatKes(smsSenderIdPrice)}
-                      </p>
-                    </div>
-                  </label>
-                </div>
-
                 {/* Renewal note */}
                 <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  Your subscription renews every 30 days at{" "}
+                  Launch offer: <strong className="text-slate-700">{formatKes(plan.introPrice)}/month</strong>{" "}
+                  for your first 2 months, then{" "}
                   <strong className="text-slate-700">{formatKes(plan.monthlyPrice)}/month</strong>.
                   No hidden charges. Cancel anytime.
                 </div>

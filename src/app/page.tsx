@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
+// TODO: re-enable the public chatbot widget when ready
+// import { PublicChatWidget } from "@/modules/ai/components/public-chat-widget";
 import { useRef } from "react";
 import type { ReactNode } from "react";
 
@@ -615,6 +617,8 @@ export default function HomePage() {
   return (
     <MarketingShell>
       <ScrollProgressBar />
+      {/* TODO: re-enable when the public chatbot widget is ready */}
+      {/* <PublicChatWidget /> */}
 
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-white">

@@ -236,9 +236,12 @@ export function StartTrialClient() {
 
                 <div className="mb-4">
                   <span className="text-3xl font-black text-slate-900">
-                    {formatKes(plan.monthlyPrice)}
+                    {formatKes(plan.introPrice)}
                   </span>
                   <span className="text-sm text-slate-400">/month after trial</span>
+                  <p className="mt-1 text-xs font-semibold text-emerald-700">
+                    Launch offer — your first 2 months, then {formatKes(plan.monthlyPrice)}/month
+                  </p>
                 </div>
 
                 <ul className="space-y-2">

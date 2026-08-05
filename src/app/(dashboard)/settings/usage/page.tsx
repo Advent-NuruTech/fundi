@@ -528,16 +528,16 @@ function TopupModal({
             </p>
           </div>
         )}
+      </div>
 
-        <div className="flex gap-3 pt-1">
-          <Button variant="outline" className="flex-1" onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button className="flex-1 gap-2" onClick={onBuy} disabled={!selected || loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Info className="h-4 w-4" />}
-            {loading ? "Redirecting…" : "Pay via Paystack"}
-          </Button>
-        </div>
+      <div className="sticky bottom-0 flex gap-3 border-t border-slate-100 bg-white p-5">
+        <Button variant="outline" className="flex-1" onClick={onClose} disabled={loading}>
+          Cancel
+        </Button>
+        <Button className="flex-1 gap-2" onClick={onBuy} disabled={!selected || loading}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Info className="h-4 w-4" />}
+          {loading ? "Redirecting…" : "Pay via Paystack"}
+        </Button>
       </div>
     </Dialog>
   );

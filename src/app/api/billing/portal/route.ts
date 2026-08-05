@@ -126,7 +126,21 @@ export async function GET(request: Request) {
         getDefaultPlanConfig(subscription.planSlug as PlanSlug)
       : null;
 
-    return NextResponse.json({ subscription, payments, plan, auditLogs });
+    // Launch offer: the first renewal (month 2) bills at the intro rate, then
+    // the standard monthly rate applies from month 3 onwards.
+    let nextRenewalAmount: number | null = null;
+    if (plan) {
+      const { count } = await admin
+        .from("billing_payments")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("payment_type", "renewal")
+        .eq("payment_status", "success");
+      nextRenewalAmount =
+        (count ?? 0) === 0 ? (plan.introPrice ?? plan.monthlyPrice) : plan.monthlyPrice;
+    }
+
+    return NextResponse.json({ subscription, payments, plan, auditLogs, nextRenewalAmount });
   } catch (err) {
     console.error("[billing/portal]", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
