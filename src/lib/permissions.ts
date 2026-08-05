@@ -178,6 +178,9 @@ export function canAccessRoute(profile: UserProfile | null | undefined, pathname
   if (pathname.startsWith("/production")) {
     return hasCapability(profile, "production.read");
   }
+  if (pathname.startsWith("/delivery")) {
+    return hasCapability(profile, "orders.read");
+  }
   if (pathname.startsWith("/employees")) {
     return hasCapability(profile, "team.manage");
   }

@@ -58,6 +58,7 @@ export function OrdersModulePage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [customDate, setCustomDate] = useState<string>("");
+  const [completedTab, setCompletedTab] = useState<"delivered" | "cancelled">("delivered");
 
   useEffect(() => {
     if (!ready) {
@@ -76,12 +77,17 @@ export function OrdersModulePage() {
 
   // Separate active orders from delivered
   const activeOrders = useMemo(
-    () => visibleOrders.filter((order) => order.stage !== "delivered"),
+    () => visibleOrders.filter((order) => order.stage !== "delivered" && !order.isCancelled),
     [visibleOrders]
   );
 
   const deliveredOrders = useMemo(
-    () => visibleOrders.filter((order) => order.stage === "delivered"),
+    () => visibleOrders.filter((order) => order.stage === "delivered" && !order.isCancelled),
+    [visibleOrders]
+  );
+
+  const cancelledOrders = useMemo(
+    () => visibleOrders.filter((order) => order.isCancelled),
     [visibleOrders]
   );
 
@@ -131,8 +137,8 @@ export function OrdersModulePage() {
   );
 
   const summaryData = useMemo(() => {
-    const active = filteredSummaryOrders.filter((order) => order.stage !== "delivered");
-    const delivered = filteredSummaryOrders.filter((order) => order.stage === "delivered");
+    const active = filteredSummaryOrders.filter((order) => order.stage !== "delivered" && !order.isCancelled);
+    const delivered = filteredSummaryOrders.filter((order) => order.stage === "delivered" && !order.isCancelled);
     const totalValue = filteredSummaryOrders.reduce((sum, order) => sum + order.subtotalAmount, 0);
     const paidValue = filteredSummaryOrders.reduce((sum, order) => sum + (order.subtotalAmount - order.balanceAmount), 0);
     
@@ -181,6 +187,36 @@ export function OrdersModulePage() {
           : dateFilter === "year"
             ? "This Year's Summary"
             : "All Time Summary";
+
+  const cancelledColumns = useMemo<ColumnDef<Order>[]>(
+    () => [
+      {
+        header: "Order",
+        cell: ({ row }) => (
+          <Link className="font-medium text-emerald-700" href={`/orders/${row.original.id}`}>
+            {row.original.orderNumber}
+          </Link>
+        ),
+      },
+      { header: "Customer", cell: ({ row }) => row.original.customerName },
+      {
+        header: "Reason",
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600 capitalize">{row.original.cancellationReason || row.original.cancellationBy || "—"}</span>
+        ),
+      },
+      {
+        header: "Refund",
+        cell: ({ row }) => (
+          <Badge variant={row.original.refundStatus === "refunded" ? "success" : "default"}>
+            {(row.original.refundStatus ?? "none").replaceAll("_", " ")}
+          </Badge>
+        ),
+      },
+      { header: "Cancelled", cell: ({ row }) => row.original.cancelledAt?.slice(0, 10) ?? "—" },
+    ],
+    []
+  );
 
   const dateFilters: { value: DateFilter; label: string }[] = [
     { value: "today", label: "Today" },
@@ -316,17 +352,46 @@ export function OrdersModulePage() {
         </CardContent>
       </Card>
 
-      {/* Delivered Orders Table */}
+      {/* Completed Orders Table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Delivered Orders ({deliveredOrders.length})</CardTitle>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <CardTitle>
+              {completedTab === "delivered" ? `Delivered Orders (${deliveredOrders.length})` : `Cancelled Orders (${cancelledOrders.length})`}
+            </CardTitle>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                onClick={() => setCompletedTab("delivered")}
+                className={`px-3 py-1.5 text-xs font-medium transition ${
+                  completedTab === "delivered" ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Delivered
+              </button>
+              <button
+                onClick={() => setCompletedTab("cancelled")}
+                className={`px-3 py-1.5 text-xs font-medium transition ${
+                  completedTab === "cancelled" ? "bg-rose-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Cancelled
+              </button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="pb-4 md:pb-6">
-            <DataTable 
-              columns={columns} 
-              data={filterByDate(deliveredOrders, dateFilter, customDate || undefined)}
-            />
+            {completedTab === "delivered" ? (
+              <DataTable
+                columns={columns}
+                data={filterByDate(deliveredOrders, dateFilter, customDate || undefined)}
+              />
+            ) : (
+              <DataTable
+                columns={cancelledColumns}
+                data={filterByDate(cancelledOrders, dateFilter, customDate || undefined)}
+              />
+            )}
           </div>
         </CardContent>
       </Card>

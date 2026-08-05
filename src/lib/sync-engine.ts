@@ -37,6 +37,9 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   order_members: "order_members",
   order_member_garments: "order_member_garments",
   production_stages: "production_stages",
+  delivery_partners: "delivery_partners",
+  order_returns: "order_returns",
+  order_cancellations: "order_cancellations",
 };
 
 // Child tables keyed by a parent row rather than a business — the sync engine

@@ -70,7 +70,10 @@ export function buildReceiptTotals(order: Order, business: Business): ReceiptTot
   const taxLabel = business.taxLabel?.trim() || "VAT";
 
   // The agreed order amount is the source of truth for what the customer owes.
-  const agreed = order.subtotalAmount ?? 0;
+  // The delivery fee is a SEPARATE billable line: it only exists for delivery
+  // orders (never for pickup), so it is added on top of the goods subtotal.
+  const deliveryFee = order.deliveryMethod === "delivery" ? Number(order.deliveryFee ?? 0) : 0;
+  const agreed = (order.subtotalAmount ?? 0) + deliveryFee;
 
   if (!taxEnabled || taxRate <= 0) {
     return { taxEnabled: false, taxLabel, taxRate, taxMode, subtotal: round2(agreed), tax: 0, total: round2(agreed) };
@@ -95,6 +98,19 @@ export function buildReceiptData(order: Order, business: Business): ReceiptData 
     rate: g.agreedPrice,
     amount: round2(g.agreedPrice * g.quantity),
   }));
+
+  // Delivery fee renders as its own line, and ONLY for delivery orders — pickup
+  // orders get no delivery row and no placeholder at all.
+  const deliveryFee = order.deliveryMethod === "delivery" ? Number(order.deliveryFee ?? 0) : 0;
+  if (deliveryFee > 0) {
+    items.push({
+      name: "Delivery Fee",
+      notes: order.deliveryAddress,
+      quantity: 1,
+      rate: deliveryFee,
+      amount: deliveryFee,
+    });
+  }
 
   return {
     business: {

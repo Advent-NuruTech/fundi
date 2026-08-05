@@ -162,16 +162,19 @@ export function ProductionKanbanModulePage() {
     
     const orderToMove = orders.find(o => o.id === dragOrderId);
     const targetStage = stages.find(s => s.id === stageId);
-    if (orderToMove) {
-      setOrders(prevOrders => 
-        prevOrders.map(o => 
-          o.id === dragOrderId ? { ...o, currentStageId: stageId } : o
-        )
-      );
+    if (!orderToMove) {
+      setIsUpdating(false);
+      setDragOrderId(null);
+      return;
     }
+    setOrders(prevOrders => 
+      prevOrders.map(o => 
+        o.id === dragOrderId ? { ...o, currentStageId: stageId } : o
+      )
+    );
 
     try {
-      const result = await advanceOrderStage(businessId, orderToMove as Order, stageId, {});
+      const result = await advanceOrderStage(businessId, orderToMove, stageId, {});
       if (!result.ok) throw new Error(result.message ?? "Stage not found");
       toast.success(`Order moved to ${targetStage?.name ?? "stage"}`, {
         duration: 2000,
@@ -179,7 +182,7 @@ export function ProductionKanbanModulePage() {
     } catch (error) {
       setOrders(prevOrders => 
         prevOrders.map(o => 
-          o.id === dragOrderId ? { ...o, currentStageId: orderToMove?.currentStageId || undefined } : o
+          o.id === dragOrderId ? { ...o, currentStageId: orderToMove.currentStageId || undefined } : o
         )
       );
       toast.error("Failed to update stage. Please try again.");

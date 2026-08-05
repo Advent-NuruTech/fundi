@@ -2,21 +2,30 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   ChevronDown, ChevronUp, Edit2, Save, X, Plus, Trash2,
   ImageIcon, Package, Scissors, User, FileText, Layers,
   CheckCircle2, Circle, Clock, ArrowLeft, Phone, Mail,
   ClipboardList, Shirt, AlertTriangle, Receipt as ReceiptIcon,
+  Truck, MapPin, RotateCcw, Ban,
 } from "lucide-react";
-import type { Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItemType, ProductionStageConfig } from "@/types/domain";
+import type {
+  Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItemType, ProductionStageConfig,
+  DeliveryPartner, BusinessDeliveryConfig, DeliveryStage, OrderReturn, ReturnStatus,
+} from "@/types/domain";
 import {
   listenOrder, listenCustomer,
   addFittingRecord, updateOrderProductionNotes, recordMaterialUsage,
   listenMaterials, updateOrderSmsFields, logSmsEntry,
   updateOrderDetails, updateOrderGarments, ORDER_TYPE_LABELS,
-  listenProductionStages,
+  listenProductionStages, listenDeliveryPartners, getDeliveryConfig, DEFAULT_RETURN_REASONS,
+  listenOrderReturns, createOrderReturn, updateOrderReturnStatus, deleteOrderReturn,
+  cancelOrder, nextDeliveryStages, DELIVERY_STAGE_LABELS, DELIVERY_STAGE_COLORS,
 } from "@/services/firestore.service";
+import { advanceOrderDelivery } from "@/services/delivery.service";
+import { RETURN_STATUS_LABELS, type RefundStatus } from "@/types/domain";
 import { notifyMaterialsConsumed } from "@/services/notification-catalog";
 import { advanceOrderStage, prepareMessageWithOnboarding } from "@/services/order-progress.service";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
@@ -75,6 +84,17 @@ function stageColor(key: string) {
   };
   return map[key] ?? "bg-slate-400";
 }
+
+const COURIER_FLOW_UI: DeliveryStage[] = [
+  "ready_for_dispatch",
+  "courier_assigned",
+  "picked_up",
+  "in_transit",
+  "delivery_attempted",
+  "delivered",
+];
+
+const PICKUP_FLOW_UI: DeliveryStage[] = ["pickup_ready", "picked_by_customer"];
 
 // ─── collapsible section ───────────────────────────────────────────────────────
 
@@ -249,14 +269,49 @@ export function OrderDetailModulePage() {
   const [expectedReadyDate, setExpectedReadyDate] = useState("");
   const [delayReason, setDelayReason] = useState("");
 
+  // Delivery
+  const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>([]);
+  const [deliveryConfig, setDeliveryConfig] = useState<BusinessDeliveryConfig | null>(null);
+  const [deliveryAdvancing, setDeliveryAdvancing] = useState(false);
+  const [deliveryPartnerId, setDeliveryPartnerId] = useState(order?.deliveryPartnerId ?? "");
+  const [deliveryNotes, setDeliveryNotes] = useState(order?.deliveryNotes ?? "");
+
+  // Returns & alterations
+  const [returns, setReturns] = useState<OrderReturn[]>([]);
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnNotes, setReturnNotes] = useState("");
+  const [returnCharge, setReturnCharge] = useState(0);
+  const [returnExpectedDate, setReturnExpectedDate] = useState("");
+  const [creatingReturn, setCreatingReturn] = useState(false);
+  const [advancingReturnId, setAdvancingReturnId] = useState<string | null>(null);
+
+  // Cancellation
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelNotes, setCancelNotes] = useState("");
+  const [cancelRefundStatus, setCancelRefundStatus] = useState<RefundStatus>("none");
+  const [cancelRefundAmount, setCancelRefundAmount] = useState(0);
+  const [cancelFee, setCancelFee] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+
   // Subscriptions
   useEffect(() => {
     if (!ready || !orderId) return;
     const unsub = listenOrder(businessId, orderId, setOrder);
     const unsubMat = listenMaterials(businessId, setMaterials);
     const unsubStages = listenProductionStages(businessId, setStages);
-    return () => { unsub(); unsubMat(); unsubStages(); };
+    const unsubPartners = listenDeliveryPartners(businessId, setDeliveryPartners);
+    const unsubReturns = listenOrderReturns(businessId, (rows) =>
+      setReturns(rows.filter((r) => r.orderId === orderId))
+    );
+    return () => { unsub(); unsubMat(); unsubStages(); unsubPartners(); unsubReturns(); };
   }, [businessId, orderId, ready]);
+
+  useEffect(() => {
+    if (!ready || !businessId) return;
+    getDeliveryConfig(businessId).then(setDeliveryConfig).catch(() => {});
+  }, [businessId, ready]);
 
   useEffect(() => {
     if (!ready || !order?.customerId || !businessId) return;
@@ -268,6 +323,12 @@ export function OrderDetailModulePage() {
   useEffect(() => {
     if (order?.productionNotes != null) setProductionNotes(order.productionNotes);
   }, [order?.productionNotes]);
+
+  // Sync delivery fields from order
+  useEffect(() => {
+    if (order?.deliveryPartnerId != null) setDeliveryPartnerId(order.deliveryPartnerId);
+    if (order?.deliveryNotes != null) setDeliveryNotes(order.deliveryNotes);
+  }, [order?.deliveryPartnerId, order?.deliveryNotes]);
 
   // Enter edit mode – prime state from current order
   const startEditing = useCallback(() => {
@@ -452,6 +513,134 @@ export function OrderDetailModulePage() {
     }
   };
 
+  // ── delivery / returns / cancellation handlers ───────────────────────────────
+
+  const handleSaveDeliveryDetails = async () => {
+    if (!order || !deliveryConfig) return;
+    setDeliveryAdvancing(true);
+    try {
+      await updateOrderDetails(businessId, orderId, {
+        deliveryMethod: order.deliveryMethod ?? "delivery",
+        deliveryFee: order.deliveryMethod === "delivery" ? (order.deliveryFee ?? 0) : 0,
+        deliveryAddress: order.deliveryAddress ?? "",
+        deliveryPartnerId,
+        deliveryPartnerName: deliveryPartners.find((p) => p.id === deliveryPartnerId)?.name ?? "",
+        deliveryNotes,
+      });
+      toast.success("Delivery details updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update delivery details");
+    } finally {
+      setDeliveryAdvancing(false);
+    }
+  };
+
+  const handleAdvanceDelivery = async (target: DeliveryStage) => {
+    if (!order || deliveryAdvancing) return;
+    setDeliveryAdvancing(true);
+    try {
+      const result = await advanceOrderDelivery(businessId, order, { stage: target });
+      if (result.ok && result.smsSent) toast.success("Stage updated — customer notified via SMS");
+      else if (result.ok) toast.success("Delivery stage updated");
+      else toast.error(result.message ?? "Could not update delivery stage");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update delivery stage");
+    } finally {
+      setDeliveryAdvancing(false);
+    }
+  };
+
+  const handleCreateReturn = async () => {
+    if (!order || !user || creatingReturn) return;
+    if (!returnReason.trim()) {
+      toast.error("Choose a return reason");
+      return;
+    }
+    if (order.deliveryStage !== "delivered" && order.deliveryStage !== "picked_by_customer") {
+      toast.error("Only delivered orders can be returned");
+      return;
+    }
+    const reason = DEFAULT_RETURN_REASONS.find((r) => r.key === returnReason);
+    setCreatingReturn(true);
+    try {
+      await createOrderReturn(businessId, orderId, {
+        reason: returnReason,
+        reasonLabel: reason?.label ?? returnReason,
+        notes: returnNotes,
+        additionalCharge: returnCharge || 0,
+        expectedCompletionDate: returnExpectedDate || null,
+        handledByUid: user.uid,
+        handledByName: user.displayName || "Staff",
+      });
+      setShowReturnForm(false);
+      setReturnReason("");
+      setReturnNotes("");
+      setReturnCharge(0);
+      setReturnExpectedDate("");
+      toast.success("Return initiated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not initiate return");
+    } finally {
+      setCreatingReturn(false);
+    }
+  };
+
+  const handleAdvanceReturn = async (returnId: string, status: ReturnStatus) => {
+    if (!order || advancingReturnId) return;
+    setAdvancingReturnId(returnId);
+    try {
+      await updateOrderReturnStatus(businessId, orderId, returnId, status);
+      toast.success("Return status updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update return status");
+    } finally {
+      setAdvancingReturnId(null);
+    }
+  };
+
+  const handleDeleteReturn = async (returnId: string) => {
+    if (!order) return;
+    try {
+      await deleteOrderReturn(businessId, orderId, returnId);
+      toast.success("Return removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not remove return");
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!order || !user || cancelling) return;
+    if (!cancelReason.trim()) {
+      toast.error("Reason is required to cancel");
+      return;
+    }
+    setCancelling(true);
+    try {
+      await cancelOrder(businessId, orderId, {
+        reason: cancelReason,
+        reasonLabel: cancelReason,
+        notes: cancelNotes,
+        cancelledBy: "customer",
+        actorUid: user.uid,
+        actorName: user.displayName || "Staff",
+        refundStatus: cancelRefundStatus,
+        refundAmount: cancelRefundStatus === "none" ? 0 : cancelRefundAmount || order.amountPaid,
+        cancellationFee: cancelFee || 0,
+      });
+      setShowCancelDialog(false);
+      setCancelReason("");
+      setCancelNotes("");
+      setCancelRefundStatus("none");
+      setCancelRefundAmount(0);
+      setCancelFee(0);
+      toast.success("Order cancelled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not cancel order");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   // ── render guards ────────────────────────────────────────────────────────────
 
   if (!ready || !order) {
@@ -506,15 +695,171 @@ export function OrderDetailModulePage() {
         </Dialog>
       )}
 
+      {/* Start return dialog */}
+      {showReturnForm && (
+        <Dialog open={showReturnForm} onClose={() => setShowReturnForm(false)} className="max-w-lg">
+          <div className="p-5 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Start Return</h3>
+              <p className="text-sm text-slate-500 mt-0.5">Begin an alteration / remake cycle on this delivered order.</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Reason</label>
+              <select
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Select a reason…</option>
+                {DEFAULT_RETURN_REASONS.map((r) => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Notes</label>
+              <Textarea
+                value={returnNotes}
+                onChange={(e) => setReturnNotes(e.target.value)}
+                rows={2}
+                placeholder="What needs fixing? Any customer context…"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Additional Charge (KES)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={returnCharge || ""}
+                  onChange={(e) => setReturnCharge(Number(e.target.value))}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Expected Ready Date</label>
+                <Input
+                  type="date"
+                  value={returnExpectedDate}
+                  onChange={(e) => setReturnExpectedDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button className="flex-1" disabled={creatingReturn} onClick={handleCreateReturn}>
+                <RotateCcw className="h-4 w-4 mr-1.5" />
+                {creatingReturn ? "Starting…" : "Start Return"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowReturnForm(false)} disabled={creatingReturn}>
+                <X className="h-4 w-4 mr-1.5" /> Cancel
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Cancel order dialog */}
+      {showCancelDialog && (
+        <Dialog open={showCancelDialog} onClose={() => setShowCancelDialog(false)} className="max-w-lg">
+          <div className="p-5 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Cancel Order {order.orderNumber}</h3>
+              <p className="text-sm text-slate-500 mt-0.5">
+                The order is never deleted. A cancellation record is kept for audit.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Reason *</label>
+              <Input
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="e.g. Customer changed their mind"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Notes</label>
+              <Textarea
+                value={cancelNotes}
+                onChange={(e) => setCancelNotes(e.target.value)}
+                rows={2}
+                placeholder="Additional context…"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Refund</label>
+              <div className="flex gap-2">
+                {(["none", "pending", "refunded"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setCancelRefundStatus(s)}
+                    className={cn(
+                      "flex-1 rounded-lg border px-3 py-2 text-sm font-medium capitalize transition-colors",
+                      cancelRefundStatus === s
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    )}
+                  >
+                    {s === "none" ? "No refund" : s === "pending" ? "Refund pending" : "Refunded"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {cancelRefundStatus !== "none" && (
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Refund Amount (KES)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={cancelRefundAmount || ""}
+                  onChange={(e) => setCancelRefundAmount(Number(e.target.value))}
+                  placeholder={String(order.amountPaid)}
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Paid so far: {formatKes(order.amountPaid)}</p>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Cancellation Fee (KES)</label>
+              <Input
+                type="number"
+                min={0}
+                value={cancelFee || ""}
+                onChange={(e) => setCancelFee(Number(e.target.value))}
+                placeholder="0"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">If charged, the fee becomes the new outstanding balance.</p>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button className="flex-1" variant="danger" disabled={cancelling} onClick={handleCancelOrder}>
+                <Ban className="h-4 w-4 mr-1.5" />
+                {cancelling ? "Cancelling…" : "Cancel Order"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowCancelDialog(false)} disabled={cancelling}>
+                <X className="h-4 w-4 mr-1.5" /> Keep Order
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
       <div className="space-y-4 pb-10">
         {/* ── Page Header ── */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
-              <a href="/orders" className="flex items-center gap-1 hover:text-slate-700 transition-colors">
+              <Link href="/orders" className="flex items-center gap-1 hover:text-slate-700 transition-colors">
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Orders
-              </a>
+              </Link>
               <span>/</span>
               <span className="text-slate-700 font-medium truncate">{order.orderNumber}</span>
             </div>
@@ -531,6 +876,20 @@ export function OrderDetailModulePage() {
               <ReceiptIcon className="h-3.5 w-3.5" />
               Receipt
             </button>
+            {!order.isCancelled && order.deliveryStage !== "delivered" && order.deliveryStage !== "picked_by_customer" && (
+              <button
+                onClick={() => setShowCancelDialog(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                Cancel Order
+              </button>
+            )}
+            {order.isCancelled && (
+              <span className="inline-flex items-center rounded-full border border-rose-300 bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
+                <Ban className="h-3 w-3 mr-1" /> Cancelled
+              </span>
+            )}
             <Badge className={cn("capitalize text-white border-0", stageColor(order.stage))}>
               {order.stage.replaceAll("_", " ")}
             </Badge>
@@ -784,6 +1143,219 @@ export function OrderDetailModulePage() {
                   </div>
                 </div>
               )}
+            </Section>
+
+            {/* DELIVERY */}
+            <Section
+              title="Delivery"
+              icon={<Truck className="h-4 w-4" />}
+              count={order.deliveryTimeline?.length ?? 0}
+              defaultOpen
+            >
+              {order.isCancelled ? (
+                <p className="text-sm text-slate-500">This order was cancelled.</p>
+              ) : (
+                <div className="space-y-4">
+                  {/* fulfilment summary */}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Fulfilment</p>
+                      {order.deliveryMethod === "delivery" ? (
+                        <p className="text-sm font-semibold text-slate-800">
+                          Home Delivery
+                          {order.deliveryFee ? ` · ${formatKes(order.deliveryFee)}` : " · Free"}
+                        </p>
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-800">Customer Pickup</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Courier / Partner</p>
+                      <p className="text-sm text-slate-700">
+                        {order.deliveryPartnerName || (order.deliveryMethod === "delivery" ? "Not assigned" : "—")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {order.deliveryMethod === "delivery" && order.deliveryAddress && (
+                    <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
+                      <MapPin className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+                      <p className="text-sm text-slate-600">{order.deliveryAddress}</p>
+                    </div>
+                  )}
+
+                  {/* stage progress */}
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Progress</p>
+                    <div className="space-y-1.5">
+                      {(order.deliveryMethod === "delivery" ? COURIER_FLOW_UI : PICKUP_FLOW_UI).map((s) => {
+                        const idx = (order.deliveryMethod === "delivery" ? COURIER_FLOW_UI : PICKUP_FLOW_UI).indexOf(s);
+                        const currentIdx = (order.deliveryMethod === "delivery" ? COURIER_FLOW_UI : PICKUP_FLOW_UI).indexOf(order.deliveryStage ?? "pending");
+                        const isDone = order.deliveryStage === s || (currentIdx > idx && currentIdx !== -1);
+                        const isCurrent = order.deliveryStage === s;
+                        const next = nextDeliveryStages(order.deliveryStage ?? "pending", order.deliveryMethod ?? "delivery");
+                        return (
+                          <div key={s} className="flex items-center gap-2">
+                            <span className={cn("h-2 w-2 rounded-full shrink-0", isDone ? DELIVERY_STAGE_COLORS[s] : "bg-slate-200")} />
+                            <span className={cn("text-sm flex-1", isCurrent ? "font-semibold text-slate-900" : isDone ? "text-slate-700" : "text-slate-400")}>
+                              {DELIVERY_STAGE_LABELS[s]}
+                            </span>
+                            {isCurrent && next.length > 0 && (
+                              <button
+                                onClick={() => handleAdvanceDelivery(next[0])}
+                                disabled={deliveryAdvancing}
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                              >
+                                {deliveryAdvancing ? "Updating…" : `Move to ${DELIVERY_STAGE_LABELS[next[0]]}`}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {(order.deliveryStage === "delivered" || order.deliveryStage === "picked_by_customer") && (
+                        <p className="text-xs text-emerald-600 font-medium mt-1">
+                          ✓ Delivered {order.deliveredAt ? new Date(order.deliveredAt).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* assign partner + notes */}
+                  {order.deliveryMethod === "delivery" && (
+                    <div className="space-y-2 pt-1 border-t border-slate-100">
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 mb-1 block">Assign Courier / Partner</label>
+                        <SearchableSelect
+                          options={deliveryPartners
+                            .filter((p) => p.isActive)
+                            .map((p) => ({ value: p.id, label: p.name }))}
+                          value={deliveryPartnerId}
+                          onChange={setDeliveryPartnerId}
+                          placeholder="Select partner"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 mb-1 block">Delivery Notes</label>
+                        <Textarea
+                          value={deliveryNotes}
+                          onChange={(e) => setDeliveryNotes(e.target.value)}
+                          rows={2}
+                          placeholder="Handover instructions, gate access, preferred time…"
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={deliveryAdvancing}
+                        onClick={handleSaveDeliveryDetails}
+                      >
+                        <Save className="h-3.5 w-3.5 mr-1.5" /> Save Delivery Details
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Section>
+
+            {/* RETURNS & ALTERATIONS */}
+            <Section
+              title="Returns & Alterations"
+              icon={<RotateCcw className="h-4 w-4" />}
+              count={returns.length}
+            >
+              <div className="space-y-3">
+                {(order.deliveryStage === "delivered" || order.deliveryStage === "picked_by_customer") && !order.isCancelled && (
+                  <Button size="sm" onClick={() => setShowReturnForm(true)}>
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Start Return
+                  </Button>
+                )}
+
+                {returns.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    {order.deliveryStage === "delivered" || order.deliveryStage === "picked_by_customer"
+                      ? "No returns yet. Return the order to start an alteration or remake cycle."
+                      : "Returns are available once the order is delivered."}
+                  </p>
+                ) : (
+                  returns.map((r) => (
+                    <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{r.reasonLabel || r.reason}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {new Date(r.returnedAt).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}
+                            {r.handledByName ? ` · by ${r.handledByName}` : ""}
+                          </p>
+                        </div>
+                        <Badge className={cn("text-[10px] capitalize border-0", r.status === "completed" ? "bg-green-600" : r.status === "returned" ? "bg-amber-500" : "bg-sky-500")}>
+                          {RETURN_STATUS_LABELS[r.status]}
+                        </Badge>
+                      </div>
+
+                      {r.notes && <p className="text-sm text-slate-600 whitespace-pre-line bg-slate-50 rounded-lg px-2.5 py-1.5">{r.notes}</p>}
+
+                      {r.additionalCharge > 0 && (
+                        <p className="text-xs text-slate-600">Additional charge: <span className="font-semibold text-slate-800">{formatKes(r.additionalCharge)}</span></p>
+                      )}
+                      {r.expectedCompletionDate && (
+                        <p className="text-xs text-slate-500">Expected ready: {new Date(r.expectedCompletionDate).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}</p>
+                      )}
+
+                      {r.status !== "completed" && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={advancingReturnId === r.id}
+                            onClick={() => handleAdvanceReturn(r.id, "inspection")}
+                          >
+                            Inspect
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={advancingReturnId === r.id}
+                            onClick={() => handleAdvanceReturn(r.id, "alteration")}
+                          >
+                            Alter / Remake
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={advancingReturnId === r.id}
+                            onClick={() => handleAdvanceReturn(r.id, "quality_check")}
+                          >
+                            Quality Check
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={advancingReturnId === r.id}
+                            onClick={() => handleAdvanceReturn(r.id, "ready_for_pickup")}
+                          >
+                            Ready
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={advancingReturnId === r.id}
+                            onClick={() => handleAdvanceReturn(r.id, "completed")}
+                          >
+                            Completed
+                          </Button>
+                          <button
+                            onClick={() => handleDeleteReturn(r.id)}
+                            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                            title="Remove return"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
             </Section>
 
             {/* CUSTOMER INFO */}

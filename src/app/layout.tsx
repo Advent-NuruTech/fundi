@@ -130,9 +130,9 @@ const organizationJsonLd = {
   description: DESCRIPTION,
   sameAs: [
     // TODO: replace with FundiFlow's real social profile URLs (remove any that don't exist)
-    "https://www.facebook.com/fundiflow",
-    "https://www.instagram.com/fundiflow",
-    "https://www.linkedin.com/company/fundiflow",
+    //"https://www.facebook.com/fundiflow",
+   // "https://www.instagram.com/fundiflow",
+    //"https://www.linkedin.com/company/fundiflow",
   ],
   contactPoint: {
     "@type": "ContactPoint",

@@ -4,6 +4,8 @@ import {
   setOrderStageProgress,
   logSmsEntry,
   updateOrderSmsFields,
+  setOrderDeliveryStage,
+  getDeliveryConfig,
 } from "@/lib/supabase.service";
 import type { Order, StageMilestone } from "@/types/domain";
 import { notifyOrderCompleted, notifyOrderStageChanged } from "@/services/notification-catalog";
@@ -156,6 +158,36 @@ export async function advanceOrderStage(
 
   await setOrderStageProgress(businessId, order.id, progress);
 
+  // ── Delivery workflow hand-off ───────────────────────────────────────────
+  // Production completing hands the order into the delivery workflow. The
+  // ready_for_pickup milestone opens the dispatch / pickup branch, and the
+  // delivered milestone terminates it. Only when delivery hasn't started yet
+  // (or was never auto-completed at creation).
+  try {
+    const currentDelivery = order.deliveryStage ?? "pending";
+    if (target.milestone === "ready_for_pickup" && currentDelivery === "pending") {
+      const config = await getDeliveryConfig(businessId);
+      const method = order.deliveryMethod ?? config?.defaultMethod ?? "delivery";
+      await setOrderDeliveryStage(businessId, order.id, {
+        stage: method === "pickup" ? "pickup_ready" : "ready_for_dispatch",
+        byUid: options.actorUid,
+      });
+    } else if (
+      target.milestone === "delivered" &&
+      currentDelivery !== "delivered" &&
+      currentDelivery !== "picked_by_customer"
+    ) {
+      const config = await getDeliveryConfig(businessId);
+      const method = order.deliveryMethod ?? config?.defaultMethod ?? "delivery";
+      await setOrderDeliveryStage(businessId, order.id, {
+        stage: method === "pickup" ? "picked_by_customer" : "delivered",
+        byUid: options.actorUid,
+      });
+    }
+  } catch {
+    // Delivery hand-off is best-effort — production progress is already saved.
+  }
+
   if (options.sendNotifications !== false) {
     if (target.milestone === "delivered") {
       await notifyOrderCompleted(businessId, order.orderNumber, order.customerName, order.id, options.actorUid);
@@ -167,7 +199,8 @@ export async function advanceOrderStage(
   let smsSent = false;
   const wantsPickupSms =
     target.milestone === "ready_for_pickup" && !order.readyPickupSmsSent && !options.suppressPickupSms;
-  const wantsStageSms = target.notifyCustomer && target.milestone !== "ready_for_pickup";
+  const wantsStageSms =
+    target.notifyCustomer && target.milestone !== "ready_for_pickup" && target.milestone !== "delivered";
 
   if (options.sendCustomerSms !== false && order.customerPhone && (wantsPickupSms || wantsStageSms)) {
     smsSent = await sendStageSms({

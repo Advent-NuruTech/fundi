@@ -29,37 +29,36 @@ import {
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { DashboardPreview } from "@/components/marketing/dashboard-preview";
-import { PublicChatWidget } from "@/modules/ai/components/public-chat-widget";
-import { useFreeTrialEnabled } from "@/hooks/useFreeTrialEnabled";
-import { useRef, useEffect, useState, type ReactNode } from "react";
-
-const EASE_CUBIC = [0.22, 1, 0.36, 1] as const;
+import { useRef } from "react";
+import type { ReactNode } from "react";
 
 // ─── Animation Variants ───────────────────────────────────────────────────────
 
+const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 const fadeInUp = {
   hidden: { opacity: 0, y: 40 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE_CUBIC } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE } },
 };
 
 const fadeInDown = {
   hidden: { opacity: 0, y: -30 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE_CUBIC } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE } },
 };
 
 const fadeInLeft = {
   hidden: { opacity: 0, x: -50 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE_CUBIC } },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE } },
 };
 
 const fadeInRight = {
   hidden: { opacity: 0, x: 50 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE_CUBIC } },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: EASE } },
 };
 
 const scaleIn = {
   hidden: { opacity: 0, scale: 0.85 },
-  visible: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: EASE_CUBIC } },
+  visible: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: EASE } },
 };
 
 const staggerContainer = {
@@ -78,7 +77,7 @@ const staggerItem = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.55, ease: EASE_CUBIC },
+    transition: { duration: 0.55, ease: EASE },
   },
 };
 
@@ -95,8 +94,8 @@ function AnimatedSection({
   delay?: number;
   direction?: "up" | "down" | "left" | "right" | "scale";
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { margin: "-80px", once: true, amount: 0.15 });
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(sectionRef, { margin: "-80px", once: true, amount: 0.15 });
   const variants =
     direction === "left"
       ? fadeInLeft
@@ -110,9 +109,9 @@ function AnimatedSection({
 
   return (
     <motion.div
-      ref={ref}
+      ref={sectionRef}
       initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
+      animate={inView ? "visible" : "hidden"}
       variants={variants}
       transition={{ delay, ...variants.visible.transition }}
       className={className}
@@ -129,13 +128,13 @@ function StaggerContainer({
   children: ReactNode;
   className?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { margin: "-60px", once: true, amount: 0.1 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(containerRef, { margin: "-60px", once: true, amount: 0.1 });
   return (
     <motion.div
-      ref={ref}
+      ref={containerRef}
       initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
+      animate={inView ? "visible" : "hidden"}
       variants={staggerContainer}
       className={className}
     >
@@ -155,20 +154,18 @@ function StaggerChild({ children, className = "" }: { children: ReactNode; class
 // ─── Animated Counter ─────────────────────────────────────────────────────────
 
 function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-50px" });
+  const counterRef = useRef<HTMLSpanElement>(null);
+  const inView = useInView(counterRef, { once: true, margin: "-50px" });
   const motionValue = useMotionValue(0);
   const springValue = useSpring(motionValue, { damping: 40, stiffness: 80 });
   const displayValue = useTransform(springValue, (v) => `${prefix}${Math.round(v).toLocaleString()}${suffix}`);
 
-  useEffect(() => {
-    if (isInView) {
-      motionValue.set(value);
-    }
-  }, [isInView, value, motionValue]);
+  if (inView) {
+    motionValue.set(value);
+  }
 
   return (
-    <motion.span ref={ref}>
+    <motion.span ref={counterRef}>
       {displayValue}
     </motion.span>
   );
@@ -181,7 +178,7 @@ function FloatingBadge({ children, delay = 0 }: { children: ReactNode; delay?: n
     <motion.span
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.6, ease: EASE_CUBIC }}
+      transition={{ delay, duration: 0.6, ease: EASE }}
       whileHover={{ y: -3, transition: { duration: 0.2 } }}
     >
       {children}
@@ -192,8 +189,6 @@ function FloatingBadge({ children, delay = 0 }: { children: ReactNode; delay?: n
 // ─── Magnetic Button Effect ───────────────────────────────────────────────────
 
 function MagneticButton({ children, className = "", ...props }: any) {
-  const ref = useRef<HTMLAnchorElement>(null);
-  useInView(ref, { once: true });
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const springX = useSpring(x, { stiffness: 150, damping: 15 });
@@ -214,7 +209,6 @@ function MagneticButton({ children, className = "", ...props }: any) {
 
   return (
     <motion.a
-      ref={ref}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{ x: springX, y: springY }}
@@ -365,8 +359,8 @@ const MARKETPLACE_PRODUCTS = [
 
 const PRICING_PLANS = [
   { name: "Sindano", swahili: "The Needle", price: "690", color: "border-slate-200", badge: null },
-  { name: "Fundi", swahili: "The Craftsman", price: "3,399", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
-  { name: "Dhahabu", swahili: "Golden Standard", price: "8,999", color: "border-slate-200", badge: null },
+  { name: "Fundi", swahili: "The Craftsman", price: "3,690", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
+  { name: "Dhahabu", swahili: "Golden Standard", price: "9,990", color: "border-slate-200", badge: null },
 ];
 
 // ─── Hero Dashboard with Animations ───────────────────────────────────────────
@@ -383,7 +377,7 @@ function HeroDashboard() {
     <motion.div
       initial={{ opacity: 0, scale: 0.92, y: 30 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.9, delay: 0.3, ease: EASE_CUBIC }}
+      transition={{ duration: 0.9, delay: 0.3, ease: EASE }}
       className="relative hidden lg:block"
     >
       <motion.div
@@ -515,7 +509,7 @@ function MarketplacePreview() {
       initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
-      transition={{ duration: 0.7, ease: EASE_CUBIC }}
+      transition={{ duration: 0.7, ease: EASE }}
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
     >
       <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
@@ -618,44 +612,6 @@ function ParallaxHeroBg() {
 // ─── Main Page Component ──────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const [displayText, setDisplayText] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [loopIndex, setLoopIndex] = useState(0);
-  const [typingSpeed, setTypingSpeed] = useState(80);
-  const { enabled: freeTrialEnabled } = useFreeTrialEnabled();
-  const words = [
-    "Track customer measurements & orders",
-    "Manage fabric & ready-made inventory",
-    "Automate SMS pickup & delay reminders",
-    "Manage staff payouts & performance",
-    "Get real-time business reports",
-    "Unlock AI-powered insights",
-    "only in fundiflow ",
-  ];
-
-  useEffect(() => {
-    const handleTyping = () => {      const currentWord = words[loopIndex % words.length];
-      if (!isDeleting) {
-        setDisplayText(currentWord.substring(0, displayText.length + 1));
-        setTypingSpeed(80);
-        if (displayText.length === currentWord.length) {
-          setTypingSpeed(2000);
-          setIsDeleting(true);
-        }
-      } else {
-        setDisplayText(currentWord.substring(0, displayText.length - 1));
-        setTypingSpeed(40);
-        if (displayText.length === 0) {
-          setIsDeleting(false);
-          setLoopIndex((prev) => prev + 1);
-          setTypingSpeed(80);
-        }
-      }
-    };
-    const timer = setTimeout(handleTyping, typingSpeed);
-    return () => clearTimeout(timer);
-  }, [displayText, isDeleting, loopIndex, typingSpeed, words]);
-
   return (
     <MarketingShell>
       <ScrollProgressBar />
@@ -676,25 +632,10 @@ export default function HomePage() {
         <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
-              {/* Typing animation (register page colors) */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.15, ease: EASE_CUBIC }}
-                className="mb-1 min-h-[40px] flex items-center justify-center"
-              >
-                <div className="text-base text-slate-300 font-mono text-center">
-                  <span className="inline-block bg-gradient-to-r from-emerald-600 to-amber-600 bg-clip-text text-transparent font-medium">
-                    {displayText}
-                  </span>
-                  <span className="inline-block w-[2px] h-5 bg-emerald-500 ml-0.5 animate-pulse align-text-bottom"></span>
-                </div>
-              </motion.div>
-
               <motion.h1
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.25, ease: EASE_CUBIC }}
+                transition={{ duration: 0.7, ease: EASE }}
                 className="mb-5 text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl"
               >
                 The Complete{" "}
@@ -707,7 +648,7 @@ export default function HomePage() {
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.35, ease: EASE_CUBIC }}
+                transition={{ duration: 0.7, delay: 0.15, ease: EASE }}
                 className="mb-4 text-lg leading-relaxed text-slate-300"
               >
                 Manage customers, measurements, orders, inventory, finances, staff and communications from{" "}
@@ -718,7 +659,7 @@ export default function HomePage() {
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.45, ease: EASE_CUBIC }}
+                transition={{ duration: 0.7, delay: 0.25, ease: EASE }}
                 className="mb-8 flex items-center gap-2 text-sm font-medium text-emerald-300"
               >
                 <motion.span
@@ -733,14 +674,14 @@ export default function HomePage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.55 }}
+                transition={{ duration: 0.7, delay: 0.35 }}
                 className="flex flex-col items-start gap-4 sm:flex-row"
               >
                 <MagneticButton
                   href="/register"
                   className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400"
                 >
-                  Get Started{freeTrialEnabled ? " Free Trial" : ""}
+                  Get Started Free Trial
                   <motion.span
                     animate={{ x: [0, 5, 0] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
@@ -814,8 +755,7 @@ export default function HomePage() {
               Built for Tailors. Designed for Growth.
             </p>
             <p className="text-sm text-emerald-700">
-              Plans starting at <strong>KES 690 / month</strong>
-              {freeTrialEnabled && <> — Start free with a 14-day trial</>}
+              Plans starting at <strong>KES 690 / month</strong> — Installation from KES 5,000
             </p>
             <Link
               href="/pricing"
@@ -1090,14 +1030,16 @@ export default function HomePage() {
               <AnimatedSection direction="left" delay={0.3}>
                 <div className="flex flex-wrap gap-3">
                   <MagneticButton
-                    href="/globalsell"
+                      //have disabled link to global seel for now untill thre are goods there. link href="/globalsell"
+                    href="#"
                     className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-400"
                   >
                     <Globe className="h-4 w-4" />
                     Shop the Marketplace
                   </MagneticButton>
                   <MagneticButton
-                    href="/register"
+                  //href="/register"
+                    href="#"
                     className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
                   >
                     <Store className="h-4 w-4" />
@@ -1633,8 +1575,6 @@ export default function HomePage() {
           </AnimatedSection>
         </div>
       </section>
-
-      <PublicChatWidget />
     </MarketingShell>
   );
 }

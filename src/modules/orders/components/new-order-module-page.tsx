@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import type { Customer, InventoryMaterial, UserProfile } from "@/types/domain";
+import type { Customer, InventoryMaterial, UserProfile, DeliveryPartner, DeliveryMethod, BusinessDeliveryConfig } from "@/types/domain";
 import type { OrderItemType } from "@/types/domain";
 import type { OrderItemInput } from "@/services/firestore.service";
 import { newOrderSchema, type NewOrderInput, type NewOrderValues } from "@/schemas/order.schema";
@@ -17,6 +17,8 @@ import {
   fetchMembers,
   listenCustomers,
   listenMaterials,
+  listenDeliveryPartners,
+  getDeliveryConfig,
 } from "@/services/firestore.service";
 import { uploadImage } from "@/services/cloudinary/upload.service";
 import { notifyNewOrder } from "@/services/notification-catalog";
@@ -33,7 +35,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Ruler, Users } from "lucide-react";
+import { Plus, Trash2, Ruler, Users, Truck } from "lucide-react";
 import { formatKes } from "@/lib/utils";
 
 const ITEM_TYPE_LABELS: Record<OrderItemType, string> = {
@@ -135,6 +137,13 @@ export function NewOrderModulePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [items, setItems] = useState<DraftOrderItem[]>([]);
   const [memberRows, setMemberRows] = useState<MemberRow[]>([]);
+  const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>([]);
+  const [deliveryConfig, setDeliveryConfig] = useState<BusinessDeliveryConfig | null>(null);
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("delivery");
+  const [deliveryFee, setDeliveryFee] = useState<number>(0);
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryPartnerId, setDeliveryPartnerId] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
 
   const { register, handleSubmit, formState, watch } = useForm<NewOrderInput, undefined, NewOrderValues>({
     resolver: zodResolver(newOrderSchema),
@@ -158,10 +167,19 @@ export function NewOrderModulePage() {
     if (!ready) return;
     const unsubCustomers = listenCustomers(businessId, setCustomers);
     const unsubMaterials = listenMaterials(businessId, setMaterials);
+    const unsubPartners = listenDeliveryPartners(businessId, setDeliveryPartners);
+    getDeliveryConfig(businessId).then((config) => {
+      if (config) {
+        setDeliveryConfig(config);
+        setDeliveryMethod(config.defaultMethod ?? "delivery");
+        setDeliveryFee(config.defaultDeliveryFee ?? 0);
+      }
+    }).catch(() => {});
     fetchMembers(businessId).then((rows) => setTailors(rows.filter((member) => member.active !== false)));
     return () => {
       unsubCustomers();
       unsubMaterials();
+      unsubPartners();
     };
   }, [businessId, ready]);
 
@@ -467,6 +485,15 @@ export function NewOrderModulePage() {
           subtotalAmount: isGroup ? memberSubtotal : itemSubtotal,
           isGroupOrder: isGroup,
           members,
+          deliveryMethod,
+          deliveryFee: deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0,
+          deliveryAddress: deliveryMethod === "delivery" ? deliveryAddress.trim() || undefined : undefined,
+          deliveryPartnerId: deliveryMethod === "delivery" && deliveryPartnerId ? deliveryPartnerId : undefined,
+          deliveryPartnerName:
+            deliveryMethod === "delivery" && deliveryPartnerId
+              ? deliveryPartners.find((p) => p.id === deliveryPartnerId)?.name ?? undefined
+              : undefined,
+          deliveryNotes: deliveryNotes.trim() || undefined,
         },
         Number(values.depositAmount) || 0,
         {
@@ -876,10 +903,102 @@ export function NewOrderModulePage() {
         </Card>
       )}
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Truck className="h-5 w-5" /> Delivery
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div>
+            <Label>How will the customer get this order?</Label>
+            <Select
+              value={deliveryMethod}
+              onChange={(e) => {
+                const next = e.target.value as DeliveryMethod;
+                setDeliveryMethod(next);
+                if (next === "pickup") {
+                  setDeliveryFee(0);
+                  setDeliveryAddress("");
+                  setDeliveryPartnerId("");
+                }
+              }}
+            >
+              <option value="delivery">Courier delivery</option>
+              <option value="pickup">Customer pickup</option>
+            </Select>
+            <p className="mt-1.5 text-xs text-slate-500">
+              {deliveryMethod === "pickup"
+                ? "No delivery fee is charged and none appears on the receipt."
+                : "A separate delivery fee line is added to the order and receipt."}
+            </p>
+          </div>
+          {deliveryMethod === "delivery" && (
+            <>
+              <div>
+                <Label>Delivery fee (KES)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(Number(e.target.value))}
+                  placeholder={deliveryConfig?.defaultDeliveryFee ? String(deliveryConfig.defaultDeliveryFee) : "0"}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label>Delivery address</Label>
+                <Textarea
+                  rows={2}
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  placeholder="e.g. Plot 12, Moi Avenue, Nairobi"
+                />
+              </div>
+              <div>
+                <Label>Assign courier</Label>
+                <Select value={deliveryPartnerId} onChange={(e) => setDeliveryPartnerId(e.target.value)}>
+                  <option value="">Assign later</option>
+                  {deliveryPartners
+                    .filter((p) => p.isActive)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.company ? ` — ${p.company}` : ""}
+                        {p.phone ? ` (${p.phone})` : ""}
+                      </option>
+                    ))}
+                </Select>
+                {deliveryPartners.filter((p) => p.isActive).length === 0 && (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    No couriers yet — assign one later from the order or Delivery settings.
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Delivery notes (optional)</Label>
+                <Input
+                  value={deliveryNotes}
+                  onChange={(e) => setDeliveryNotes(e.target.value)}
+                  placeholder="e.g. Call customer on arrival"
+                />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-end gap-3">
-        <p className="text-lg font-semibold text-slate-900">
-          Total: {formatKes(isGroupOrder ? memberSubtotal : itemSubtotal)}
-        </p>
+        <div className="text-right">
+          <p className="text-lg font-semibold text-slate-900">
+            Total: {formatKes((isGroupOrder ? memberSubtotal : itemSubtotal) + (deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0))}
+          </p>
+          {deliveryMethod === "delivery" && Number(deliveryFee) > 0 && (
+            <p className="text-xs text-slate-500">
+              includes {formatKes(Number(deliveryFee))} delivery fee
+            </p>
+          )}
+        </div>
         <Button onClick={handleSubmit(onSubmit)} disabled={formState.isSubmitting}>
           {formState.isSubmitting ? "Saving..." : "Create order"}
         </Button>

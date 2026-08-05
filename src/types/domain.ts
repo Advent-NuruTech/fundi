@@ -19,6 +19,161 @@ export type DeliveryStatus = "pending" | "ready" | "picked";
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 export type PaymentMethod = "cash" | "mpesa";
 
+/** How an order reaches the customer. */
+export type DeliveryMethod = "delivery" | "pickup";
+
+/**
+ * Order-level delivery workflow, tracked independently of the production
+ * pipeline. Production reaches completion → the order enters the delivery
+ * workflow → it ends in a terminal state ("delivered" or "picked_by_customer").
+ */
+export type DeliveryStage =
+  /** Still in production — delivery not started yet. */
+  | "pending"
+  /** Production complete, packed, waiting for courier assignment. */
+  | "ready_for_dispatch"
+  /** A delivery partner has been assigned to the order. */
+  | "courier_assigned"
+  /** The courier collected the order from the business. */
+  | "picked_up"
+  /** The courier is delivering the order. */
+  | "in_transit"
+  /** Delivery could not be completed (customer unavailable, wrong address…). */
+  | "delivery_attempted"
+  /** Terminal — order delivered by courier/own rider. */
+  | "delivered"
+  /** Production complete, awaiting customer collection at the shop. */
+  | "pickup_ready"
+  /** Terminal — customer collected the order from the shop. */
+  | "picked_by_customer";
+
+/** One event on an order's delivery timeline (full traceability). */
+export interface DeliveryTimelineEntry {
+  stage: DeliveryStage;
+  label: string;
+  at: string;
+  by?: string;
+  note?: string;
+}
+
+/** A rider / courier company a business can assign to orders. */
+export interface DeliveryPartner {
+  id: string;
+  businessId: string;
+  name: string;
+  phone: string;
+  company?: string;
+  vehicleType?: string;
+  registrationNumber?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Per-business delivery policy. Stored as jsonb on businesses.delivery_config. */
+export interface BusinessDeliveryConfig {
+  /** Master switch — when off, orders default to customer pickup. */
+  enabled: boolean;
+  /** Default fulfilment method for new orders. */
+  defaultMethod: DeliveryMethod;
+  /** Default delivery fee for new orders (KES). */
+  defaultDeliveryFee: number;
+  /** Orders whose goods total is above this get free delivery (optional). */
+  freeDeliveryAbove?: number | null;
+  /** Ready-made, no-alteration orders are marked delivered automatically. */
+  autoDeliverReadyMade: boolean;
+  /** Per-milestone customer SMS toggles for the delivery workflow. */
+  sms: {
+    dispatch: boolean;
+    assign: boolean;
+    pickup: boolean;
+    transit: boolean;
+    attempt: boolean;
+    delivered: boolean;
+  };
+}
+
+export const DEFAULT_DELIVERY_CONFIG: BusinessDeliveryConfig = {
+  enabled: true,
+  defaultMethod: "delivery",
+  defaultDeliveryFee: 0,
+  freeDeliveryAbove: null,
+  autoDeliverReadyMade: true,
+  sms: {
+    dispatch: false,
+    assign: true,
+    pickup: true,
+    transit: true,
+    attempt: true,
+    delivered: true,
+  },
+};
+
+/** Progress of a single returns / alterations cycle on a delivered order. */
+export type ReturnStatus =
+  | "returned"
+  | "inspection"
+  | "alteration"
+  | "quality_check"
+  | "ready_for_pickup"
+  | "completed";
+
+export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
+  returned: "Returned",
+  inspection: "Inspection",
+  alteration: "Alteration / Remake",
+  quality_check: "Quality Check",
+  ready_for_pickup: "Ready for Pickup / Dispatch",
+  completed: "Delivered",
+};
+
+/** A structured return record. Preserves the original production history. */
+export interface OrderReturn {
+  id: string;
+  businessId: string;
+  orderId: string;
+  orderNumber?: string;
+  /** Reason key — either a built-in default or "other". */
+  reason: string;
+  /** Human label of the reason (denormalized for display). */
+  reasonLabel: string;
+  notes?: string;
+  returnedAt: string;
+  handledByUid?: string;
+  handledByName?: string;
+  /** Extra charge for the alteration / remake, if any. */
+  additionalCharge: number;
+  expectedCompletionDate?: string | null;
+  imageUrls?: string[];
+  status: ReturnStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Who requested the cancellation. */
+export type CancellationBy = "customer" | "business" | "system";
+/** Refund handling for a cancelled order. */
+export type RefundStatus = "none" | "pending" | "refunded";
+
+/** Structured cancellation record — orders are never hard-deleted. */
+export interface OrderCancellation {
+  id: string;
+  businessId: string;
+  orderId: string;
+  orderNumber?: string;
+  reason: string;
+  reasonLabel: string;
+  notes?: string;
+  cancelledBy: CancellationBy;
+  cancelledByUid?: string;
+  cancelledByName?: string;
+  cancelledAt: string;
+  refundStatus: RefundStatus;
+  refundAmount: number;
+  createdAt: string;
+}
+
 /**
  * Marks what a production stage means in the broader lifecycle. Kept small and
  * semantic so the legacy compatibility stage can be derived from ANY custom
@@ -66,7 +221,8 @@ export type NotificationType =
   | "new_order_created"
   | "order_stage_changed"
   | "order_completed"
-  | "materials_consumed";
+  | "materials_consumed"
+  | "delivery_stage_changed";
 
 export type ConversationType = "direct" | "announcement";
 export type AnnouncementPriority = "low" | "normal" | "high" | "urgent";
@@ -253,6 +409,8 @@ export interface Business {
   taxLabel?: string;
   createdAt: string;
   financeAccess?: FinanceAccessSettings;
+  /** Delivery policy (method default, fee, ready-made auto-deliver, SMS toggles). */
+  deliveryConfig?: BusinessDeliveryConfig;
 }
 
 export interface MeasurementSet {
@@ -506,6 +664,30 @@ export interface Order {
   /** Per-person lines on a group order, each with its own production stage. */
   members?: OrderMember[];
   memberCount?: number;
+  // ── Delivery management ────────────────────────────────────────────────────
+  /** How the order reaches the customer (delivery courier / shop pickup). */
+  deliveryMethod?: DeliveryMethod;
+  /** Billable delivery fee — shown on the receipt ONLY for delivery orders. */
+  deliveryFee?: number;
+  deliveryAddress?: string;
+  deliveryPartnerId?: string | null;
+  /** Denormalized partner name for display (survives partner deletion). */
+  deliveryPartnerName?: string | null;
+  /** Current delivery workflow stage. */
+  deliveryStage?: DeliveryStage;
+  deliveryNotes?: string;
+  /** Ordered timeline of delivery events (traceability). */
+  deliveryTimeline?: DeliveryTimelineEntry[];
+  deliveredAt?: string | null;
+  // ── Cancellation ───────────────────────────────────────────────────────────
+  isCancelled?: boolean;
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
+  cancellationNotes?: string | null;
+  cancellationBy?: CancellationBy | null;
+  refundStatus?: RefundStatus | null;
+  /** True while an open (non-terminal) return cycle exists. */
+  hasActiveReturn?: boolean;
 }
 
 export interface FabricMeta {

@@ -2,6 +2,7 @@
 import { transformKeysToCamel, transformKeysToSnake, transformArrayToCamel, toDate, snakeToCamel } from "@/lib/case-utils";
 import { formatKes } from "@/lib/utils";
 import { provisionPortalAccount } from "@/services/customer-portal.service";
+import { DEFAULT_DELIVERY_CONFIG } from "@/types/domain";
 import {
   getCachedCollection,
   cacheCollection,
@@ -26,6 +27,16 @@ import type {
   CustomerType,
   MeasurementSet,
   DeliveryStatus,
+  DeliveryMethod,
+  DeliveryStage,
+  DeliveryTimelineEntry,
+  DeliveryPartner,
+  BusinessDeliveryConfig,
+  OrderReturn,
+  ReturnStatus,
+  OrderCancellation,
+  CancellationBy,
+  RefundStatus,
   EmployeeInvitation,
   Business,
   InventoryMaterial,
@@ -110,7 +121,7 @@ const BRANCH_SCOPED_TABLES = new Set<string>([
   'customers', 'orders', 'payments', 'inventory_materials', 'stock_movements',
   'purchase_orders', 'suppliers', 'expenses', 'withdrawals', 'investments',
   'savings_goals', 'savings_deposits', 'transactions', 'consumption_reports',
-  'sms_logs', 'images',
+  'sms_logs', 'images', 'delivery_partners', 'order_returns', 'order_cancellations',
 ]);
 
 let activeBranchId: string | null = null;
@@ -496,6 +507,7 @@ export async function updateBusinessProfile(
       | "taxRate"
       | "taxMode"
       | "taxLabel"
+      | "deliveryConfig"
     >
   >,
 ) {
@@ -1506,10 +1518,25 @@ function defaultStageRows(businessId: string): Record<string, unknown>[] {
 /** Idempotently create the default pipeline for a business that has none yet. */
 async function ensureProductionStagesOnline(businessId: string): Promise<void> {
   if (!businessId) return;
-  const { error } = await supabase
-    .from('production_stages')
-    .upsert(defaultStageRows(businessId), { onConflict: 'business_id,name', ignoreDuplicates: true });
-  if (error) throw error;
+  // Best-effort: seeding is a one-time bootstrap. Users without orders.write
+  // (e.g. tailors) can still read an already-seeded pipeline, and the upsert
+  // below is intentionally ignored when it's not permitted.
+  try {
+    const { count, error: countError } = await supabase
+      .from('production_stages')
+      .select('id', { count: 'exact', head: true })
+      .eq('business_id', businessId);
+    if (countError || (count ?? 0) > 0) return;
+  } catch {
+    return;
+  }
+  try {
+    await supabase
+      .from('production_stages')
+      .upsert(defaultStageRows(businessId), { onConflict: 'business_id,name', ignoreDuplicates: true });
+  } catch {
+    // ignore — the pipeline may be seeded server-side already
+  }
 }
 
 async function seedProductionStagesOffline(businessId: string): Promise<ProductionStageConfig[]> {
@@ -2015,8 +2042,27 @@ export async function createOrder(
     const offlineTrackingToken = generateTrackingToken();
     const now = new Date().toISOString();
     const provisionalNumber = `PND-${Date.now().toString(36).toUpperCase().slice(-6)}`;
-    const balance = Math.max(0, payload.subtotalAmount - depositAmount);
+    const deliveryMethod = payload.deliveryMethod ?? "delivery";
+    const deliveryFee = deliveryMethod === "pickup" ? 0 : Number(payload.deliveryFee ?? 0);
+    const needsProduction = orderItems.some((i) => i.itemType === "tailored" || i.itemType === "alteration");
+    const autoDeliver = !needsProduction && DEFAULT_DELIVERY_CONFIG.autoDeliverReadyMade;
     const initialStagePoint = await buildInitialStagePoint(businessId);
+    const balance = Math.max(0, payload.subtotalAmount + deliveryFee - depositAmount);
+
+    const deliveryStage: DeliveryStage = autoDeliver
+      ? deliveryMethod === "pickup" ? "pickup_ready" : "delivered"
+      : "pending";
+    const stage: ProductionStage = autoDeliver
+      ? deliveryMethod === "pickup" ? "ready_for_pickup" : "delivered"
+      : "cutting";
+    const deliveryTimeline: DeliveryTimelineEntry[] = autoDeliver
+      ? [{
+          stage: deliveryStage,
+          label: deliveryStage === "delivered" ? "Delivered" : "Ready for pickup",
+          at: now,
+          by: actor.name,
+        }]
+      : [];
 
     const orderRecord = {
       ...orderFields,
@@ -2026,14 +2072,23 @@ export async function createOrder(
       trackingToken: offlineTrackingToken,
       isGroupOrder: groupMembers.length > 0,
       orderType: orderFields.orderType ?? inferredOrderType,
-      stage: "cutting",
-      deliveryStatus: "pending",
-      currentStageId: initialStagePoint?.currentStageId ?? null,
-      currentStageName: initialStagePoint?.currentStageName ?? null,
-      completedStageIds: initialStagePoint?.completedStageIds ?? [],
+      stage,
+      deliveryStatus: stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending",
+      currentStageId: autoDeliver ? null : initialStagePoint?.currentStageId ?? null,
+      currentStageName: autoDeliver ? null : initialStagePoint?.currentStageName ?? null,
+      completedStageIds: autoDeliver ? [] : initialStagePoint?.completedStageIds ?? [],
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
       amountPaid: depositAmount,
       balanceAmount: balance,
+      deliveryMethod,
+      deliveryFee,
+      deliveryAddress: payload.deliveryAddress ?? null,
+      deliveryPartnerId: payload.deliveryPartnerId ?? null,
+      deliveryPartnerName: payload.deliveryPartnerName ?? null,
+      deliveryStage,
+      deliveryNotes: payload.deliveryNotes ?? null,
+      deliveryTimeline,
+      deliveredAt: deliveryStage === "delivered" ? now : null,
       createdAt: now,
       updatedAt: now,
     } as unknown as Record<string, unknown>;
@@ -2173,6 +2228,32 @@ export async function createOrder(
   const trackingToken = generateTrackingToken();
   const initialStagePoint = await buildInitialStagePoint(businessId);
 
+  // ── Delivery policy ─────────────────────────────────────────────────────
+  // Default the method/fee from the business config, then auto-complete
+  // ready-made, no-alteration orders (they need no production work).
+  const deliveryConfig = await getDeliveryConfig(businessId);
+  const deliveryMethod = payload.deliveryMethod ?? deliveryConfig?.defaultMethod ?? "delivery";
+  const deliveryFee = deliveryMethod === "pickup"
+    ? 0
+    : Number(payload.deliveryFee ?? deliveryConfig?.defaultDeliveryFee ?? 0);
+  const needsProduction = orderItems.some((i) => i.itemType === "tailored" || i.itemType === "alteration");
+  const autoDeliver = !needsProduction && (deliveryConfig?.autoDeliverReadyMade ?? true);
+  const nowIso = new Date().toISOString();
+  const deliveryStage: DeliveryStage = autoDeliver
+    ? deliveryMethod === "pickup" ? "pickup_ready" : "delivered"
+    : "pending";
+  const stage: ProductionStage = autoDeliver
+    ? deliveryMethod === "pickup" ? "ready_for_pickup" : "delivered"
+    : "cutting";
+  const deliveryTimeline: DeliveryTimelineEntry[] = autoDeliver
+    ? [{
+        stage: deliveryStage,
+        label: deliveryStage === "delivered" ? "Delivered" : "Ready for pickup",
+        at: nowIso,
+        by: actor.name,
+      }]
+    : [];
+
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
     .insert(transformKeysToSnake({
@@ -2183,14 +2264,23 @@ export async function createOrder(
       trackingToken,
       isGroupOrder: groupMembers.length > 0,
       orderType: orderFields.orderType ?? inferredOrderType,
-      stage: "cutting",
-      deliveryStatus: "pending",
-      currentStageId: initialStagePoint?.currentStageId ?? null,
-      currentStageName: initialStagePoint?.currentStageName ?? null,
-      completedStageIds: initialStagePoint?.completedStageIds ?? [],
+      stage,
+      deliveryStatus: stage === "delivered" ? "picked" : stage === "ready_for_pickup" ? "ready" : "pending",
+      currentStageId: autoDeliver ? null : initialStagePoint?.currentStageId ?? null,
+      currentStageName: autoDeliver ? null : initialStagePoint?.currentStageName ?? null,
+      completedStageIds: autoDeliver ? [] : initialStagePoint?.completedStageIds ?? [],
       paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
       amountPaid: depositAmount,
-      balanceAmount: Math.max(0, payload.subtotalAmount - depositAmount),
+      balanceAmount: Math.max(0, payload.subtotalAmount + deliveryFee - depositAmount),
+      deliveryMethod,
+      deliveryFee,
+      deliveryAddress: payload.deliveryAddress ?? null,
+      deliveryPartnerId: payload.deliveryPartnerId ?? null,
+      deliveryPartnerName: payload.deliveryPartnerName ?? null,
+      deliveryStage,
+      deliveryNotes: payload.deliveryNotes ?? null,
+      deliveryTimeline,
+      deliveredAt: deliveryStage === "delivered" ? nowIso : null,
     } as unknown as Record<string, unknown>))
     .select('id, order_number')
     .single();
@@ -2261,7 +2351,7 @@ export async function createOrder(
 
   if (customerData) {
     const currentBalance = Number(customerData.outstanding_balance ?? 0);
-    const newBalance = currentBalance + Math.max(0, payload.subtotalAmount - depositAmount);
+    const newBalance = currentBalance + Math.max(0, payload.subtotalAmount + deliveryFee - depositAmount);
     await supabase
       .from('customers')
       .update({ outstanding_balance: newBalance, last_order_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -2320,7 +2410,7 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
       return ordersQuery.order('updated_at', { ascending: false });
     };
 
-    let { data, error } = await runOrdersQuery();
+    const { data, error } = await runOrdersQuery();
 
     // Fetch the (lightweight) member summary for every order in one extra query
     // so the list can show member counts and per-member progress.
@@ -2899,7 +2989,17 @@ export async function logSmsEntry(
     orderId: string;
     recipient: string;
     message: string;
-    type: "ready_for_pickup" | "delay_notification" | "stage_notification";
+    type:
+      | "ready_for_pickup"
+      | "delay_notification"
+      | "stage_notification"
+      | "delivery_notification"
+      | "delivery_dispatch"
+      | "delivery_courier_assigned"
+      | "delivery_picked_up"
+      | "delivery_in_transit"
+      | "delivery_attempted"
+      | "delivery_delivered";
     status: "success" | "failed";
     response: unknown;
   }
@@ -2993,19 +3093,92 @@ export async function updateOrderProductionNotes(businessId: string, orderId: st
 export async function updateOrderDetails(
   businessId: string,
   orderId: string,
-  fields: Partial<Pick<Order, "dueDate" | "designNotes" | "assignedTailorId" | "assignedTailorName" | "customerPhone">>
+  fields: Partial<
+    Pick<
+      Order,
+      | "dueDate"
+      | "designNotes"
+      | "assignedTailorId"
+      | "assignedTailorName"
+      | "customerPhone"
+      | "deliveryMethod"
+      | "deliveryFee"
+      | "deliveryAddress"
+      | "deliveryPartnerId"
+      | "deliveryPartnerName"
+      | "deliveryNotes"
+    >
+  >
 ) {
+  // Delivery fee is part of the balance (goods + delivery − paid). Changing it
+  // must ripple through order.balance_amount and the customer's outstanding
+  // balance so the ledger and receipts stay truthful.
+  const reconcileFee = async (oldFee: number) => {
+    const newFee = Number(fields.deliveryFee ?? oldFee);
+    const delta = newFee - oldFee;
+    if (Math.abs(delta) < 0.01) return;
+    const { data: orderRow } = await supabase
+      .from('orders')
+      .select('balance_amount, customer_id')
+      .eq('id', orderId)
+      .single();
+    const orderRowData = orderRow as { balance_amount: number; customer_id: string } | null;
+    const nextBalance = Math.max(0, Number(orderRowData?.balance_amount ?? 0) + delta);
+    await supabase
+      .from('orders')
+      .update({ balance_amount: nextBalance, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('business_id', businessId);
+    if (orderRowData?.customer_id) {
+      const { data: custRow } = await supabase
+        .from('customers')
+        .select('outstanding_balance')
+        .eq('id', orderRowData.customer_id)
+        .single();
+      const cust = custRow as { outstanding_balance: number } | null;
+      if (cust) {
+        await supabase
+          .from('customers')
+          .update({ outstanding_balance: Math.max(0, Number(cust.outstanding_balance ?? 0) + delta) })
+          .eq('id', orderRowData.customer_id);
+      }
+    }
+  };
+
   return withOfflineFallback(
     async () => {
       const now = new Date().toISOString();
+      const { data: existing } = await supabase
+        .from('orders')
+        .select('delivery_fee')
+        .eq('id', orderId)
+        .single();
+      const oldFee = Number((existing as { delivery_fee?: number } | null)?.delivery_fee ?? 0);
       const { error } = await supabase
         .from('orders')
         .update({ ...transformKeysToSnake(fields as Record<string, unknown>), updated_at: now })
         .eq('id', orderId)
         .eq('business_id', businessId);
       if (error) throw error;
+      await reconcileFee(oldFee);
     },
-    () => offlineUpdate(businessId, 'orders', orderId, fields as Record<string, unknown>)
+    async () => {
+      const cached = await getCachedById<Order>('orders', businessId, orderId);
+      const oldFee = Number(cached?.deliveryFee ?? 0);
+      const delta = Number(fields.deliveryFee ?? oldFee) - oldFee;
+      const patch = { ...fields } as Record<string, unknown>;
+      if (fields.deliveryFee != null && Math.abs(delta) >= 0.01) {
+        const nextBalance = Math.max(0, Number(cached?.balanceAmount ?? 0) + delta);
+        patch.balanceAmount = nextBalance;
+        const cachedCustomer = await getCachedById<Customer>('customers', businessId, cached?.customerId ?? "");
+        if (cachedCustomer) {
+          await offlineUpdate(businessId, 'customers', cachedCustomer.id ?? cached?.customerId ?? "", {
+            outstandingBalance: Math.max(0, Number(cachedCustomer.outstandingBalance ?? 0) + delta),
+          });
+        }
+      }
+      await offlineUpdate(businessId, 'orders', orderId, patch);
+    }
   );
 }
 
@@ -3038,6 +3211,738 @@ export async function deleteFittingRecord(businessId: string, orderId: string, r
     .delete()
     .eq('order_id', orderId)
     .eq('created_at', recordedAt);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DELIVERY MANAGEMENT
+// ──────────────────────────────────────────────────────────────────────────────
+// The delivery workflow is tracked per order on orders.delivery_* columns and
+// lives OUTSIDE the production pipeline: production completes → the order
+// enters the delivery workflow → it ends in a terminal stage (delivered or
+// picked_by_customer). Every step appends to orders.delivery_timeline so the
+// full journey is auditable.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Courier-chain stages in the order they must be traversed. */
+const COURIER_FLOW: DeliveryStage[] = [
+  "ready_for_dispatch",
+  "courier_assigned",
+  "picked_up",
+  "in_transit",
+  "delivery_attempted",
+  "delivered",
+];
+
+const PICKUP_FLOW: DeliveryStage[] = ["pickup_ready", "picked_by_customer"];
+
+export const DELIVERY_STAGE_LABELS: Record<DeliveryStage, string> = {
+  pending: "Pending",
+  ready_for_dispatch: "Ready for Dispatch",
+  courier_assigned: "Courier Assigned",
+  picked_up: "Picked Up",
+  in_transit: "In Transit",
+  delivery_attempted: "Delivery Attempted",
+  delivered: "Delivered",
+  pickup_ready: "Ready for Pickup",
+  picked_by_customer: "Picked by Customer",
+};
+
+export const DELIVERY_STAGE_COLORS: Record<DeliveryStage, string> = {
+  pending: "bg-slate-400",
+  ready_for_dispatch: "bg-sky-500",
+  courier_assigned: "bg-blue-500",
+  picked_up: "bg-indigo-500",
+  in_transit: "bg-violet-500",
+  delivery_attempted: "bg-amber-500",
+  delivered: "bg-green-600",
+  pickup_ready: "bg-emerald-500",
+  picked_by_customer: "bg-green-600",
+};
+
+/** Default structured return reasons (businesses may add their own via "other"). */
+export const DEFAULT_RETURN_REASONS = [
+  { key: "sizing_issue", label: "Wrong size / poor fit" },
+  { key: "defect", label: "Defective workmanship or material" },
+  { key: "wrong_order", label: "Wrong garment / item delivered" },
+  { key: "damaged", label: "Damaged in transit" },
+  { key: "color_fabric", label: "Wrong colour or fabric" },
+  { key: "customer_change", label: "Customer changed their mind" },
+  { key: "other", label: "Other reason" },
+] as const;
+
+const deliveryConfigCache = new Map<string, BusinessDeliveryConfig | null>();
+
+function normalizeDeliveryConfig(value: unknown): BusinessDeliveryConfig {
+  if (!value || typeof value !== "object") return { ...DEFAULT_DELIVERY_CONFIG };
+  const raw = value as Record<string, unknown>;
+  return {
+    ...DEFAULT_DELIVERY_CONFIG,
+    ...raw,
+    sms: { ...DEFAULT_DELIVERY_CONFIG.sms, ...((raw.sms as Record<string, unknown>) ?? {}) },
+    freeDeliveryAbove: raw.freeDeliveryAbove == null ? null : Number(raw.freeDeliveryAbove),
+    defaultDeliveryFee: Number(raw.defaultDeliveryFee ?? DEFAULT_DELIVERY_CONFIG.defaultDeliveryFee),
+  } as BusinessDeliveryConfig;
+}
+
+/**
+ * Per-business delivery policy. Falls back to the seeded defaults when the
+ * config is missing (fresh DB or migration not yet applied), so the feature
+ * degrades gracefully.
+ */
+export async function getDeliveryConfig(businessId: string): Promise<BusinessDeliveryConfig | null> {
+  if (deliveryConfigCache.has(businessId)) return deliveryConfigCache.get(businessId) ?? null;
+  try {
+    const { data } = await supabase
+      .from('businesses')
+      .select('delivery_config')
+      .eq('id', businessId)
+      .maybeSingle();
+    const config = normalizeDeliveryConfig((data as { delivery_config?: unknown } | null)?.delivery_config);
+    deliveryConfigCache.set(businessId, config);
+    return config;
+  } catch {
+    return { ...DEFAULT_DELIVERY_CONFIG };
+  }
+}
+
+export async function updateDeliveryConfig(businessId: string, config: BusinessDeliveryConfig) {
+  await updateBusinessProfile(businessId, { deliveryConfig: config });
+  deliveryConfigCache.set(businessId, config);
+}
+
+/** Allowable next delivery stages from a given position, per fulfilment method. */
+export function nextDeliveryStages(stage: DeliveryStage, method: DeliveryMethod): DeliveryStage[] {
+  if (stage === "pending") {
+    return method === "pickup" ? ["pickup_ready"] : ["ready_for_dispatch"];
+  }
+  if (method === "pickup") {
+    const idx = PICKUP_FLOW.indexOf(stage);
+    return idx >= 0 && idx + 1 < PICKUP_FLOW.length ? [PICKUP_FLOW[idx + 1]] : [];
+  }
+  const idx = COURIER_FLOW.indexOf(stage);
+  if (idx < 0) return [];
+  // Delivery attempted is a retryable state — it may loop back into transit.
+  if (stage === "delivery_attempted") return ["in_transit", "delivered"];
+  return idx + 1 < COURIER_FLOW.length ? [COURIER_FLOW[idx + 1]] : [];
+}
+
+/**
+ * Move an order onto a delivery stage. Appends a timeline entry, stamps
+ * delivered_at on the terminal stages and keeps the production compat `stage`
+ * in sync for legacy grouping/filters. Rejects backward moves.
+ */
+export async function setOrderDeliveryStage(
+  businessId: string,
+  orderId: string,
+  input: { stage: DeliveryStage; note?: string; byUid?: string; byName?: string }
+): Promise<void> {
+  const applyOnline = async () => {
+    const { data: orderRow } = await supabase
+      .from('orders')
+      .select('delivery_stage, delivery_method, delivery_timeline, stage')
+      .eq('id', orderId)
+      .eq('business_id', businessId)
+      .single();
+    if (!orderRow) throw new Error("Order not found.");
+    const row = orderRow as { delivery_stage?: DeliveryStage; delivery_method?: DeliveryMethod; delivery_timeline?: unknown; stage?: ProductionStage };
+    const current = row.delivery_stage ?? "pending";
+    const method = row.delivery_method ?? "delivery";
+    const allowed = nextDeliveryStages(current, method);
+    if (current !== input.stage && !allowed.includes(input.stage)) {
+      throw new Error(`Cannot move from "${DELIVERY_STAGE_LABELS[current]}" to "${DELIVERY_STAGE_LABELS[input.stage]}".`);
+    }
+    const timeline = (row.delivery_timeline as unknown as DeliveryTimelineEntry[] | null) ?? [];
+    const entry: DeliveryTimelineEntry = {
+      stage: input.stage,
+      label: DELIVERY_STAGE_LABELS[input.stage],
+      at: new Date().toISOString(),
+      by: input.byName ?? input.byUid,
+      note: input.note,
+    };
+    const patch: Record<string, unknown> = {
+      delivery_stage: input.stage,
+      delivery_timeline: [...timeline, entry],
+    };
+    if (input.stage === "delivered") {
+      patch.delivered_at = new Date().toISOString();
+      patch.stage = "delivered";
+      patch.delivery_status = "picked";
+    } else if (input.stage === "picked_by_customer") {
+      patch.delivered_at = new Date().toISOString();
+      patch.stage = "delivered";
+      patch.delivery_status = "picked";
+    } else if (input.stage === "ready_for_dispatch" || input.stage === "pickup_ready") {
+      patch.stage = "ready_for_pickup";
+      patch.delivery_status = "ready";
+    }
+    const { error } = await supabase
+      .from('orders')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('business_id', businessId);
+    if (error) throw error;
+  };
+
+  const applyOffline = async () => {
+    const cached = await getCachedById<Order>('orders', businessId, orderId);
+    if (!cached) throw new Error("Order not found.");
+    const current = cached.deliveryStage ?? "pending";
+    const method = cached.deliveryMethod ?? "delivery";
+    const allowed = nextDeliveryStages(current, method);
+    if (current !== input.stage && !allowed.includes(input.stage)) {
+      throw new Error(`Cannot move from "${DELIVERY_STAGE_LABELS[current]}" to "${DELIVERY_STAGE_LABELS[input.stage]}".`);
+    }
+    const entry: DeliveryTimelineEntry = {
+      stage: input.stage,
+      label: DELIVERY_STAGE_LABELS[input.stage],
+      at: new Date().toISOString(),
+      by: input.byName ?? input.byUid,
+      note: input.note,
+    };
+    const patch: Record<string, unknown> = {
+      deliveryStage: input.stage,
+      deliveryTimeline: [...(cached.deliveryTimeline ?? []), entry],
+    };
+    if (input.stage === "delivered" || input.stage === "picked_by_customer") {
+      patch.deliveredAt = new Date().toISOString();
+      patch.stage = "delivered";
+      patch.deliveryStatus = "picked";
+    } else if (input.stage === "ready_for_dispatch" || input.stage === "pickup_ready") {
+      patch.stage = "ready_for_pickup";
+      patch.deliveryStatus = "ready";
+    }
+    await offlineUpdate(businessId, 'orders', orderId, patch, 'high');
+  };
+
+  await withOfflineFallback(applyOnline, applyOffline);
+}
+
+// ── Delivery partners ─────────────────────────────────────────────────────────
+
+export function listenDeliveryPartners(businessId: string, callback: (rows: DeliveryPartner[]) => void) {
+  let destroyed = false;
+  let gotFresh = false;
+  const serveCache = async (force = false) => {
+    const cached = await getCachedCollection<DeliveryPartner>('delivery_partners', businessId).catch(() => []);
+    if (!destroyed && (force || !gotFresh) && cached.length > 0) callback(cached);
+  };
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    if (isOffline()) { await serveCache(true); return; }
+    let query = supabase.from('delivery_partners').select('*').eq('business_id', businessId);
+    if (isBranchScoped('delivery_partners')) query = query.eq('branch_id', activeBranchId as string);
+    query = query.order('created_at', { ascending: false });
+    const { data, error } = await query;
+    if (error && isMissingColumnError(error)) { branchScopingAvailable = false; if (!destroyed) fetchAndCallback(); return; }
+    if (data && !destroyed) {
+      gotFresh = true;
+      const rows = transformArrayToCamel<DeliveryPartner>(data as Record<string, unknown>[]);
+      callback(rows);
+      cacheCollection('delivery_partners', businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+    } else if (!destroyed && error) {
+      await serveCache();
+    }
+  };
+  serveCache();
+  fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['delivery_partners'], () => serveCache(true));
+  const channel = supabase
+    .channel(`delivery-partners-${businessId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_partners', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .subscribe();
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
+}
+
+export async function createDeliveryPartner(
+  businessId: string,
+  input: Omit<DeliveryPartner, 'id' | 'businessId' | 'createdAt' | 'updatedAt'>
+): Promise<DeliveryPartner> {
+  const createOnline = async () => {
+    const { data, error } = await supabase
+      .from('delivery_partners')
+      .insert(transformKeysToSnake({
+        businessId,
+        ...branchFields('delivery_partners'),
+        name: input.name,
+        phone: input.phone,
+        company: input.company ?? null,
+        vehicleType: input.vehicleType ?? null,
+        registrationNumber: input.registrationNumber ?? null,
+        notes: input.notes ?? null,
+        isActive: input.isActive,
+      } as Record<string, unknown>))
+      .select('*')
+      .single();
+    if (error || !data) throw error || new Error("Failed to create delivery partner");
+    return transformKeysToCamel<DeliveryPartner>(data as Record<string, unknown>);
+  };
+  const createOffline = async () => {
+    const id = await offlineCreate(businessId, 'delivery_partners', {
+      businessId,
+      name: input.name,
+      phone: input.phone,
+      company: input.company ?? null,
+      vehicleType: input.vehicleType ?? null,
+      registrationNumber: input.registrationNumber ?? null,
+      notes: input.notes ?? null,
+      isActive: input.isActive,
+    } as Record<string, unknown>, 'normal');
+    return {
+      id,
+      businessId,
+      name: input.name,
+      phone: input.phone,
+      company: input.company,
+      vehicleType: input.vehicleType,
+      registrationNumber: input.registrationNumber,
+      notes: input.notes,
+      isActive: input.isActive,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as DeliveryPartner;
+  };
+  return withOfflineFallback(createOnline, createOffline);
+}
+
+export async function updateDeliveryPartner(
+  businessId: string,
+  partnerId: string,
+  input: Partial<Omit<DeliveryPartner, 'id' | 'businessId' | 'createdAt' | 'updatedAt'>>
+) {
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('delivery_partners')
+        .update({ ...transformKeysToSnake(input as unknown as Record<string, unknown>), updated_at: new Date().toISOString() })
+        .eq('id', partnerId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineUpdate(businessId, 'delivery_partners', partnerId, input as Record<string, unknown>)
+  );
+}
+
+export async function deleteDeliveryPartner(businessId: string, partnerId: string) {
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('delivery_partners')
+        .delete()
+        .eq('id', partnerId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+    },
+    () => offlineDelete(businessId, 'delivery_partners', partnerId)
+  );
+}
+
+// ── Returns & alterations ─────────────────────────────────────────────────────
+
+export function listenOrderReturns(businessId: string, callback: (rows: OrderReturn[]) => void) {
+  let destroyed = false;
+  let gotFresh = false;
+  const serveCache = async (force = false) => {
+    const cached = await getCachedCollection<OrderReturn>('order_returns', businessId).catch(() => []);
+    if (!destroyed && (force || !gotFresh) && cached.length > 0) callback(cached);
+  };
+  const fetchAndCallback = async () => {
+    if (destroyed) return;
+    if (isOffline()) { await serveCache(true); return; }
+    let query = supabase.from('order_returns').select('*').eq('business_id', businessId);
+    if (isBranchScoped('order_returns')) query = query.eq('branch_id', activeBranchId as string);
+    query = query.order('created_at', { ascending: false });
+    const { data, error } = await query;
+    if (error && isMissingColumnError(error)) { branchScopingAvailable = false; if (!destroyed) fetchAndCallback(); return; }
+    if (data && !destroyed) {
+      gotFresh = true;
+      const rows = transformArrayToCamel<OrderReturn>(data as Record<string, unknown>[]);
+      callback(rows);
+      cacheCollection('order_returns', businessId, rows as unknown as Array<Record<string, unknown>>).catch(() => {});
+    } else if (!destroyed && error) {
+      await serveCache();
+    }
+  };
+  serveCache();
+  fetchAndCallback();
+  const offReconnect = refetchOnReconnect(fetchAndCallback);
+  const offLocalWrite = onLocalWrite(['order_returns'], () => serveCache(true));
+  const channel = supabase
+    .channel(`order-returns-${businessId}-${crypto.randomUUID()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'order_returns', filter: `business_id=eq.${businessId}` }, fetchAndCallback)
+    .subscribe();
+  return () => { destroyed = true; offReconnect(); offLocalWrite(); supabase.removeChannel(channel); };
+}
+
+export async function createOrderReturn(
+  businessId: string,
+  orderId: string,
+  input: {
+    reason: string;
+    reasonLabel: string;
+    notes?: string;
+    additionalCharge?: number;
+    expectedCompletionDate?: string | null;
+    imageUrls?: string[];
+    handledByUid?: string;
+    handledByName?: string;
+  }
+): Promise<OrderReturn> {
+  const createOnline = async () => {
+    const { data: orderRow } = await supabase
+      .from('orders')
+      .select('delivery_stage, order_number')
+      .eq('id', orderId)
+      .eq('business_id', businessId)
+      .single();
+    const row = orderRow as { delivery_stage?: DeliveryStage; order_number?: string } | null;
+    if (!row) throw new Error("Order not found.");
+    if (row.delivery_stage !== "delivered" && row.delivery_stage !== "picked_by_customer") {
+      throw new Error("Only delivered orders can be returned. Complete delivery first.");
+    }
+    const { data, error } = await supabase
+      .from('order_returns')
+      .insert(transformKeysToSnake({
+        businessId,
+        ...branchFields('order_returns'),
+        orderId,
+        reason: input.reason,
+        reasonLabel: input.reasonLabel,
+        notes: input.notes ?? null,
+        returnedAt: new Date().toISOString(),
+        handledByUid: input.handledByUid ?? null,
+        handledByName: input.handledByName ?? null,
+        additionalCharge: Number(input.additionalCharge ?? 0),
+        expectedCompletionDate: input.expectedCompletionDate ?? null,
+        imageUrls: input.imageUrls ?? [],
+        status: "returned",
+      } as Record<string, unknown>))
+      .select('*')
+      .single();
+    if (error || !data) throw error || new Error("Failed to create return");
+    await supabase
+      .from('orders')
+      .update({ has_active_return: true, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('business_id', businessId);
+    notifyLocalWrite('orders');
+    return transformKeysToCamel<OrderReturn>(data as Record<string, unknown>);
+  };
+  const createOffline = async () => {
+    const id = await offlineCreate(businessId, 'order_returns', {
+      businessId,
+      orderId,
+      reason: input.reason,
+      reasonLabel: input.reasonLabel,
+      notes: input.notes ?? null,
+      returnedAt: new Date().toISOString(),
+      handledByUid: input.handledByUid ?? null,
+      handledByName: input.handledByName ?? null,
+      additionalCharge: Number(input.additionalCharge ?? 0),
+      expectedCompletionDate: input.expectedCompletionDate ?? null,
+      imageUrls: input.imageUrls ?? [],
+      status: "returned",
+    } as Record<string, unknown>, 'high');
+    await offlineUpdate(businessId, 'orders', orderId, { hasActiveReturn: true }, 'high');
+    return {
+      id,
+      businessId,
+      orderId,
+      reason: input.reason,
+      reasonLabel: input.reasonLabel,
+      notes: input.notes,
+      returnedAt: new Date().toISOString(),
+      handledByUid: input.handledByUid,
+      handledByName: input.handledByName,
+      additionalCharge: Number(input.additionalCharge ?? 0),
+      expectedCompletionDate: input.expectedCompletionDate ?? null,
+      imageUrls: input.imageUrls ?? [],
+      status: "returned" as ReturnStatus,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  };
+  return withOfflineFallback(createOnline, createOffline);
+}
+
+export async function updateOrderReturnStatus(
+  businessId: string,
+  orderId: string,
+  returnId: string,
+  status: ReturnStatus
+) {
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('order_returns')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', returnId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+      if (status === "completed") {
+        const { count } = await supabase
+          .from('order_returns')
+          .select('id', { count: 'exact', head: true })
+          .eq('order_id', orderId)
+          .eq('business_id', businessId)
+          .neq('status', 'completed');
+        await supabase
+          .from('orders')
+          .update({ has_active_return: (count ?? 0) > 0, updated_at: new Date().toISOString() })
+          .eq('id', orderId)
+          .eq('business_id', businessId);
+        notifyLocalWrite('orders');
+      }
+    },
+    async () => {
+      await offlineUpdate(businessId, 'order_returns', returnId, { status });
+      if (status === "completed") {
+        await offlineUpdate(businessId, 'orders', orderId, { hasActiveReturn: false });
+      }
+    }
+  );
+}
+
+export async function deleteOrderReturn(businessId: string, orderId: string, returnId: string) {
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('order_returns')
+        .delete()
+        .eq('id', returnId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+      const { count } = await supabase
+        .from('order_returns')
+        .select('id', { count: 'exact', head: true })
+        .eq('order_id', orderId)
+        .eq('business_id', businessId)
+        .neq('status', 'completed');
+      await supabase
+        .from('orders')
+        .update({ has_active_return: (count ?? 0) > 0, updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      notifyLocalWrite('orders');
+    },
+    async () => {
+      await offlineDelete(businessId, 'order_returns', returnId);
+      await offlineUpdate(businessId, 'orders', orderId, { hasActiveReturn: false });
+    }
+  );
+}
+
+// ── Cancellation ──────────────────────────────────────────────────────────────
+// Orders are NEVER hard-deleted. A cancellation is a first-class audit record
+// that keeps the order in history and reporting, plus soft-cancel flags on the
+// order itself. Delivered orders cannot be cancelled — use Returns instead.
+
+export async function cancelOrder(
+  businessId: string,
+  orderId: string,
+  input: {
+    reason: string;
+    reasonLabel: string;
+    notes?: string;
+    cancelledBy: CancellationBy;
+    actorUid: string;
+    actorName: string;
+    refundStatus?: RefundStatus;
+    refundAmount?: number;
+    /** Optional fee charged for cancelling mid-production. */
+    cancellationFee?: number;
+  }
+): Promise<OrderCancellation> {
+  const cancelOnline = async () => {
+    const { data: orderRow } = await supabase
+      .from('orders')
+      .select('delivery_stage, stage, subtotal_amount, delivery_fee, amount_paid, balance_amount, customer_id, order_number, is_cancelled')
+      .eq('id', orderId)
+      .eq('business_id', businessId)
+      .single();
+    if (!orderRow) throw new Error("Order not found.");
+    const row = orderRow as {
+      delivery_stage?: DeliveryStage; stage?: ProductionStage; subtotal_amount?: number;
+      delivery_fee?: number; amount_paid?: number; balance_amount?: number; customer_id?: string;
+      order_number?: string; is_cancelled?: boolean;
+    };
+    if (row.is_cancelled) throw new Error("This order is already cancelled.");
+    if (row.delivery_stage === "delivered" || row.delivery_stage === "picked_by_customer" || row.stage === "delivered") {
+      throw new Error("Delivered orders cannot be cancelled. Start a return instead.");
+    }
+
+    const balanceBefore = Number(row.balance_amount ?? 0);
+    const amountPaid = Number(row.amount_paid ?? 0);
+    const refunded = input.refundStatus === "refunded"
+      ? Math.min(Number(input.refundAmount ?? 0), amountPaid)
+      : 0;
+    const nextAmountPaid = Math.max(0, amountPaid - refunded);
+    const nextBalance = Math.max(0, Number(input.cancellationFee ?? 0));
+    const customerDelta = nextBalance - balanceBefore;
+
+    const { data: created, error: insertError } = await supabase
+      .from('order_cancellations')
+      .insert(transformKeysToSnake({
+        businessId,
+        ...branchFields('order_cancellations'),
+        orderId,
+        orderNumber: row.order_number,
+        reason: input.reason,
+        reasonLabel: input.reasonLabel,
+        notes: input.notes ?? null,
+        cancelledBy: input.cancelledBy,
+        cancelledByUid: input.actorUid,
+        cancelledByName: input.actorName,
+        cancelledAt: new Date().toISOString(),
+        refundStatus: input.refundStatus ?? "none",
+        refundAmount: refunded,
+      } as Record<string, unknown>))
+      .select('*')
+      .single();
+    if (insertError || !created) throw insertError || new Error("Failed to cancel order");
+
+    await supabase
+      .from('orders')
+      .update({
+        is_cancelled: true,
+        cancelled_at: new Date().toISOString(),
+        cancellation_reason: input.reasonLabel,
+        cancellation_notes: input.notes ?? null,
+        cancellation_by: input.cancelledBy,
+        refund_status: input.refundStatus ?? "none",
+        amount_paid: nextAmountPaid,
+        balance_amount: nextBalance,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId)
+      .eq('business_id', businessId);
+
+    if (Math.abs(customerDelta) >= 0.01 && row.customer_id) {
+      const { data: custRow } = await supabase
+        .from('customers')
+        .select('outstanding_balance')
+        .eq('id', row.customer_id)
+        .single();
+      const cust = custRow as { outstanding_balance?: number } | null;
+      if (cust) {
+        await supabase
+          .from('customers')
+          .update({ outstanding_balance: Math.max(0, Number(cust.outstanding_balance ?? 0) + customerDelta) })
+          .eq('id', row.customer_id);
+      }
+    }
+    notifyLocalWrite('orders');
+    return transformKeysToCamel<OrderCancellation>(created as Record<string, unknown>);
+  };
+
+  const cancelOffline = async () => {
+    const cached = await getCachedById<Order>('orders', businessId, orderId);
+    if (!cached) throw new Error("Order not found.");
+    if (cached.isCancelled) throw new Error("This order is already cancelled.");
+    if (cached.deliveryStage === "delivered" || cached.deliveryStage === "picked_by_customer" || cached.stage === "delivered") {
+      throw new Error("Delivered orders cannot be cancelled. Start a return instead.");
+    }
+    const balanceBefore = Number(cached.balanceAmount ?? 0);
+    const amountPaid = Number(cached.amountPaid ?? 0);
+    const refunded = input.refundStatus === "refunded"
+      ? Math.min(Number(input.refundAmount ?? 0), amountPaid)
+      : 0;
+    const nextAmountPaid = Math.max(0, amountPaid - refunded);
+    const nextBalance = Math.max(0, Number(input.cancellationFee ?? 0));
+    const customerDelta = nextBalance - balanceBefore;
+
+    const id = await offlineCreate(businessId, 'order_cancellations', {
+      businessId,
+      orderId,
+      orderNumber: cached.orderNumber,
+      reason: input.reason,
+      reasonLabel: input.reasonLabel,
+      notes: input.notes ?? null,
+      cancelledBy: input.cancelledBy,
+      cancelledByUid: input.actorUid,
+      cancelledByName: input.actorName,
+      cancelledAt: new Date().toISOString(),
+      refundStatus: input.refundStatus ?? "none",
+      refundAmount: refunded,
+    } as Record<string, unknown>, 'high');
+
+    await offlineUpdate(businessId, 'orders', orderId, {
+      isCancelled: true,
+      cancelledAt: new Date().toISOString(),
+      cancellationReason: input.reasonLabel,
+      cancellationNotes: input.notes ?? null,
+      cancellationBy: input.cancelledBy,
+      refundStatus: input.refundStatus ?? "none",
+      amountPaid: nextAmountPaid,
+      balanceAmount: nextBalance,
+    }, 'high');
+
+    const cachedCustomer = await getCachedById<Customer>('customers', businessId, cached.customerId);
+    if (cachedCustomer) {
+      await offlineUpdate(businessId, 'customers', cached.customerId, {
+        outstandingBalance: Math.max(0, Number(cachedCustomer.outstandingBalance ?? 0) + customerDelta),
+      });
+    }
+
+    return {
+      id,
+      businessId,
+      orderId,
+      orderNumber: cached.orderNumber,
+      reason: input.reason,
+      reasonLabel: input.reasonLabel,
+      notes: input.notes,
+      cancelledBy: input.cancelledBy,
+      cancelledByUid: input.actorUid,
+      cancelledByName: input.actorName,
+      cancelledAt: new Date().toISOString(),
+      refundStatus: input.refundStatus ?? "none",
+      refundAmount: refunded,
+      createdAt: new Date().toISOString(),
+    } as OrderCancellation;
+  };
+
+  return withOfflineFallback(cancelOnline, cancelOffline);
+}
+
+/** Reverse a cancellation (edits made in error). Reverts order flags + record. */
+export async function undoCancelOrder(businessId: string, orderId: string, cancellationId: string) {
+  return withOfflineFallback(
+    async () => {
+      const { error } = await supabase
+        .from('order_cancellations')
+        .delete()
+        .eq('id', cancellationId)
+        .eq('business_id', businessId);
+      if (error) throw error;
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({
+          is_cancelled: false,
+          cancelled_at: null,
+          cancellation_reason: null,
+          cancellation_notes: null,
+          cancellation_by: null,
+          refund_status: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderId)
+        .eq('business_id', businessId);
+      if (orderError) throw orderError;
+      notifyLocalWrite('orders');
+    },
+    async () => {
+      await offlineDelete(businessId, 'order_cancellations', cancellationId);
+      await offlineUpdate(businessId, 'orders', orderId, {
+        isCancelled: false,
+        cancelledAt: null,
+        cancellationReason: null,
+        cancellationNotes: null,
+        cancellationBy: null,
+        refundStatus: null,
+      });
+    }
+  );
 }
 
 export async function appendOrderImageId(businessId: string, orderId: string, imageId: string) {
@@ -3800,7 +4705,7 @@ export async function recordPayment(
     const cachedOrder = await getCachedById<Order>('orders', businessId, payload.orderId);
     if (cachedOrder) {
       const nextPaid = Number(cachedOrder.amountPaid ?? 0) + payload.amount;
-      const nextBalance = Math.max(0, Number(cachedOrder.subtotalAmount ?? 0) - nextPaid);
+      const nextBalance = Math.max(0, Number(cachedOrder.subtotalAmount ?? 0) + Number(cachedOrder.deliveryFee ?? 0) - nextPaid);
       await offlineUpdate(businessId, 'orders', payload.orderId, {
         amountPaid: nextPaid,
         balanceAmount: nextBalance,
@@ -3819,7 +4724,7 @@ export async function recordPayment(
 
   const { data: orderData, error: orderFetchError } = await supabase
     .from('orders')
-    .select('amount_paid, subtotal_amount')
+    .select('amount_paid, subtotal_amount, delivery_fee')
     .eq('id', payload.orderId)
     .single();
   if (orderFetchError && isNetworkError(orderFetchError)) return recordOffline();
@@ -3829,8 +4734,9 @@ export async function recordPayment(
 
   const currentPaid = Number((orderData as any).amount_paid ?? 0);
   const subtotal = Number((orderData as any).subtotal_amount ?? 0);
+  const deliveryFee = Number((orderData as any).delivery_fee ?? 0);
   const nextPaid = currentPaid + payload.amount;
-  const nextBalance = Math.max(0, subtotal - nextPaid);
+  const nextBalance = Math.max(0, subtotal + deliveryFee - nextPaid);
   const nextStatus = nextBalance === 0 ? "paid" : "partial";
 
   await supabase

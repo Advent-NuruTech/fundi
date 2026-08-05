@@ -89,6 +89,24 @@ export async function notifyOrderCompleted(businessId: string, orderNumber: stri
   );
 }
 
+export async function notifyDeliveryStageChanged(
+  businessId: string,
+  orderNumber: string,
+  customerName: string,
+  orderId: string,
+  stage: string,
+  excludeUid?: string
+) {
+  await createNotificationForAllMembers(
+    businessId,
+    "delivery_stage_changed",
+    "Delivery Update",
+    `Order ${orderNumber} for ${customerName} — ${stage.replace(/_/g, " ")}.`,
+    `/orders/${orderId}`,
+    excludeUid
+  );
+}
+
 export async function notifyMaterialsConsumed(businessId: string, orderNumber: string, orderId: string, excludeUid?: string) {
   await createNotificationForAllMembers(
     businessId,
