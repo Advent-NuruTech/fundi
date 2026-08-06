@@ -29,6 +29,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  SearchableSelect,
+  type FilterChip,
+  type SearchableOption,
+} from "@/components/ui/searchable-select";
 
 import { formatKes } from "@/lib/utils";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -91,6 +96,7 @@ export function PaymentsModulePage() {
     register,
     handleSubmit,
     reset,
+    setValue,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<PaymentInput, undefined, PaymentValues>({
@@ -132,6 +138,40 @@ export function PaymentsModulePage() {
   const filteredOutstanding = useMemo(() => {
     return filterByDateRange(outstandingOrders, dateRange);
   }, [outstandingOrders, dateRange]);
+
+  const orderOptions = useMemo<SearchableOption[]>(() => {
+    return [...outstandingOrders]
+      .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
+      .map((order) => ({
+        value: order.id,
+        label: `${order.orderNumber} — ${order.customerName} (${formatKes(order.balanceAmount)} due)`,
+        data: { dueDate: order.dueDate ?? "", customerName: order.customerName },
+      }));
+  }, [outstandingOrders]);
+
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const inSevenDays = startOfToday + 7 * 24 * 60 * 60 * 1000;
+
+  const orderChips: FilterChip[] = [
+    { key: "all", label: "All", match: () => true },
+    {
+      key: "overdue",
+      label: "Overdue",
+      match: (o: SearchableOption) => {
+        const due = new Date(o.data?.dueDate as string).getTime();
+        return !Number.isNaN(due) && due < startOfToday;
+      },
+    },
+    {
+      key: "dueSoon",
+      label: "Due soon",
+      match: (o: SearchableOption) => {
+        const due = new Date(o.data?.dueDate as string).getTime();
+        return !Number.isNaN(due) && due >= startOfToday && due <= inSevenDays;
+      },
+    },
+  ];
 
   const paymentMethod = watch("method");
 
@@ -254,25 +294,14 @@ export function PaymentsModulePage() {
                     Order
                   </label>
 
-                  <select
-                    {...register("orderId")}
-                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none ring-offset-white transition focus:border-slate-400"
-                  >
-                    <option value="">
-                      Select order
-                    </option>
-
-                    {outstandingOrders.map((order) => (
-                      <option
-                        key={order.id}
-                        value={order.id}
-                      >
-                        {order.orderNumber} -{" "}
-                        {order.customerName} (
-                        {formatKes(order.balanceAmount)} due)
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={orderOptions}
+                    value={watch("orderId")}
+                    onChange={(v) => setValue("orderId", v, { shouldValidate: true })}
+                    placeholder="Search order # or customer name…"
+                    chips={orderChips}
+                    maxResults={150}
+                  />
 
                   {errors.orderId && (
                     <p className="text-xs text-red-500">

@@ -33,6 +33,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  SearchableSelect,
+  type FilterChip,
+  type SearchableOption,
+} from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Ruler, Users, Truck } from "lucide-react";
@@ -66,6 +71,7 @@ interface MeasurementRow {
 interface DraftOrderItem {
   key: string;
   itemType: OrderItemType;
+  memberCustomerId?: string;
   inventoryItemId?: string;
   name: string;
   quantity: number;
@@ -79,6 +85,7 @@ interface DraftOrderItem {
   color?: string;
   brand?: string;
   styleNotes: string;
+  referenceImageFile?: File;
   assignedTailorId?: string;
   captureMeasurements: boolean;
   measurements: MeasurementRow[];
@@ -136,6 +143,8 @@ export function NewOrderModulePage() {
   const [tailors, setTailors] = useState<UserProfile[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [items, setItems] = useState<DraftOrderItem[]>([]);
+  const [representativeId, setRepresentativeId] = useState("");
+  const [payerId, setPayerId] = useState("");
   const [memberRows, setMemberRows] = useState<MemberRow[]>([]);
   const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>([]);
   const [deliveryConfig, setDeliveryConfig] = useState<BusinessDeliveryConfig | null>(null);
@@ -145,12 +154,30 @@ export function NewOrderModulePage() {
   const [deliveryPartnerId, setDeliveryPartnerId] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
 
-  const { register, handleSubmit, formState, watch } = useForm<NewOrderInput, undefined, NewOrderValues>({
+  const { register, handleSubmit, formState, watch, setValue } = useForm<NewOrderInput, undefined, NewOrderValues>({
     resolver: zodResolver(newOrderSchema),
     defaultValues: { dueDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10) },
   });
 
   const selectedCustomerId = watch("customerId");
+
+  const customerOptions = useMemo<SearchableOption[]>(() => {
+    return [...customers]
+      .sort((a, b) => (b.lastOrderAt ?? "").localeCompare(a.lastOrderAt ?? ""))
+      .map((c) => ({
+        value: c.id,
+        label: `${c.customerType === "group" ? c.organizationName || c.fullName : c.fullName}${
+          c.phone ? ` (${c.phone})` : ""
+        }`,
+        group: c.customerType === "group" ? "Groups" : "Customers",
+      }));
+  }, [customers]);
+
+  const customerChips: FilterChip[] = [
+    { key: "all", label: "All", match: () => true },
+    { key: "individual", label: "Customers", match: (o: SearchableOption) => o.group !== "Groups" },
+    { key: "group", label: "Groups", match: (o: SearchableOption) => o.group === "Groups" },
+  ];
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.id === selectedCustomerId),
     [customers, selectedCustomerId]
@@ -185,9 +212,8 @@ export function NewOrderModulePage() {
 
   useEffect(() => {
     setMemberRows([]);
-    if (selectedCustomer?.customerType === "group") {
-      setItems([]);
-    }
+    setRepresentativeId("");
+    setPayerId("");
   }, [selectedCustomerId, selectedCustomer?.customerType]);
 
   // Inventory pickers, driven by the item type.
@@ -333,7 +359,7 @@ export function NewOrderModulePage() {
     return true;
   };
 
-  const buildItemsPayload = (): OrderItemInput[] =>
+  const buildItemsPayload = (referenceImageUrls = new Map<string, string>()): OrderItemInput[] =>
     items.map((item) => ({
       itemType: item.itemType,
       inventoryItemId: item.inventoryItemId || undefined,
@@ -353,6 +379,7 @@ export function NewOrderModulePage() {
       assignedTailorId: item.assignedTailorId || undefined,
       assignedTailorName: tailors.find((t) => t.uid === item.assignedTailorId)?.displayName,
       status: "active",
+      referenceImageUrl: referenceImageUrls.get(item.key),
     })) as OrderItemInput[];
 
   const toggleMember = (memberCustomerId: string) => {
@@ -403,33 +430,6 @@ export function NewOrderModulePage() {
     );
   };
 
-  const validRows = (
-    rows: MemberRow[],
-    allCustomers: Customer[]
-  ): Array<{
-    memberCustomerId: string;
-    memberName: string;
-    gender?: string;
-    department?: string;
-    measurements?: Record<string, unknown>;
-    garments: MemberRowGarment[];
-  }> =>
-    rows
-      .filter((r) => r.garments.some((g) => g.name.trim()))
-      .map((r) => {
-        const member = allCustomers.find((c) => c.id === r.memberCustomerId);
-        return {
-          memberCustomerId: r.memberCustomerId,
-          memberName: member?.fullName ?? "",
-          gender: member?.gender,
-          department: member?.department,
-          measurements: member?.measurements ?? {},
-          garments: r.garments
-            .filter((g) => g.name.trim())
-            .map((g) => ({ ...g, name: g.name.trim(), styleNotes: g.styleNotes || undefined })),
-        };
-      });
-
   const onSubmit: SubmitHandler<NewOrderValues> = async (values) => {
     if (!user) return;
     const customer = customers.find((entry) => entry.id === values.customerId);
@@ -439,30 +439,57 @@ export function NewOrderModulePage() {
     }
 
     const isGroup = customer.customerType === "group";
-    if (isGroup) {
-      const valid = memberRows.filter((r) => r.garments.some((g) => g.name.trim()));
-      if (valid.length === 0) {
-        toast.error("Add at least one member with a garment");
-        return;
-      }
-      for (const r of valid) {
-        const hasInvalid = r.garments.some(
-          (g) => g.name.trim() && (!Number(g.quantity) || Number(g.quantity) < 1)
-        );
-        if (hasInvalid) {
-          toast.error("Each garment needs a quantity of at least 1");
-          return;
-        }
-      }
-    } else if (items.length === 0) {
+    if (items.length === 0) {
       toast.error("Add at least one item to the order");
       return;
     } else if (!validateItems()) {
       return;
     }
 
+    if (isGroup && items.some((item) => !item.memberCustomerId)) {
+      toast.error("Choose the member receiving each group-order item");
+      return;
+    }
+
     const tailor = tailors.find((entry) => entry.uid === values.assignedTailorId);
-    const members = isGroup ? validRows(memberRows, customers) : [];
+    const members = isGroup
+      ? groupMembers
+          .filter((member) => items.some((item) => item.memberCustomerId === member.id))
+          .map((member) => ({
+            memberCustomerId: member.id,
+            memberName: member.fullName,
+            gender: member.gender,
+            department: member.department,
+            measurements: member.measurements,
+            garments: [],
+          }))
+      : [];
+    const representative = groupMembers.find((member) => member.id === representativeId);
+    const payer = groupMembers.find((member) => member.id === payerId);
+    const referenceImageUrls = new Map<string, string>();
+
+    try {
+      await Promise.all(
+        items.filter((item) => item.referenceImageFile).map(async (item) => {
+          const meta = await uploadImage({
+            file: item.referenceImageFile as File,
+            businessId,
+            uploadedByUid: user.uid,
+            customerId: item.memberCustomerId || customer.id,
+          });
+          referenceImageUrls.set(item.key, meta.url);
+        })
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? `Could not upload item reference: ${error.message}` : "Could not upload an item reference");
+      return;
+    }
+    const orderItems = buildItemsPayload(referenceImageUrls).map((item, index) => {
+      const recipient = items[index].memberCustomerId
+        ? groupMembers.find((member) => member.id === items[index].memberCustomerId)
+        : undefined;
+      return { ...item, memberCustomerId: recipient?.id, memberName: recipient?.fullName };
+    });
 
     try {
       const { id: orderId, orderNumber, trackingToken } = await createOrder(
@@ -477,14 +504,21 @@ export function NewOrderModulePage() {
           assignedTailorId: tailor?.uid,
           assignedTailorName: tailor?.displayName,
           garments: isGroup ? [] : [],
-          items: isGroup ? [] : buildItemsPayload(),
+          items: orderItems,
           measurementsSnapshot: customer.measurements,
           designNotes: values.designNotes,
           fabricSelections: [],
           dueDate: values.dueDate,
-          subtotalAmount: isGroup ? memberSubtotal : itemSubtotal,
+          subtotalAmount: itemSubtotal,
           isGroupOrder: isGroup,
           members,
+          representativeCustomerId: representative?.id,
+          representativeName: representative?.fullName,
+          representativePhone: representative?.phone,
+          representativeEmail: representative?.email,
+          payerCustomerId: payer?.id,
+          payerName: payer?.fullName,
+          payerPhone: payer?.phone,
           deliveryMethod,
           deliveryFee: deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0,
           deliveryAddress: deliveryMethod === "delivery" ? deliveryAddress.trim() || undefined : undefined,
@@ -518,18 +552,19 @@ export function NewOrderModulePage() {
       }
       await notifyNewOrder(businessId, orderNumber, customer.fullName, orderId, user.uid);
 
-      if (customer.phone && trackingToken) {
+      const communicationContact = representative ?? customer;
+      if (communicationContact.phone && trackingToken) {
         const origin = window.location.origin;
         const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1");
         const greetName = isGroup
-          ? (customer.contactPerson || customer.organizationName || customer.fullName).split(" ")[0]
+          ? communicationContact.fullName.split(" ")[0]
           : customer.fullName.split(" ")[0];
         const bizName = business?.name ?? "our workshop";
         const trackingLine = isLocalhost ? "" : `\nTrack your order online:\n${origin}/auth/customer-login\n`;
         let message = `Hello ${greetName},\n\nYour order ${orderNumber} has been created at ${bizName}.${trackingLine}\nThank you.`;
 
         let onboardingIncluded = false;
-        const messagingInfo = await getCustomerMessagingInfo(businessId, customer.id).catch(() => null);
+        const messagingInfo = await getCustomerMessagingInfo(businessId, communicationContact.id).catch(() => null);
         if (messagingInfo && !messagingInfo.portalOnboardingSent) {
           message = appendPortalOnboarding(message, {
             email: messagingInfo.email ?? undefined,
@@ -538,10 +573,10 @@ export function NewOrderModulePage() {
           onboardingIncluded = true;
         }
 
-        const smsResult = await sendSms(customer.phone, message);
+        const smsResult = await sendSms(communicationContact.phone, message);
         if (smsResult.success) {
           if (onboardingIncluded) {
-            await markPortalOnboardingSent(businessId, customer.id).catch(() => {});
+            await markPortalOnboardingSent(businessId, communicationContact.id).catch(() => {});
           }
         } else {
           console.warn("Order creation SMS failed:", smsResult.error);
@@ -561,28 +596,30 @@ export function NewOrderModulePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             New Order
-            {!isGroupOrder && items.length > 0 && (
+            {items.length > 0 && (
               <Badge variant="default" className="normal-case">
                 {itemTypeCount(items)}
               </Badge>
             )}
           </CardTitle>
+          <p className="text-sm text-slate-500">Choose the customer first, then add only the items they need. Each item carries its own production details and reference image.</p>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
             <div>
               <Label>Customer</Label>
-              <Select {...register("customerId")}>
-                <option value="">Select customer</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.customerType === "group"
-                      ? `${customer.organizationName || customer.fullName} (Group)`
-                      : customer.fullName}{" "}
-                    ({customer.phone})
-                  </option>
-                ))}
-              </Select>
+              <SearchableSelect
+                options={customerOptions}
+                value={selectedCustomerId ?? ""}
+                onChange={(v) => setValue("customerId", v, { shouldValidate: true })}
+                placeholder="Search by name or phone…"
+                chips={customerChips}
+                maxResults={150}
+                className="w-full"
+              />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Recent customers appear first. Use the search box or the Customers / Groups filters to find anyone.
+              </p>
             </div>
             <div>
               <Label>Assigned tailor</Label>
@@ -613,11 +650,39 @@ export function NewOrderModulePage() {
         </CardContent>
       </Card>
 
-      {!isGroupOrder && (
+      {isGroupOrder && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Group order roles</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <p className="md:col-span-2 text-sm text-slate-500">
+              Members receive the garments. A representative receives communication, and a payer is responsible for payment. The last two are optional and do not need to receive an item.
+            </p>
+            <div>
+              <Label>Representative for communication (optional)</Label>
+              <Select value={representativeId} onChange={(e) => setRepresentativeId(e.target.value)}>
+                <option value="">Use the group contact</option>
+                {groupMembers.map((member) => <option key={member.id} value={member.id}>{member.fullName}{member.phone ? ` (${member.phone})` : ""}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label>Payer (optional)</Label>
+              <Select value={payerId} onChange={(e) => setPayerId(e.target.value)}>
+                <option value="">The group account pays</option>
+                {representativeId && <option value={representativeId}>Same as representative</option>}
+                {groupMembers.filter((member) => member.id !== representativeId).map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {true && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between gap-2">
-              Order Items
+              {isGroupOrder ? "Assign items to members" : "Order Items"}
               <div className="flex flex-wrap gap-2">
                 {(Object.keys(ITEM_TYPE_LABELS) as OrderItemType[]).map((type) => (
                   <Button
@@ -659,6 +724,20 @@ export function NewOrderModulePage() {
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  {isGroupOrder && (
+                    <div>
+                      <Label>Receiving member</Label>
+                      <Select
+                        value={item.memberCustomerId ?? ""}
+                        onChange={(e) => updateItem(item.key, { memberCustomerId: e.target.value })}
+                      >
+                        <option value="">Select who receives this item</option>
+                        {groupMembers.map((member) => (
+                          <option key={member.id} value={member.id}>{member.fullName}</option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
                   {item.itemType !== "ready_made" && item.itemType !== "material" ? (
                     <div>
                       <Label>{item.itemType === "service" ? "Service name" : "Item / garment name"}</Label>
@@ -798,6 +877,28 @@ export function NewOrderModulePage() {
                     onChange={(e) => updateItem(item.key, { styleNotes: e.target.value })}
                   />
                 </div>
+                <div className="mt-3">
+                  <Label>Reference image (optional)</Label>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file && !file.type.startsWith("image/")) {
+                        toast.error("Please choose an image file");
+                        e.target.value = "";
+                        return;
+                      }
+                      if (file && file.size > 10 * 1024 * 1024) {
+                        toast.error("Image must be 10MB or smaller");
+                        e.target.value = "";
+                        return;
+                      }
+                      updateItem(item.key, { referenceImageFile: file });
+                    }}
+                  />
+                  {item.referenceImageFile && <p className="mt-1 text-xs text-slate-500">{item.referenceImageFile.name}</p>}
+                </div>
 
                 <p className="mt-3 text-right text-sm font-medium text-slate-700">
                   Line total:{" "}
@@ -825,7 +926,7 @@ export function NewOrderModulePage() {
         </Card>
       )}
 
-      {isGroupOrder && (
+      {false && isGroupOrder && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -991,7 +1092,7 @@ export function NewOrderModulePage() {
       <div className="flex items-center justify-end gap-3">
         <div className="text-right">
           <p className="text-lg font-semibold text-slate-900">
-            Total: {formatKes((isGroupOrder ? memberSubtotal : itemSubtotal) + (deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0))}
+            Total: {formatKes(itemSubtotal + (deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0))}
           </p>
           {deliveryMethod === "delivery" && Number(deliveryFee) > 0 && (
             <p className="text-xs text-slate-500">

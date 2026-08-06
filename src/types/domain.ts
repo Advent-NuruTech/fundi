@@ -593,6 +593,11 @@ export interface OrderItem {
   size?: string;
   color?: string;
   brand?: string;
+  /** Group-order recipient. Empty for a normal individual order item. */
+  memberCustomerId?: string;
+  memberName?: string;
+  /** Optional design/reference image for this specific line item. */
+  referenceImageUrl?: string;
   quantity: number;
   unit?: string;
   /** Actual selling price charged at the time of the transaction. */
@@ -664,6 +669,13 @@ export interface Order {
   /** Per-person lines on a group order, each with its own production stage. */
   members?: OrderMember[];
   memberCount?: number;
+  representativeCustomerId?: string;
+  representativeName?: string;
+  representativePhone?: string;
+  representativeEmail?: string;
+  payerCustomerId?: string;
+  payerName?: string;
+  payerPhone?: string;
   // ── Delivery management ────────────────────────────────────────────────────
   /** How the order reaches the customer (delivery courier / shop pickup). */
   deliveryMethod?: DeliveryMethod;

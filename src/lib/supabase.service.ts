@@ -1398,6 +1398,9 @@ export interface OrderItemInput {
   size?: string;
   color?: string;
   brand?: string;
+  memberCustomerId?: string;
+  memberName?: string;
+  referenceImageUrl?: string;
   quantity: number;
   unit?: string;
   /** Actual selling price charged at the time of the transaction. */
@@ -1881,6 +1884,9 @@ function buildOrderItemRow(orderId: string, item: OrderItemInput, sortOrder: num
     size: item.size ?? null,
     color: item.color ?? null,
     brand: item.brand ?? null,
+    member_customer_id: item.memberCustomerId ?? null,
+    member_name: item.memberName ?? null,
+    reference_image_url: item.referenceImageUrl ?? null,
     quantity,
     unit: item.unit ?? "pcs",
     unit_price: unitPrice,
@@ -2603,6 +2609,9 @@ async function assembleOrder(orderId: string): Promise<Order | null> {
         size: row.size as string | undefined,
         color: row.color as string | undefined,
         brand: row.brand as string | undefined,
+        memberCustomerId: row.member_customer_id as string | undefined,
+        memberName: row.member_name as string | undefined,
+        referenceImageUrl: row.reference_image_url as string | undefined,
         quantity: Number(row.quantity),
         unit: row.unit as string | undefined,
         unitPrice: Number(row.unit_price),

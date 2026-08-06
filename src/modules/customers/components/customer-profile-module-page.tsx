@@ -162,9 +162,26 @@ export function CustomerProfileModulePage() {
       setCustomer(c);
       setLoading(false);
     });
-    const unsubOrders = listenOrders(businessId, (rows) =>
-      setOrders(rows.filter((row) => row.customerId === customerId))
-    );
+    const unsubOrders = listenOrders(businessId, (rows) => {
+      const relevantOrders = rows.flatMap((row) => {
+        if (row.customerId === customerId) return [row];
+        const memberItems = row.items?.filter((item) => item.memberCustomerId === customerId) ?? [];
+        if (memberItems.length === 0) return [];
+
+        // A member sees only garments assigned to them. The group account keeps
+        // the invoice, payments and balance, so those figures are not copied here.
+        const memberTotal = memberItems.reduce((sum, item) => sum + item.totalAmount, 0);
+        return [{
+          ...row,
+          items: memberItems,
+          subtotalAmount: memberTotal,
+          amountPaid: 0,
+          balanceAmount: memberTotal,
+          paymentStatus: "unpaid" as const,
+        }];
+      });
+      setOrders(relevantOrders);
+    });
     const unsubPayments = listenPayments(businessId, (rows) =>
       setPayments(rows.filter((row) => row.customerId === customerId))
     );
@@ -198,8 +215,12 @@ export function CustomerProfileModulePage() {
     if (!user || !businessId || !customer) return;
     const name = memberForm.name.trim();
     const phone = memberForm.phone.trim();
-    if (!name || phone.length < 9) {
-      toast.error("Member name and a valid phone are required");
+    if (!name) {
+      toast.error("Member name is required");
+      return;
+    }
+    if (phone && phone.length < 9) {
+      toast.error("Enter a valid phone number or leave it blank");
       return;
     }
     const measurements: Record<string, number> = {};
@@ -217,7 +238,7 @@ export function CustomerProfileModulePage() {
       await createGroupMember(businessId, customer.id, {
         businessId,
         fullName: name,
-        phone,
+        phone: phone || "",
         email: memberForm.email.trim() || undefined,
         gender: memberForm.gender === "male" || memberForm.gender === "female"
           ? memberForm.gender
@@ -376,10 +397,10 @@ export function CustomerProfileModulePage() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-slate-900">
-              {editing ? "Edit Customer" : "Customer Profile"}
+              {editing ? "Edit Customer" : isMemberCustomer ? "Team Member Profile" : isGroup ? "Group Account Profile" : "Customer Profile"}
             </h1>
             <p className="text-xs text-slate-500">
-              {editing ? "Update customer details" : "Order history &amp; measurements"}
+              {editing ? "Update customer details" : isMemberCustomer ? "Measurements and garments assigned to this member" : "Order history &amp; measurements"}
             </p>
           </div>
         </div>
@@ -882,7 +903,7 @@ export function CustomerProfileModulePage() {
                       />
                     </div>
                     <div>
-                      <Label>Phone *</Label>
+                      <Label>Phone <span className="font-normal text-slate-400">(optional)</span></Label>
                       <Input
                         type="tel"
                         value={memberForm.phone}
@@ -1001,7 +1022,12 @@ export function CustomerProfileModulePage() {
           {/* Order history */}
           <div className="rounded-3xl border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900">Order History</h3>
+              <div>
+                <h3 className="font-bold text-slate-900">{isMemberCustomer ? "Garment History" : "Order History"}</h3>
+                {isMemberCustomer && (
+                  <p className="mt-0.5 text-xs text-slate-500">Items assigned to this member. Payment is managed by the group account.</p>
+                )}
+              </div>
               {activeOrders > 0 && (
                 <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
                   {activeOrders} active
@@ -1013,6 +1039,7 @@ export function CustomerProfileModulePage() {
             ) : (
               <div className="space-y-2">
                 {sortedOrders.map((order) => {
+                  const isGroupAssignedOrder = isMemberCustomer && order.customerId !== customer.id;
                   const orderBalance = order.balanceAmount ?? (order.subtotalAmount - order.amountPaid);
                   const isSettled = orderBalance <= 0;
                   return (
@@ -1028,8 +1055,8 @@ export function CustomerProfileModulePage() {
                           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize ${STAGE_COLORS[order.stage] ?? "bg-slate-100 text-slate-600"}`}>
                             {order.stage.replaceAll("_", " ")}
                           </span>
-                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${PAYMENT_STATUS_COLORS[order.paymentStatus] ?? "bg-slate-100 text-slate-500"}`}>
-                            {order.paymentStatus}
+                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${isGroupAssignedOrder ? "bg-indigo-100 text-indigo-700" : PAYMENT_STATUS_COLORS[order.paymentStatus] ?? "bg-slate-100 text-slate-500"}`}>
+                            {isGroupAssignedOrder ? "group billed" : order.paymentStatus}
                           </span>
                         </div>
                       </div>
