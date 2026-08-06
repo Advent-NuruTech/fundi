@@ -476,7 +476,7 @@ export async function getWorkspaceUsage(
 
 // ─── Row mappers ─────────────────────────────────────────────────────────────
 
-function mapTopupRow(row: Record<string, unknown>): UsageTopup {
+export function mapTopupRow(row: Record<string, unknown>): UsageTopup {
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,

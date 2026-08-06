@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   MessageSquare,
   Sparkles,
@@ -50,6 +50,14 @@ interface UsageData {
   topups: UsageTopup[];
   ledger: UsageLedgerEntry[];
   packages: TopupPackage[];
+}
+
+interface ConfirmBalance {
+  available: number;
+  quota: number;
+  used: number;
+  topUpCredits: number;
+  unlimited: boolean;
 }
 
 // ─── Helper: authenticated API call ───────────────────────────────────────────
@@ -111,6 +119,13 @@ export default function UsageTopupsPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
 
+  const [confirmedTopup, setConfirmedTopup] = useState<UsageTopup | null>(null);
+  const [confirmedBalance, setConfirmedBalance] = useState<ConfirmBalance | null>(null);
+  const [verifyFailed, setVerifyFailed] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const router = useRouter();
+
   const fetchUsage = useCallback(async () => {
     try {
       setLoading(true);
@@ -136,10 +151,11 @@ export default function UsageTopupsPage() {
     }
   }, [user, fetchUsage]);
 
-  // Post-payment polling
+  // Post-payment verification
   useEffect(() => {
     if (!action || !ref || user?.role !== "owner") return;
     setProcessing(true);
+    setVerifyFailed(false);
     pollCountRef.current = 0;
 
     const verify = async () => {
@@ -154,17 +170,18 @@ export default function UsageTopupsPage() {
           if (json.verified) {
             if (pollRef.current) clearInterval(pollRef.current);
             setProcessing(false);
-            toast.success("Top-up confirmed — credits added to your balance");
-            fetchUsage();
+            setConfirmedTopup(json.topup as UsageTopup);
+            setConfirmedBalance(json.balance ?? null);
             return;
           }
         }
       } catch {
         // keep polling
       }
-      if (pollCountRef.current >= 15) {
+      if (pollCountRef.current >= 20) {
         if (pollRef.current) clearInterval(pollRef.current);
         setProcessing(false);
+        setVerifyFailed(true);
       }
     };
 
@@ -173,8 +190,44 @@ export default function UsageTopupsPage() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [action, ref, user]);
+  }, [action, ref, user, retryToken]);
+
+  // Reset the success/failure state once the callback params are gone
+  useEffect(() => {
+    if (!action || !ref) {
+      setConfirmedTopup(null);
+      setConfirmedBalance(null);
+      setVerifyFailed(false);
+      setProcessing(false);
+      setCountdown(null);
+    }
+  }, [action, ref]);
+
+  const checkAgain = useCallback(() => {
+    setVerifyFailed(false);
+    setRetryToken((t) => t + 1);
+  }, []);
+
+  const goToUsage = useCallback(() => {
+    fetchUsage();
+    router.replace("/settings/usage");
+  }, [fetchUsage, router]);
+
+  // 10-second countdown, then redirect to the clean usage page with fresh data
+  useEffect(() => {
+    if (confirmedTopup) setCountdown(10);
+  }, [confirmedTopup]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      setCountdown(null);
+      goToUsage();
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown, goToUsage]);
 
   if (user?.role !== "owner") {
     return (
@@ -183,6 +236,17 @@ export default function UsageTopupsPage() {
         <h2 className="text-xl font-bold text-slate-900">Usage is owner-only</h2>
         <p className="text-slate-500">Only the workspace owner can view usage and buy top-ups.</p>
       </div>
+    );
+  }
+
+  if (confirmedTopup) {
+    return (
+      <TopupSuccessPanel
+        topup={confirmedTopup}
+        balance={confirmedBalance}
+        countdown={countdown}
+        onGoNow={goToUsage}
+      />
     );
   }
 
@@ -226,6 +290,23 @@ export default function UsageTopupsPage() {
           </span>
         )}
       </div>
+
+      {/* ── Payment could not be confirmed yet ───────────────────────────────── */}
+      {verifyFailed && (
+        <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-slate-900">We couldn&apos;t confirm your payment automatically.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              If you were charged, your credits will be added as soon as Paystack confirms — usually
+              within a minute. Check again below.
+            </p>
+          </div>
+          <Button variant="outline" className="gap-2" onClick={checkAgain}>
+            <RefreshCw className="h-4 w-4" /> Check again
+          </Button>
+        </div>
+      )}
 
       {/* ── Resource cards ──────────────────────────────────────────────────── */}
       <div className="grid gap-5 md:grid-cols-3">
@@ -540,5 +621,77 @@ function TopupModal({
         </Button>
       </div>
     </Dialog>
+  );
+}
+
+// ─── Thank-you panel (shown after a confirmed top-up) ────────────────────────
+
+function TopupSuccessPanel({
+  topup,
+  balance,
+  countdown,
+  onGoNow,
+}: {
+  topup: UsageTopup;
+  balance: ConfirmBalance | null;
+  countdown: number | null;
+  onGoNow: () => void;
+}) {
+  const meta = USAGE_RESOURCE_META[topup.resource];
+  const available = balance?.available ?? null;
+
+  return (
+    <div className="mx-auto max-w-lg space-y-6 py-12">
+      <div className="flex justify-center">
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100">
+          <CheckCircle2 className="h-11 w-11 text-emerald-600" />
+          <div className="absolute inset-0 animate-ping rounded-full bg-emerald-200 opacity-60" />
+        </div>
+      </div>
+
+      <div className="text-center">
+        <h1 className="text-3xl font-black text-slate-900">Thank you — payment received!</h1>
+        <p className="mt-2 text-slate-500">
+          Your {meta.name} top-up is confirmed and ready to use.
+        </p>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="space-y-3 p-6 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">You bought</span>
+            <span className="font-semibold text-slate-900">
+              {formatUsageUnits(topup.resource, topup.units)} {meta.pluralLabel}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">Amount paid</span>
+            <span className="font-semibold text-slate-900">{formatKes(topup.amountKes)}</span>
+          </div>
+          {available != null && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+              <span className="text-slate-500">Total {meta.pluralLabel} available now</span>
+              <span className="font-bold text-emerald-700">
+                {formatUsageUnits(topup.resource, available)}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button
+        onClick={onGoNow}
+        className="w-full gap-2 rounded-xl bg-emerald-600 py-3 text-base font-bold text-white hover:bg-emerald-500"
+      >
+        Go to Usage &amp; Top-ups
+        {countdown != null && countdown > 0 ? ` (${countdown}s)` : ""}
+      </Button>
+
+      {countdown != null && countdown > 0 && (
+        <p className="text-center text-xs text-slate-400">
+          Redirecting you to your updated usage in {countdown}s…
+        </p>
+      )}
+    </div>
   );
 }

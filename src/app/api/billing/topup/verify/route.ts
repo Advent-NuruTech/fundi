@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { verifyTransaction } from "@/lib/billing/paystack-client";
-import { creditTopup } from "@/lib/billing/usage-metering";
+import { creditTopup, getUsageBalance, mapTopupRow } from "@/lib/billing/usage-metering";
 
 const bodySchema = z.object({
   reference: z.string().min(1),
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid reference" }, { status: 400 });
     }
 
-    // Idempotent: already credited → return the recorded top-up
+    // Idempotent: already credited → return the recorded top-up + current balance
     const { data: existing } = await admin
       .from("usage_topups")
       .select("*")
@@ -40,18 +40,32 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existing?.status === "success") {
-      return NextResponse.json({ verified: true, topup: existing });
+      const balance = await getUsageBalance(
+        admin,
+        existing.workspace_id as string,
+        existing.resource as Parameters<typeof getUsageBalance>[2]
+      ).catch(() => null);
+      return NextResponse.json({ verified: true, topup: mapTopupRow(existing), balance });
     }
     if (existing?.status === "failed") {
-      return NextResponse.json({ verified: false, topup: existing });
+      return NextResponse.json({ verified: false, topup: mapTopupRow(existing) });
     }
 
     // Re-verify server-side (never trust the redirect alone)
     const paystackRes = await verifyTransaction(reference);
-    if (!paystackRes.status || paystackRes.data.status !== "success") {
+    const txStatus = paystackRes.data?.status ?? null;
+
+    if (!paystackRes.status || (txStatus && txStatus !== "success")) {
+      // Terminal states — mark the pending top-up so it stops being re-tried.
+      if (existing && (txStatus === "failed" || txStatus === "abandoned")) {
+        await admin
+          .from("usage_topups")
+          .update({ status: "failed", updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      }
       return NextResponse.json({
         verified: false,
-        status: paystackRes.data.status,
+        status: txStatus,
         message: paystackRes.message,
       });
     }
@@ -65,7 +79,11 @@ export async function POST(request: Request) {
       paystackFeeKobo: tx.fees ?? 0,
     });
 
-    return NextResponse.json({ verified: true, topup });
+    const balance = await getUsageBalance(admin, topup.workspaceId, topup.resource).catch(
+      () => null
+    );
+
+    return NextResponse.json({ verified: true, topup, balance });
   } catch (err) {
     console.error("[billing/topup/verify]", err);
     return NextResponse.json(
