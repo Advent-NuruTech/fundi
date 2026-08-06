@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   MessageSquare,
   Sparkles,
@@ -124,7 +124,6 @@ export default function UsageTopupsPage() {
   const [verifyFailed, setVerifyFailed] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const router = useRouter();
 
   const fetchUsage = useCallback(async () => {
     try {
@@ -170,8 +169,9 @@ export default function UsageTopupsPage() {
           if (json.verified) {
             if (pollRef.current) clearInterval(pollRef.current);
             setProcessing(false);
-            setConfirmedTopup(json.topup as UsageTopup);
+            setConfirmedTopup((prev) => prev ?? (json.topup as UsageTopup));
             setConfirmedBalance(json.balance ?? null);
+            setCountdown((prev) => (prev === null ? 10 : prev));
             return;
           }
         }
@@ -209,14 +209,11 @@ export default function UsageTopupsPage() {
   }, []);
 
   const goToUsage = useCallback(() => {
-    fetchUsage();
-    router.replace("/settings/usage");
-  }, [fetchUsage, router]);
-
-  // 10-second countdown, then redirect to the clean usage page with fresh data
-  useEffect(() => {
-    if (confirmedTopup) setCountdown(10);
-  }, [confirmedTopup]);
+    // Full-page redirect — a soft router.replace() to the same pathname could be
+    // swallowed without clearing the callback query params, leaving the user
+    // stuck on the "Thank you" screen with no redirect.
+    window.location.replace("/settings/usage");
+  }, []);
 
   useEffect(() => {
     if (countdown === null) return;
