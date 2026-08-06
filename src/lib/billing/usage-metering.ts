@@ -368,7 +368,12 @@ export async function creditTopup(
     throw new Error(rpc.error?.message ?? "Usage credit failed");
   }
 
-  const paystackFee = koboToKes(input.paystackFeeKobo);
+  // `paystack_fee` is an INTEGER (KES) column in both usage_topups and
+  // billing_payments. Paystack returns fees in kobo, which is almost always
+  // fractional in KES (e.g. 30 kobo = 0.30 KES) — writing that raw made the
+  // usage_topups status update FAIL after the credit RPC had already run,
+  // leaving the top-up permanently "pending" (stuck confirming / re-credit loop).
+  const paystackFee = Math.round(koboToKes(input.paystackFeeKobo));
 
   const { error: topupErr } = await admin
     .from("usage_topups")
@@ -410,15 +415,22 @@ export async function creditTopup(
     .update({ status: "success", updated_at: new Date().toISOString() })
     .eq("reference", input.paystackReference);
 
-  await admin.from("billing_audit_logs").insert({
-    workspace_id: topup.workspace_id,
-    user_id: topup.user_id,
-    action: "topup_credited",
-    previous_state: { status: "pending" },
-    new_state: { resource: topup.resource, units, amount_kes: amountKes },
-    performed_by_role: "owner",
-    metadata: { paystack_reference: input.paystackReference },
-  });
+  // Fire-and-forget — never let an audit-log failure wedge the flow
+  // (usage_topups is already marked success above, so a later poll self-heals).
+  await admin
+    .from("billing_audit_logs")
+    .insert({
+      workspace_id: topup.workspace_id,
+      user_id: topup.user_id,
+      action: "topup_credited",
+      previous_state: { status: "pending" },
+      new_state: { resource: topup.resource, units, amount_kes: amountKes },
+      performed_by_role: "owner",
+      metadata: { paystack_reference: input.paystackReference },
+    })
+    .then(({ error }) => {
+      if (error) console.error("[billing-audit] topup_credited", error.message);
+    });
 
   return mapTopupRow({
     ...topup,
