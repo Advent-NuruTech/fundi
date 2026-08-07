@@ -1,26 +1,21 @@
 /**
  * Business categories (industries) supported by FundiFlow.
  *
- * FundiFlow started life as a tailoring OS, but the same engine — inventory,
- * finance, customers, orders, POS, payments, analytics — solves the daily
- * pain of most Kenyan / African SMEs. This registry lets one codebase wear
- * many faces: it drives terminology, which modules appear, the default
- * inventory taxonomy, and the onboarding copy for each industry.
+ * FundiFlow is a tailoring & fashion operating system. This registry drives
+ * terminology, which modules appear, the default inventory taxonomy and the
+ * onboarding copy. The registry is intentionally single-preset today — only
+ * Tailoring & Fashion is offered.
  *
  * IMPORTANT: this file is plain data (no JSX, no React) so it is safe to import
  * from BOTH client components and server API routes (e.g. the onboard route
  * seeds inventory categories/units from here).
  *
- * Adding a new industry = add an entry here. No database migration needed —
- * `businesses.business_type` is free-form text (see migration 00027).
+ * Legacy businesses created with an old preset (retail, wholesale, hardware,
+ * general) keep working — `getBusinessTypeConfig` falls back to the tailoring
+ * preset for any unknown value, so nothing breaks.
  */
 
-export type BusinessType =
-  | "tailoring"
-  | "retail"
-  | "wholesale"
-  | "hardware"
-  | "general";
+export type BusinessType = "tailoring";
 
 export const DEFAULT_BUSINESS_TYPE: BusinessType = "tailoring";
 
@@ -92,113 +87,11 @@ const TAILORING: BusinessTypeConfig = {
   inventoryUnits: ["Pieces", "Meters", "Cones", "Kilograms", "Liters"],
 };
 
-const RETAIL: BusinessTypeConfig = {
-  id: "retail",
-  label: "Retail Shop / Duka",
-  emoji: "🏪",
-  tagline: "Retail Shop OS",
-  description: "Shops, dukas, minimarts and kiosks selling products over the counter.",
-  painSolved: "Know exactly what's selling, what's running out, and how much you really made today.",
-  terms: {
-    orders: "Sales",
-    order: "Sale",
-    customers: "Customers",
-    customer: "Customer",
-    inventory: "Stock",
-    materials: "Products",
-    material: "Product",
-    production: "Production",
-    suppliers: "Suppliers",
-  },
-  hiddenNav: ["/production"],
-  inventoryCategories: ["Groceries", "Beverages", "Snacks", "Household", "Personal Care", "Electronics", "Stationery", "Other"],
-  inventoryUnits: ["Pieces", "Packets", "Cartons", "Kilograms", "Liters", "Dozens"],
-};
-
-const WHOLESALE: BusinessTypeConfig = {
-  id: "wholesale",
-  label: "Wholesale / Distributor",
-  emoji: "📦",
-  tagline: "Wholesale & Distribution OS",
-  description: "Wholesalers and distributors moving stock in bulk to shops and traders.",
-  painSolved: "Track bulk stock, credit customers and supplier debts without a single notebook.",
-  terms: {
-    orders: "Orders",
-    order: "Order",
-    customers: "Clients",
-    customer: "Client",
-    inventory: "Stock",
-    materials: "Products",
-    material: "Product",
-    production: "Production",
-    suppliers: "Suppliers",
-  },
-  hiddenNav: ["/production"],
-  inventoryCategories: ["Foodstuff", "Beverages", "Cleaning Supplies", "Packaging", "Cereals", "Cooking Oil", "Sugar & Flour", "Other"],
-  inventoryUnits: ["Cartons", "Bales", "Sacks", "Crates", "Kilograms", "Pieces", "Dozens"],
-};
-
-const HARDWARE: BusinessTypeConfig = {
-  id: "hardware",
-  label: "Hardware Store",
-  emoji: "🔧",
-  tagline: "Hardware Store OS",
-  description: "Hardware shops selling building, plumbing, electrical and tools.",
-  painSolved: "Stop stock-outs on fast movers and track every shilling across thousands of SKUs.",
-  terms: {
-    orders: "Sales",
-    order: "Sale",
-    customers: "Customers",
-    customer: "Customer",
-    inventory: "Stock",
-    materials: "Products",
-    material: "Product",
-    production: "Production",
-    suppliers: "Suppliers",
-  },
-  hiddenNav: ["/production"],
-  inventoryCategories: ["Cement & Building", "Plumbing", "Electrical", "Paint", "Tools", "Steel & Metal", "Timber", "Fasteners", "Other"],
-  inventoryUnits: ["Pieces", "Bags", "Meters", "Kilograms", "Litres", "Rolls", "Bundles"],
-};
-
-const GENERAL: BusinessTypeConfig = {
-  id: "general",
-  label: "Other Business",
-  emoji: "🏬",
-  tagline: "Business Management OS",
-  description: "Any other SME — services, agribusiness, salons and more.",
-  painSolved: "Run inventory, finance and customers in one simple place built for SMEs.",
-  terms: {
-    orders: "Orders",
-    order: "Order",
-    customers: "Customers",
-    customer: "Customer",
-    inventory: "Inventory",
-    materials: "Items",
-    material: "Item",
-    production: "Production",
-    suppliers: "Suppliers",
-  },
-  hiddenNav: ["/production"],
-  inventoryCategories: ["General", "Supplies", "Equipment", "Other"],
-  inventoryUnits: ["Pieces", "Boxes", "Kilograms", "Litres", "Hours"],
-};
-
 /** Ordered for display in the onboarding picker. */
-export const BUSINESS_TYPES: BusinessTypeConfig[] = [
-  RETAIL,
-  WHOLESALE,
-  HARDWARE,
-  TAILORING,
-  GENERAL,
-];
+export const BUSINESS_TYPES: BusinessTypeConfig[] = [TAILORING];
 
 const BY_ID: Record<BusinessType, BusinessTypeConfig> = {
   tailoring: TAILORING,
-  retail: RETAIL,
-  wholesale: WHOLESALE,
-  hardware: HARDWARE,
-  general: GENERAL,
 };
 
 export function isBusinessType(value: unknown): value is BusinessType {

@@ -11,8 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/features/auth/components/auth-context";
-import { useBusinessType } from "@/hooks/useBusinessType";
 import { VariantBuilder } from "./variant-builder";
 import type {
   EcommerceCategory,
@@ -108,11 +106,9 @@ const CHANNEL_OPTIONS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save Product" }: ProductFormProps) {
-  const { user } = useAuth();
-  const biz = useBusinessType();
-  // Wholesalers/distributors list on the wholesale channel by default; every
-  // other industry defaults to retail. Existing products keep their own value.
-  const defaultChannel = biz.id === "wholesale" ? "wholesale" : "retail";
+  // FundiFlow is tailoring & fashion only, so the default channel is retail.
+  // Existing products keep their own value.
+  const defaultChannel = "retail";
   const [saving, setSaving] = useState(false);
   const [images, setImages] = useState<ProductImage[]>(
     initial?.images?.map((img, i) => ({ url: img.url, altText: img.altText, isPrimary: img.isPrimary || i === 0 })) ?? []

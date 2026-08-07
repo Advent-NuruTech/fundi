@@ -139,90 +139,6 @@ const CATEGORY_COPY: Record<BusinessType, CategoryCopy> = {
       },
     },
   },
-  retail: {
-    hero:
-      "Three plans built around the way a shop actually grows — from a single duka to a multi-branch retail chain. Start simple, scale with confidence.",
-    plans: {
-      sindano: {
-        tagline: "For individuals starting or formalising their business",
-        description:
-          "A complete, organised way to run your shop — from your first sale to a steady stream of repeat customers. Generous included capacity, nothing you don't need.",
-      },
-      fundi: {
-        tagline: "Designed for growing shops with a team",
-        description:
-          "Everything you need to run a tight, profitable shop — team access, complete finance visibility and the analytics to grow with confidence.",
-      },
-      dhahabu: {
-        tagline: "Built for established retailers and chains",
-        description:
-          "The complete FundiFlow experience — every branch, every team, every product and every shilling, managed from one command centre.",
-      },
-    },
-  },
-  wholesale: {
-    hero:
-      "Three plans built around the way a distribution business actually grows — from a single store to a regional supply network. Start simple, scale with confidence.",
-    plans: {
-      sindano: {
-        tagline: "For individuals starting or formalising their business",
-        description:
-          "A complete, organised way to move stock — from your first order to a growing list of trusted clients. Generous included capacity, nothing you don't need.",
-      },
-      fundi: {
-        tagline: "Designed for growing distributors with a team",
-        description:
-          "Everything you need to run a tight, profitable distribution business — team access, complete finance visibility and supplier tracking done right.",
-      },
-      dhahabu: {
-        tagline: "Built for established wholesalers and distributors",
-        description:
-          "The complete FundiFlow experience — every branch, every team, every order and every shilling, managed from one command centre.",
-      },
-    },
-  },
-  hardware: {
-    hero:
-      "Three plans built around the way a hardware business actually grows — from a single shop to a multi-branch building-supply chain. Start simple, scale with confidence.",
-    plans: {
-      sindano: {
-        tagline: "For individuals starting or formalising their business",
-        description:
-          "A complete, organised way to run your store — from your first sale to a dependable record of every shilling. Generous included capacity, nothing you don't need.",
-      },
-      fundi: {
-        tagline: "Designed for growing hardware stores with a team",
-        description:
-          "Everything you need to run a tight, profitable store — team access, complete finance visibility and stock you can trust.",
-      },
-      dhahabu: {
-        tagline: "Built for established hardware and building-supply chains",
-        description:
-          "The complete FundiFlow experience — every branch, every team, every SKU and every shilling, managed from one command centre.",
-      },
-    },
-  },
-  general: {
-    hero:
-      "Three plans built around the way a business actually grows — from a one-person operation to a multi-branch enterprise. Start simple, scale with confidence.",
-    plans: {
-      sindano: {
-        tagline: "For individuals starting or formalising their business",
-        description:
-          "A complete, organised way to run your operation — from your first record to a dependable system you can build on. Generous included capacity, nothing you don't need.",
-      },
-      fundi: {
-        tagline: "Designed for growing businesses with a team",
-        description:
-          "Everything you need to run a tight, profitable operation — team access, complete finance visibility and the analytics to grow with confidence.",
-      },
-      dhahabu: {
-        tagline: "Built for established businesses and enterprises",
-        description:
-          "The complete FundiFlow experience — every branch, every team, every record and every shilling, managed from one command centre.",
-      },
-    },
-  },
 };
 
 const nf = (value: number | null | undefined): string =>
@@ -262,7 +178,7 @@ export function getPlansForCategory(
   const live = resolveConfigs(configs);
   const cfg = getBusinessTypeConfig(type);
   const t = cfg.terms;
-  const copy = CATEGORY_COPY[type] ?? CATEGORY_COPY.general;
+  const copy = CATEGORY_COPY[type];
   const isTailoring = type === "tailoring";
 
   const lc = (s: string) => s.toLowerCase();
@@ -346,5 +262,5 @@ export function getPlansForCategory(
 }
 
 export function getHeroForCategory(type: BusinessType): string {
-  return (CATEGORY_COPY[type] ?? CATEGORY_COPY.general).hero;
+  return CATEGORY_COPY[type].hero;
 }

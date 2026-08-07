@@ -8,7 +8,7 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { SubscriptionGuard } from "@/components/billing/subscription-guard";
 import { ExpiryReminder } from "@/components/billing/expiry-reminder";
 import { TrialBanner } from "@/components/billing/trial-banner";
-import { WifiOff, RefreshCw } from "lucide-react";
+import { WifiOff, RefreshCw, X } from "lucide-react";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useSyncEngine } from "@/hooks/useSyncEngine";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
@@ -49,6 +49,7 @@ function OfflineBanner() {
   const { online, wasOffline } = useNetworkStatus();
   const { pendingCount, isSyncing, triggerSync } = useSyncEngine();
   const [justReconnected, setJustReconnected] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     if (online && wasOffline) {
@@ -59,28 +60,59 @@ function OfflineBanner() {
     }
   }, [online, wasOffline, triggerSync]);
 
-  // Nothing to show
-  if (online && !justReconnected && pendingCount === 0) return null;
+  const variant = !online
+    ? "offline"
+    : justReconnected
+      ? "reconnected"
+      : pendingCount > 0
+        ? "pending"
+        : null;
 
-  if (online && justReconnected) {
+  // Auto-dismiss every banner after 30s at the most. The timer resets whenever
+  // the banner changes state so the user is never blocked from the UI.
+  useEffect(() => {
+    if (!variant) {
+      setDismissed(false);
+      return;
+    }
+    setDismissed(false);
+    const t = setTimeout(() => setDismissed(true), 30000);
+    return () => clearTimeout(t);
+  }, [variant]);
+
+  // Nothing to show
+  if (!variant || dismissed) return null;
+
+  const closeButton = (
+    <button
+      onClick={() => setDismissed(true)}
+      aria-label="Dismiss notification"
+      className="shrink-0 rounded-md bg-white/20 p-1 transition hover:bg-white/30"
+    >
+      <X className="h-4 w-4" />
+    </button>
+  );
+
+  if (variant === "reconnected") {
     return (
       <div className="fixed top-0 inset-x-0 z-[9999] flex items-center gap-2 bg-emerald-600 px-4 py-2 text-sm text-white shadow-md">
         <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isSyncing ? "animate-spin" : ""}`} />
-        <span>
+        <span className="flex-1">
           {isSyncing
             ? "Back online — syncing your saved data…"
             : pendingCount > 0
             ? `Back online — ${pendingCount} item${pendingCount > 1 ? "s" : ""} waiting to sync`
             : "Back online — everything synced ✓"}
         </span>
+        {closeButton}
       </div>
     );
   }
 
-  if (online && pendingCount > 0) {
+  if (variant === "pending") {
     return (
       <div className="fixed top-0 inset-x-0 z-[9999] flex items-center justify-between gap-2 bg-blue-600 px-4 py-2 text-sm text-white shadow-md">
-        <span className="flex items-center gap-2">
+        <span className="flex flex-1 items-center gap-2">
           <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isSyncing ? "animate-spin" : ""}`} />
           {isSyncing
             ? `Syncing ${pendingCount} saved item${pendingCount > 1 ? "s" : ""}…`
@@ -94,6 +126,7 @@ function OfflineBanner() {
             Sync now
           </button>
         )}
+        {closeButton}
       </div>
     );
   }
@@ -102,10 +135,11 @@ function OfflineBanner() {
   return (
     <div className="fixed top-0 inset-x-0 z-[9999] flex items-center gap-3 bg-amber-500 px-4 py-2.5 text-sm font-medium text-white shadow-md">
       <WifiOff className="h-4 w-4 shrink-0" />
-      <span>
+      <span className="flex-1">
         You&apos;re offline — viewing saved data.{" "}
         <span className="font-normal opacity-90">New records will sync when you reconnect.</span>
       </span>
+      {closeButton}
     </div>
   );
 }

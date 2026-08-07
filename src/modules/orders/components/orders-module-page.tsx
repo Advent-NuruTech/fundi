@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { Order } from "@/types/domain";
 import { listenOrders, dueTodayOrders } from "@/services/firestore.service";
@@ -15,8 +17,13 @@ import { usePermissions } from "@/modules/shared/use-permissions";
 
 type DateFilter = "today" | "week" | "month" | "year" | "all";
 
-const parseIsoDate = (dateString: string) => {
+const parseIsoDate = (dateString?: string | null) => {
+  if (!dateString) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return new Date(dateString + "T00:00:00");
+  }
   const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return null;
   date.setHours(0, 0, 0, 0);
   return date;
 };
@@ -52,9 +59,48 @@ const isThisMonth = (date: Date) => {
 
 const isThisYear = (date: Date) => date.getFullYear() === new Date().getFullYear();
 
+const isSameDate = (date: Date, dateStr: string) => {
+  const target = new Date(dateStr + "T00:00:00");
+  if (Number.isNaN(target.getTime())) return false;
+  return (
+    date.getFullYear() === target.getFullYear() &&
+    date.getMonth() === target.getMonth() &&
+    date.getDate() === target.getDate()
+  );
+};
+
+// Filter orders based on selected date range or custom date
+function filterByDate(orders: Order[], filter: DateFilter, custom?: string) {
+  if (custom) {
+    return orders.filter((order) => {
+      const orderDate = parseIsoDate(order.dueDate);
+      return orderDate ? isSameDate(orderDate, custom) : false;
+    });
+  }
+  if (filter === "all") return orders;
+
+  return orders.filter((order) => {
+    const orderDate = parseIsoDate(order.dueDate);
+    if (!orderDate) return false;
+    switch (filter) {
+      case "today":
+        return isToday(orderDate);
+      case "week":
+        return isThisWeek(orderDate);
+      case "month":
+        return isThisMonth(orderDate);
+      case "year":
+        return isThisYear(orderDate);
+      default:
+        return true;
+    }
+  });
+}
+
 export function OrdersModulePage() {
   const { businessId, ready, user } = useBusinessContext();
   const permissions = usePermissions();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [customDate, setCustomDate] = useState<string>("");
@@ -66,6 +112,19 @@ export function OrdersModulePage() {
     }
     return listenOrders(businessId, setOrders);
   }, [businessId, ready]);
+
+  // Deep links: /orders?filter=today|week|month|year|all and /orders?tab=delivered|cancelled
+  useEffect(() => {
+    const f = searchParams.get("filter");
+    if (f === "today" || f === "week" || f === "month" || f === "year" || f === "all") {
+      setDateFilter(f);
+      setCustomDate("");
+    }
+    const t = searchParams.get("tab");
+    if (t === "delivered" || t === "cancelled") {
+      setCompletedTab(t);
+    }
+  }, [searchParams]);
 
   const visibleOrders = useMemo(
     () =>
@@ -92,43 +151,6 @@ export function OrdersModulePage() {
   );
 
   const urgent = useMemo(() => dueTodayOrders(visibleOrders), [visibleOrders]);
-
-  const isSameDate = (date: Date, dateStr: string) => {
-    const target = new Date(dateStr + "T00:00:00");
-    target.setHours(0, 0, 0, 0);
-    return (
-      date.getFullYear() === target.getFullYear() &&
-      date.getMonth() === target.getMonth() &&
-      date.getDate() === target.getDate()
-    );
-  };
-
-  // Filter orders based on selected date range or custom date
-  const filterByDate = (orders: Order[], filter: DateFilter, custom?: string) => {
-    if (custom) {
-      return orders.filter((order) => {
-        const orderDate = parseIsoDate(order.dueDate);
-        return isSameDate(orderDate, custom);
-      });
-    }
-    if (filter === "all") return orders;
-    
-    return orders.filter((order) => {
-      const orderDate = parseIsoDate(order.dueDate);
-      switch (filter) {
-        case "today":
-          return isToday(orderDate);
-        case "week":
-          return isThisWeek(orderDate);
-        case "month":
-          return isThisMonth(orderDate);
-        case "year":
-          return isThisYear(orderDate);
-        default:
-          return true;
-      }
-    });
-  };
 
   // Filtered orders for summary
   const filteredSummaryOrders = useMemo(
@@ -265,7 +287,7 @@ export function OrdersModulePage() {
               + New Order
             </Button>
           </Link>
-          <Link href="http://localhost:3000/production/kanban">
+          <Link href="/production/kanban">
             <Button variant="default" size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
               Production Board
             </Button>
@@ -277,53 +299,50 @@ export function OrdersModulePage() {
       <div>
         <h3 className="text-lg font-semibold mb-3">{summaryTitle}</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-slate-500">Total Orders</p>
-              <p className="text-xl sm:text-2xl font-semibold">{summaryData.total}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-slate-500">Active Orders</p>
-              <p className="text-xl sm:text-2xl font-semibold text-blue-600">{summaryData.active}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-slate-500">Delivered</p>
-              <p className="text-xl sm:text-2xl font-semibold text-green-600">{summaryData.delivered}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-slate-500">Total Value</p>
-              <p className="text-xl sm:text-2xl font-semibold">{formatKes(summaryData.totalValue)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-slate-500">Paid Amount</p>
-              <p className="text-xl sm:text-2xl font-semibold text-emerald-600">{formatKes(summaryData.paidValue)}</p>
-            </CardContent>
-          </Card>
+          <SummaryCard
+            label="Total Orders"
+            value={summaryData.total.toString()}
+            href="/orders?filter=all"
+          />
+          <SummaryCard
+            label="Active Orders"
+            value={summaryData.active.toString()}
+            tone="blue"
+            href="/production/kanban"
+          />
+          <SummaryCard
+            label="Delivered"
+            value={summaryData.delivered.toString()}
+            tone="green"
+            href="/orders?tab=delivered"
+          />
+          <SummaryCard
+            label="Total Value"
+            value={formatKes(summaryData.totalValue)}
+            href="/finance"
+          />
+          <SummaryCard
+            label="Paid Amount"
+            value={formatKes(summaryData.paidValue)}
+            tone="emerald"
+            href="/payments"
+          />
         </div>
       </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-slate-500">Total Active Orders</p>
-            <p className="text-xl sm:text-2xl font-semibold">{activeOrders.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-slate-500">Urgent Deliveries</p>
-            <p className="text-xl sm:text-2xl font-semibold text-amber-600">{urgent.length}</p>
-          </CardContent>
-        </Card>
+        <SummaryCard
+          label="Total Active Orders"
+          value={activeOrders.length.toString()}
+          href="/production/kanban"
+        />
+        <SummaryCard
+          label="Urgent Deliveries"
+          value={urgent.length.toString()}
+          tone="amber"
+          href="/orders?filter=today"
+        />
         <Card>
           <CardContent className="pt-4 pb-4">
             {permissions.canWriteOrders ? (
@@ -397,4 +416,48 @@ export function OrdersModulePage() {
       </Card>
     </div>
   );
+}
+
+function SummaryCard({
+  label,
+  value,
+  href,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  tone?: "default" | "blue" | "green" | "emerald" | "amber";
+}) {
+  const valueClass = {
+    default: "text-slate-900",
+    blue: "text-blue-600",
+    green: "text-green-600",
+    emerald: "text-emerald-600",
+    amber: "text-amber-600",
+  }[tone];
+
+  const inner = (
+    <Card className="group h-full transition hover:shadow-md">
+      <CardContent className="pt-4 pb-4">
+        <p className="text-xs text-slate-500 truncate">{label}</p>
+        <p className={`text-xl sm:text-2xl font-semibold mt-1 ${valueClass}`}>{value}</p>
+        {href && (
+          <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700 opacity-0 transition-opacity group-hover:opacity-100">
+            View
+            <ArrowRight className="h-3 w-3" />
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className="block h-full">
+        {inner}
+      </Link>
+    );
+  }
+  return inner;
 }
