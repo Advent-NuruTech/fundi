@@ -91,13 +91,28 @@ export function buildReceiptTotals(order: Order, business: Business): ReceiptTot
 }
 
 export function buildReceiptData(order: Order, business: Business): ReceiptData {
-  const items: ReceiptLineItem[] = (order.garments ?? []).map((g) => ({
-    name: g.name,
-    notes: g.styleNotes,
-    quantity: g.quantity,
-    rate: g.agreedPrice,
-    amount: round2(g.agreedPrice * g.quantity),
-  }));
+  const items: ReceiptLineItem[] = (order.items && order.items.length > 0
+    ? order.items.map((item) => ({
+        name: item.inventoryItemName || "Item",
+        notes: [
+          item.memberName ? `For: ${item.memberName}` : "",
+          item.styleNotes,
+          item.size ? `Size: ${item.size}` : "",
+          item.color ? `Color: ${item.color}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") || undefined,
+        quantity: item.quantity,
+        rate: item.unitPrice ?? 0,
+        amount: round2((item.unitPrice ?? 0) * item.quantity - (item.discount ?? 0)),
+      }))
+    : (order.garments ?? []).map((g) => ({
+        name: g.name,
+        notes: g.styleNotes,
+        quantity: g.quantity,
+        rate: g.agreedPrice,
+        amount: round2(g.agreedPrice * g.quantity),
+      })));
 
   // Delivery fee renders as its own line, and ONLY for delivery orders — pickup
   // orders get no delivery row and no placeholder at all.

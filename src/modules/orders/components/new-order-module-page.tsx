@@ -189,6 +189,10 @@ export function NewOrderModulePage() {
     if (!selectedCustomerId) return [] as Customer[];
     return customers.filter((c) => c.parentCustomerId === selectedCustomerId);
   }, [customers, selectedCustomerId]);
+  const groupRecipients = useMemo(
+    () => (selectedCustomer ? [selectedCustomer, ...groupMembers] : groupMembers),
+    [selectedCustomer, groupMembers]
+  );
 
   useEffect(() => {
     if (!ready) return;
@@ -465,7 +469,11 @@ export function NewOrderModulePage() {
           }))
       : [];
     const representative = groupMembers.find((member) => member.id === representativeId);
-    const payer = groupMembers.find((member) => member.id === payerId);
+    const payer = groupRecipients.find((member) => member.id === payerId);
+    const payerName =
+      payer?.id === customer.id
+        ? customer.organizationName || customer.fullName
+        : payer?.fullName;
     const referenceImageUrls = new Map<string, string>();
 
     try {
@@ -486,9 +494,17 @@ export function NewOrderModulePage() {
     }
     const orderItems = buildItemsPayload(referenceImageUrls).map((item, index) => {
       const recipient = items[index].memberCustomerId
-        ? groupMembers.find((member) => member.id === items[index].memberCustomerId)
+        ? groupRecipients.find((member) => member.id === items[index].memberCustomerId)
         : undefined;
-      return { ...item, memberCustomerId: recipient?.id, memberName: recipient?.fullName };
+      return {
+        ...item,
+        memberCustomerId: recipient?.id,
+        memberName: recipient
+          ? recipient.id === customer.id
+            ? recipient.organizationName || recipient.fullName
+            : recipient.fullName
+          : undefined,
+      };
     });
 
     try {
@@ -516,8 +532,8 @@ export function NewOrderModulePage() {
           representativeName: representative?.fullName,
           representativePhone: representative?.phone,
           representativeEmail: representative?.email,
-          payerCustomerId: payer?.id,
-          payerName: payer?.fullName,
+          payerCustomerId: payer?.id ?? (isGroup ? customer.id : undefined),
+          payerName: payerName ?? (isGroup ? customer.organizationName || customer.fullName : undefined),
           payerPhone: payer?.phone,
           deliveryMethod,
           deliveryFee: deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0,
@@ -667,12 +683,20 @@ export function NewOrderModulePage() {
               </Select>
             </div>
             <div>
-              <Label>Payer (optional)</Label>
+              <Label>Payer — who is paying? (optional)</Label>
               <Select value={payerId} onChange={(e) => setPayerId(e.target.value)}>
-                <option value="">The group account pays</option>
+                <option value="">
+                  {selectedCustomer?.organizationName || selectedCustomer?.fullName || "The group account"} pays
+                </option>
                 {representativeId && <option value={representativeId}>Same as representative</option>}
-                {groupMembers.filter((member) => member.id !== representativeId).map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
+                {groupRecipients
+                  .filter((member) => member.id !== representativeId && member.id !== selectedCustomer?.id)
+                  .map((member) => <option key={member.id} value={member.id}>{member.fullName}</option>)}
               </Select>
+              <p className="mt-1 text-xs text-slate-500">
+                The invoice stays on the group account. Pick a member here when they will pay individually
+                instead of the group — the receipt will read &quot;Paid by [member name]&quot;.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -732,8 +756,12 @@ export function NewOrderModulePage() {
                         onChange={(e) => updateItem(item.key, { memberCustomerId: e.target.value })}
                       >
                         <option value="">Select who receives this item</option>
-                        {groupMembers.map((member) => (
-                          <option key={member.id} value={member.id}>{member.fullName}</option>
+                        {groupRecipients.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.id === selectedCustomer?.id
+                              ? `${member.organizationName || member.fullName} (group account)`
+                              : member.fullName}
+                          </option>
                         ))}
                       </Select>
                     </div>

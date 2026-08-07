@@ -597,7 +597,7 @@ export interface OrderItem {
   memberCustomerId?: string;
   memberName?: string;
   /** Optional design/reference image for this specific line item. */
-  referenceImageUrl?: string;
+  referenceImageUrl?: string | null;
   quantity: number;
   unit?: string;
   /** Actual selling price charged at the time of the transaction. */

@@ -1400,7 +1400,7 @@ export interface OrderItemInput {
   brand?: string;
   memberCustomerId?: string;
   memberName?: string;
-  referenceImageUrl?: string;
+  referenceImageUrl?: string | null;
   quantity: number;
   unit?: string;
   /** Actual selling price charged at the time of the transaction. */
@@ -2854,7 +2854,13 @@ export async function updateOrderItem(
   orderId: string,
   orderItemId: string,
   fields: Partial<
-    Pick<OrderItem, 'unitPrice' | 'discount' | 'quantity' | 'styleNotes' | 'notes' | 'status' | 'assignedTailorId' | 'assignedTailorName' | 'readyDate'>
+    Pick<OrderItem,
+      'itemType' | 'inventoryItemId' | 'inventoryItemName' | 'sku' | 'categoryName' |
+      'size' | 'color' | 'brand' | 'memberCustomerId' | 'memberName' |
+      'referenceImageUrl' | 'unit' | 'unitPrice' | 'costPrice' | 'discount' |
+      'quantity' | 'measurements' | 'styleNotes' | 'notes' | 'status' |
+      'assignedTailorId' | 'assignedTailorName' | 'readyDate'
+    >
   >
 ) {
   const withOffline = async (onlineFn: () => Promise<void>) =>

@@ -9,20 +9,20 @@ import {
   ImageIcon, Package, Scissors, User, FileText, Layers,
   CheckCircle2, Circle, Clock, ArrowLeft, Phone, Mail,
   ClipboardList, Shirt, AlertTriangle, Receipt as ReceiptIcon,
-  Truck, MapPin, RotateCcw, Ban,
+  Truck, MapPin, RotateCcw, Ban, Banknote,
 } from "lucide-react";
 import type {
-  Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItemType, ProductionStageConfig,
-  DeliveryPartner, BusinessDeliveryConfig, DeliveryStage, OrderReturn, ReturnStatus,
+  Order, Customer, InventoryMaterial, OrderGarmentItem, OrderItem, OrderItemType, ProductionStageConfig,
+  DeliveryPartner, BusinessDeliveryConfig, DeliveryStage, OrderReturn, ReturnStatus, UserProfile,
 } from "@/types/domain";
 import {
-  listenOrder, listenCustomer,
+  listenOrder, listenCustomer, listenCustomers,
   addFittingRecord, updateOrderProductionNotes, recordMaterialUsage,
   listenMaterials, updateOrderSmsFields, logSmsEntry,
   updateOrderDetails, updateOrderGarments, ORDER_TYPE_LABELS,
   listenProductionStages, listenDeliveryPartners, getDeliveryConfig, DEFAULT_RETURN_REASONS,
   listenOrderReturns, createOrderReturn, updateOrderReturnStatus, deleteOrderReturn,
-  cancelOrder, nextDeliveryStages, DELIVERY_STAGE_LABELS, DELIVERY_STAGE_COLORS,
+  cancelOrder, nextDeliveryStages, DELIVERY_STAGE_LABELS, DELIVERY_STAGE_COLORS, updateOrderItem, fetchMembers,
 } from "@/services/firestore.service";
 import { advanceOrderDelivery } from "@/services/delivery.service";
 import { RETURN_STATUS_LABELS, type RefundStatus } from "@/types/domain";
@@ -42,6 +42,7 @@ import { SearchableSelect, type SearchableOption } from "@/components/ui/searcha
 import { Dialog } from "@/components/ui/dialog";
 import { OrderReceipt } from "@/components/receipt/order-receipt";
 import { formatKes, cn } from "@/lib/utils";
+import { uploadImage } from "@/services/cloudinary/upload.service";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -230,6 +231,8 @@ export function OrderDetailModulePage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [materials, setMaterials] = useState<InventoryMaterial[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tailors, setTailors] = useState<UserProfile[]>([]);
 
   // Lightbox
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -239,7 +242,14 @@ export function OrderDetailModulePage() {
   const [editGarments, setEditGarments] = useState<OrderGarmentItem[]>([]);
   const [editDueDate, setEditDueDate] = useState("");
   const [editDesignNotes, setEditDesignNotes] = useState("");
+  const [editTailorId, setEditTailorId] = useState("");
   const [savingDetails, setSavingDetails] = useState(false);
+
+  // A line item can be inspected and edited independently of the master order.
+  const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
+  const [itemDraft, setItemDraft] = useState<Partial<OrderItem>>({});
+  const [itemImageFile, setItemImageFile] = useState<File | null>(null);
+  const [savingItem, setSavingItem] = useState(false);
 
   // Fitting
   const [showFittingForm, setShowFittingForm] = useState(false);
@@ -299,13 +309,15 @@ export function OrderDetailModulePage() {
   useEffect(() => {
     if (!ready || !orderId) return;
     const unsub = listenOrder(businessId, orderId, setOrder);
+    const unsubCustomers = listenCustomers(businessId, setCustomers);
     const unsubMat = listenMaterials(businessId, setMaterials);
     const unsubStages = listenProductionStages(businessId, setStages);
     const unsubPartners = listenDeliveryPartners(businessId, setDeliveryPartners);
     const unsubReturns = listenOrderReturns(businessId, (rows) =>
       setReturns(rows.filter((r) => r.orderId === orderId))
     );
-    return () => { unsub(); unsubMat(); unsubStages(); unsubPartners(); unsubReturns(); };
+    fetchMembers(businessId).then((rows) => setTailors(rows.filter((member) => member.active !== false))).catch(() => {});
+    return () => { unsub(); unsubCustomers(); unsubMat(); unsubStages(); unsubPartners(); unsubReturns(); };
   }, [businessId, orderId, ready]);
 
   useEffect(() => {
@@ -336,25 +348,100 @@ export function OrderDetailModulePage() {
     setEditGarments(order.garments.map((g) => ({ ...g })));
     setEditDueDate(order.dueDate);
     setEditDesignNotes(order.designNotes ?? "");
+    setEditTailorId(order.assignedTailorId ?? "");
     setEditingDetails(true);
   }, [order]);
+
+  const openItemEditor = (item: OrderItem) => {
+    setEditingItem(item);
+    setItemDraft({ ...item });
+    setItemImageFile(null);
+  };
+
+  const saveItem = async () => {
+    if (!editingItem || !order || !user || savingItem) return;
+    if (!itemDraft.inventoryItemName?.trim()) {
+      toast.error("Item name is required");
+      return;
+    }
+    if (!Number(itemDraft.quantity) || Number(itemDraft.quantity) < 1) {
+      toast.error("Quantity must be at least 1");
+      return;
+    }
+    setSavingItem(true);
+    try {
+      let referenceImageUrl = itemDraft.referenceImageUrl;
+      if (itemImageFile) {
+        const image = await uploadImage({
+          file: itemImageFile,
+          businessId,
+          uploadedByUid: user.uid,
+          orderId: order.id,
+          customerId: itemDraft.memberCustomerId || order.customerId,
+        });
+        referenceImageUrl = image.url;
+      }
+      const recipient = customers.find((entry) => entry.id === itemDraft.memberCustomerId);
+      const recipientName = recipient
+        ? recipient.id === order.customerId
+          ? recipient.organizationName || recipient.fullName
+          : recipient.fullName
+        : undefined;
+      await updateOrderItem(businessId, order.id, editingItem.id, {
+        itemType: itemDraft.itemType,
+        inventoryItemName: itemDraft.inventoryItemName?.trim(),
+        sku: itemDraft.sku?.trim() || undefined,
+        categoryName: itemDraft.categoryName?.trim() || undefined,
+        size: itemDraft.size?.trim() || undefined,
+        color: itemDraft.color?.trim() || undefined,
+        brand: itemDraft.brand?.trim() || undefined,
+        quantity: Number(itemDraft.quantity),
+        unit: itemDraft.unit || "pcs",
+        unitPrice: Number(itemDraft.unitPrice) || 0,
+        costPrice: Number(itemDraft.costPrice) || 0,
+        discount: Number(itemDraft.discount) || 0,
+        measurements: itemDraft.measurements ?? undefined,
+        styleNotes: itemDraft.styleNotes?.trim() || undefined,
+        notes: itemDraft.notes?.trim() || undefined,
+        assignedTailorId: itemDraft.assignedTailorId || undefined,
+        assignedTailorName: itemDraft.assignedTailorName || undefined,
+        readyDate: itemDraft.readyDate || undefined,
+        status: itemDraft.status || undefined,
+        memberCustomerId: recipient?.id,
+        memberName: recipientName,
+        referenceImageUrl: referenceImageUrl || null,
+      });
+      toast.success("Item updated");
+      setEditingItem(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update item");
+    } finally {
+      setSavingItem(false);
+    }
+  };
 
   // ── handlers ────────────────────────────────────────────────────────────────
 
   const handleSaveDetails = async () => {
     if (!order || savingDetails) return;
+    const hasItems = (order.items?.length ?? 0) > 0;
     const validGarments = editGarments.filter((g) => g.name.trim());
-    if (validGarments.length === 0) {
+    if (!hasItems && validGarments.length === 0) {
       toast.error("At least one garment is required");
       return;
     }
+    const tailor = tailors.find((t) => t.uid === editTailorId);
     setSavingDetails(true);
     try {
-      await updateOrderGarments(businessId, orderId, validGarments);
       await updateOrderDetails(businessId, orderId, {
         dueDate: editDueDate || order.dueDate,
         designNotes: editDesignNotes,
+        assignedTailorId: editTailorId || undefined,
+        assignedTailorName: tailor?.displayName,
       });
+      if (!hasItems) {
+        await updateOrderGarments(businessId, orderId, validGarments);
+      }
       toast.success("Order details updated");
       setEditingDetails(false);
     } catch (err) {
@@ -689,6 +776,81 @@ export function OrderDetailModulePage() {
       )}
 
       {/* Printable receipt */}
+      <Dialog open={Boolean(editingItem)} onClose={() => !savingItem && setEditingItem(null)} title="Edit order item" className="max-w-2xl">
+        {editingItem && (
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-slate-500">Changes here affect only this item. Its recipient, price, notes and reference image are independent of the rest of the order.</p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Item type</label>
+                <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" value={itemDraft.itemType ?? "tailored"} onChange={(e) => setItemDraft((draft) => ({ ...draft, itemType: e.target.value as OrderItemType }))}>
+                  {Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </div>
+              {order?.isGroupOrder && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Receiving person / account</label>
+                  <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" value={itemDraft.memberCustomerId ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, memberCustomerId: e.target.value || undefined }))}>
+                    <option value="">Choose recipient</option>
+                    {customers.filter((entry) => entry.id === order.customerId || entry.parentCustomerId === order.customerId).map((entry) => <option key={entry.id} value={entry.id}>{entry.id === order.customerId ? `${entry.organizationName || entry.fullName} (group account)` : entry.fullName}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-slate-600">Item name</label>
+                <Input value={itemDraft.inventoryItemName ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, inventoryItemName: e.target.value }))} />
+              </div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">SKU</label><Input value={itemDraft.sku ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, sku: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Category</label><Input value={itemDraft.categoryName ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, categoryName: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Size</label><Input value={itemDraft.size ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, size: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Color</label><Input value={itemDraft.color ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, color: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Brand</label><Input value={itemDraft.brand ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, brand: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Quantity</label><Input type="number" min={1} value={itemDraft.quantity ?? 1} onChange={(e) => setItemDraft((draft) => ({ ...draft, quantity: Number(e.target.value) }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Unit</label><Input value={itemDraft.unit ?? "pcs"} onChange={(e) => setItemDraft((draft) => ({ ...draft, unit: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Unit price (KES)</label><Input type="number" min={0} value={itemDraft.unitPrice ?? 0} onChange={(e) => setItemDraft((draft) => ({ ...draft, unitPrice: Number(e.target.value) }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Cost price (KES)</label><Input type="number" min={0} value={itemDraft.costPrice ?? 0} onChange={(e) => setItemDraft((draft) => ({ ...draft, costPrice: Number(e.target.value) }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Discount (KES)</label><Input type="number" min={0} value={itemDraft.discount ?? 0} onChange={(e) => setItemDraft((draft) => ({ ...draft, discount: Number(e.target.value) }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-slate-600">Ready date</label><Input type="date" value={itemDraft.readyDate?.slice(0, 10) ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, readyDate: e.target.value }))} /></div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Assigned tailor</label>
+                <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" value={itemDraft.assignedTailorId ?? ""} onChange={(e) => { const id = e.target.value; const tailor = tailors.find((t) => t.uid === id); setItemDraft((draft) => ({ ...draft, assignedTailorId: id || undefined, assignedTailorName: tailor?.displayName || undefined })); }}>
+                  <option value="">Unassigned</option>
+                  {tailors.map((tailor) => <option key={tailor.uid} value={tailor.uid}>{tailor.displayName}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Status</label>
+                <Input value={itemDraft.status ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, status: e.target.value }))} placeholder="e.g. active" />
+              </div>
+            </div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600">Measurements (cm — one "key: value" per line)</label><Textarea rows={3} value={Object.entries(itemDraft.measurements ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join("\n")} onChange={(e) => { const parsed: Record<string, number> = {}; for (const line of e.target.value.split("\n")) { const [k, v] = line.split(":"); if (k?.trim() && v !== undefined) { const num = Number(v.trim()); if (!Number.isNaN(num)) parsed[k.trim()] = num; } } setItemDraft((draft) => ({ ...draft, measurements: Object.keys(parsed).length > 0 ? parsed : undefined })); }} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600">Style details</label><Textarea rows={3} value={itemDraft.styleNotes ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, styleNotes: e.target.value }))} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-slate-600">Internal notes</label><Textarea rows={2} value={itemDraft.notes ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, notes: e.target.value }))} /></div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Reference image</label>
+              <div className="flex items-start gap-3">
+                {itemDraft.referenceImageUrl && (
+                  <img src={itemDraft.referenceImageUrl} alt="Item reference" className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />
+                )}
+                <div className="flex-1 space-y-2">
+                  <Input type="file" accept="image/*" onChange={(e) => setItemImageFile(e.target.files?.[0] ?? null)} />
+                  <div className="flex items-center gap-3 text-xs">
+                    {itemDraft.referenceImageUrl && <a href={itemDraft.referenceImageUrl} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline">View full image</a>}
+                    {itemDraft.referenceImageUrl && <button type="button" onClick={() => setItemDraft((draft) => ({ ...draft, referenceImageUrl: null }))} className="text-rose-600 hover:underline">Remove image</button>}
+                    {itemImageFile && <span className="text-slate-500">New: {itemImageFile.name}</span>}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <Button variant="outline" disabled={savingItem} onClick={() => setEditingItem(null)}>Cancel</Button>
+              <Button disabled={savingItem} onClick={saveItem}><Save className="mr-1.5 h-4 w-4" />{savingItem ? "Saving…" : "Save item"}</Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
       {showReceipt && business && (
         <Dialog open={showReceipt} onClose={() => setShowReceipt(false)} className="max-w-xl p-0">
           <OrderReceipt order={order} business={business} onClose={() => setShowReceipt(false)} />
@@ -957,6 +1119,32 @@ export function OrderDetailModulePage() {
                           <> · Balance: <span className="font-semibold text-rose-600">{formatKes(order.balanceAmount)}</span></>
                         )}
                       </p>
+                      {order.payerName && (
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
+                          <Banknote className="h-3.5 w-3.5 text-slate-400" />
+                          Paid by:{" "}
+                          {order.payerCustomerId && order.payerCustomerId !== order.customerId ? (
+                            <Link href={`/customers/${order.payerCustomerId}`} className="font-medium text-emerald-700 hover:underline">
+                              {order.payerName}
+                            </Link>
+                          ) : (
+                            <span className="font-medium text-slate-800">{order.payerName}</span>
+                          )}
+                        </p>
+                      )}
+                      {order.isGroupOrder && order.representativeName && (
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-600">
+                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          Representative:{" "}
+                          {order.representativeCustomerId ? (
+                            <Link href={`/customers/${order.representativeCustomerId}`} className="font-medium text-emerald-700 hover:underline">
+                              {order.representativeName}
+                            </Link>
+                          ) : (
+                            <span className="font-medium text-slate-800">{order.representativeName}</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -982,6 +1170,11 @@ export function OrderDetailModulePage() {
                                 </Badge>
                                 {item.sku && <span className="text-[11px] font-mono text-slate-400">{item.sku}</span>}
                               </div>
+                              {(item.size || item.color || item.brand) && (
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  {[item.size && `Size: ${item.size}`, item.color && `Color: ${item.color}`, item.brand && `Brand: ${item.brand}`].filter(Boolean).join(" · ")}
+                                </p>
+                              )}
                               {item.measurements && Object.keys(item.measurements).length > 0 && (
                                 <p className="text-xs text-slate-500 mt-0.5">
                                   {Object.entries(item.measurements).map(([k, v]) => `${k}: ${String(v)}`).join(" · ")}
@@ -1004,13 +1197,31 @@ export function OrderDetailModulePage() {
                                     <User className="h-3 w-3" /> {item.assignedTailorName}
                                   </span>
                                 )}
+                                {item.memberCustomerId && (
+                                  <Link
+                                    href={`/customers/${item.memberCustomerId}`}
+                                    className="flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:underline"
+                                  >
+                                    <User className="h-3 w-3" /> Recipient: {item.memberName || "View profile"}
+                                  </Link>
+                                )}
                               </div>
+                              {item.referenceImageUrl && (
+                                <button onClick={() => window.open(item.referenceImageUrl!, "_blank", "noopener,noreferrer")} className="mt-2 flex items-center gap-1 text-[11px] text-emerald-700 hover:underline">
+                                  <ImageIcon className="h-3 w-3" /> View reference image
+                                </button>
+                              )}
                             </div>
-                            <div className="text-right shrink-0 ml-3">
+                            <div className="flex shrink-0 items-start gap-2 ml-3">
+                              <div className="text-right">
                               <p className="font-semibold text-slate-700 text-sm">{formatKes(item.unitPrice)}</p>
                               {item.quantity > 1 && (
                                 <p className="text-[11px] text-slate-400">{formatKes(item.totalAmount)} total</p>
                               )}
+                              </div>
+                              <button onClick={() => openItemEditor(item)} className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:border-emerald-300 hover:text-emerald-700" aria-label={`Edit ${item.inventoryItemName || "item"}`}>
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -1055,64 +1266,84 @@ export function OrderDetailModulePage() {
                         onChange={(e) => setEditDueDate(e.target.value)}
                       />
                     </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 mb-1 block">Assigned tailor</label>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                        value={editTailorId}
+                        onChange={(e) => setEditTailorId(e.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {tailors.map((tailor) => (
+                          <option key={tailor.uid} value={tailor.uid}>{tailor.displayName}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
-                  {/* Editable garments */}
-                  <div>
-                    <p className="text-xs font-medium text-slate-600 mb-2">Garments</p>
-                    <div className="space-y-2">
-                      {editGarments.map((g, i) => (
-                        <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="col-span-2">
+                  {(order.items?.length ?? 0) === 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-600 mb-2">Garments</p>
+                      <div className="space-y-2">
+                        {editGarments.map((g, i) => (
+                          <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="col-span-2">
+                                <Input
+                                  placeholder="Garment name"
+                                  value={g.name}
+                                  onChange={(e) => updateGarmentField(i, "name", e.target.value)}
+                                />
+                              </div>
                               <Input
-                                placeholder="Garment name"
-                                value={g.name}
-                                onChange={(e) => updateGarmentField(i, "name", e.target.value)}
+                                type="number"
+                                placeholder="Qty"
+                                min={1}
+                                value={g.quantity}
+                                onChange={(e) => updateGarmentField(i, "quantity", Number(e.target.value))}
                               />
                             </div>
-                            <Input
-                              type="number"
-                              placeholder="Qty"
-                              min={1}
-                              value={g.quantity}
-                              onChange={(e) => updateGarmentField(i, "quantity", Number(e.target.value))}
-                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                placeholder="Price (KES)"
+                                step="0.01"
+                                value={g.agreedPrice || ""}
+                                onChange={(e) => updateGarmentField(i, "agreedPrice", Number(e.target.value))}
+                              />
+                              <Input
+                                placeholder="Style notes (optional)"
+                                value={g.styleNotes ?? ""}
+                                onChange={(e) => updateGarmentField(i, "styleNotes", e.target.value)}
+                              />
+                            </div>
+                            {editGarments.length > 1 && (
+                              <button
+                                onClick={() => setEditGarments(editGarments.filter((_, idx) => idx !== i))}
+                                className="flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Remove garment
+                              </button>
+                            )}
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Input
-                              type="number"
-                              placeholder="Price (KES)"
-                              step="0.01"
-                              value={g.agreedPrice || ""}
-                              onChange={(e) => updateGarmentField(i, "agreedPrice", Number(e.target.value))}
-                            />
-                            <Input
-                              placeholder="Style notes (optional)"
-                              value={g.styleNotes ?? ""}
-                              onChange={(e) => updateGarmentField(i, "styleNotes", e.target.value)}
-                            />
-                          </div>
-                          {editGarments.length > 1 && (
-                            <button
-                              onClick={() => setEditGarments(editGarments.filter((_, idx) => idx !== i))}
-                              className="flex items-center gap-1 text-xs text-rose-500 hover:text-rose-700 transition-colors"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" /> Remove garment
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 w-full"
+                        onClick={() => setEditGarments([...editGarments, { name: "", quantity: 1, agreedPrice: 0 }])}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" /> Add garment
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-2 w-full"
-                      onClick={() => setEditGarments([...editGarments, { name: "", quantity: 1, agreedPrice: 0 }])}
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Add garment
-                    </Button>
-                  </div>
+                  )}
+
+                  {(order.items?.length ?? 0) > 0 && (
+                    <p className="text-xs text-slate-500 rounded-xl bg-slate-50 px-3 py-2.5">
+                      Line items are edited independently — use the edit button next to each item in the list below.
+                    </p>
+                  )}
 
                   <div>
                     <label className="text-xs font-medium text-slate-600 mb-1 block">Design Notes</label>

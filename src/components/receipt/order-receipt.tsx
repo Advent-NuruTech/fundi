@@ -187,6 +187,7 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
 
           {/* ── Payment ── */}
           <div className="mt-5 space-y-2 text-sm">
+            {order.payerName && <Row label="Paid By" value={order.payerName} />}
             <Row label="Amount Paid" value={`${currency} ${formatReceiptMoney(data.payment.amountPaid)}`} />
             {data.payment.balance > 0 ? (
               <Row label="Balance Due" value={`${currency} ${formatReceiptMoney(data.payment.balance)}`} bold />
