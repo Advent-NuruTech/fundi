@@ -2408,7 +2408,7 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
     const runOrdersQuery = () => {
       let ordersQuery = supabase
         .from('orders')
-        .select('*, order_garments(name, quantity, agreed_price, sort_order), order_items(id, item_type, inventory_item_id, inventory_item_name, sku, quantity, unit, unit_price, cost_price, discount, total_amount, size, color, brand, assigned_tailor_name, stage, delivery_status, status, sort_order)')
+        .select('*, order_garments(name, quantity, agreed_price, sort_order), order_items(id, item_type, inventory_item_id, inventory_item_name, sku, quantity, unit, unit_price, cost_price, discount, total_amount, size, color, brand, member_customer_id, member_name, assigned_tailor_name, stage, delivery_status, status, sort_order)')
         .eq('business_id', businessId);
       if (isBranchScoped('orders')) {
         ordersQuery = ordersQuery.eq('branch_id', activeBranchId as string);
@@ -2469,6 +2469,8 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
               size: i.size as string | undefined,
               color: i.color as string | undefined,
               brand: i.brand as string | undefined,
+              memberCustomerId: i.member_customer_id as string | undefined,
+              memberName: i.member_name as string | undefined,
               quantity: Number(i.quantity),
               unit: i.unit as string | undefined,
               unitPrice: Number(i.unit_price),
