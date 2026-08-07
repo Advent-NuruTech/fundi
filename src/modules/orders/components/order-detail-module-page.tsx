@@ -249,6 +249,8 @@ export function OrderDetailModulePage() {
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const [itemDraft, setItemDraft] = useState<Partial<OrderItem>>({});
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
+  const [itemImagePreview, setItemImagePreview] = useState<string | null>(null);
+  const [itemLightboxUrl, setItemLightboxUrl] = useState<string | null>(null);
   const [savingItem, setSavingItem] = useState(false);
 
   // Fitting
@@ -356,6 +358,8 @@ export function OrderDetailModulePage() {
     setEditingItem(item);
     setItemDraft({ ...item });
     setItemImageFile(null);
+    if (itemImagePreview) URL.revokeObjectURL(itemImagePreview);
+    setItemImagePreview(null);
   };
 
   const saveItem = async () => {
@@ -774,6 +778,14 @@ export function OrderDetailModulePage() {
           onNavigate={setLightboxIndex}
         />
       )}
+      {itemLightboxUrl && (
+        <ImageLightbox
+          images={[itemLightboxUrl]}
+          index={0}
+          onClose={() => setItemLightboxUrl(null)}
+          onNavigate={() => {}}
+        />
+      )}
 
       {/* Printable receipt */}
       <Dialog open={Boolean(editingItem)} onClose={() => !savingItem && setEditingItem(null)} title="Edit order item" className="max-w-2xl">
@@ -829,19 +841,41 @@ export function OrderDetailModulePage() {
             <div><label className="mb-1 block text-xs font-medium text-slate-600">Internal notes</label><Textarea rows={2} value={itemDraft.notes ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, notes: e.target.value }))} /></div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Reference image</label>
-              <div className="flex items-start gap-3">
-                {itemDraft.referenceImageUrl && (
-                  <img src={itemDraft.referenceImageUrl} alt="Item reference" className="h-20 w-20 rounded-lg border border-slate-200 object-cover" />
-                )}
-                <div className="flex-1 space-y-2">
-                  <Input type="file" accept="image/*" onChange={(e) => setItemImageFile(e.target.files?.[0] ?? null)} />
-                  <div className="flex items-center gap-3 text-xs">
-                    {itemDraft.referenceImageUrl && <a href={itemDraft.referenceImageUrl} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline">View full image</a>}
-                    {itemDraft.referenceImageUrl && <button type="button" onClick={() => setItemDraft((draft) => ({ ...draft, referenceImageUrl: null }))} className="text-rose-600 hover:underline">Remove image</button>}
-                    {itemImageFile && <span className="text-slate-500">New: {itemImageFile.name}</span>}
+              {(itemImagePreview || itemDraft.referenceImageUrl) ? (
+                <button
+                  type="button"
+                  onClick={() => setItemLightboxUrl(itemImagePreview || itemDraft.referenceImageUrl!)}
+                  className="group relative mb-2 block w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50 hover:border-emerald-400 transition-colors"
+                >
+                  <img
+                    src={itemImagePreview || itemDraft.referenceImageUrl!}
+                    alt="Item reference"
+                    className="mx-auto max-h-64 w-full object-contain"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors duration-200">
+                    <span className="scale-0 group-hover:scale-100 transition-transform duration-200 text-white font-medium text-xs bg-black/60 px-2 py-1 rounded-md">View</span>
                   </div>
-                </div>
+                </button>
+              ) : (
+                <p className="mb-2 text-xs text-slate-400">No image attached.</p>
+              )}
+              <div className="flex items-center gap-3">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  className="flex-1"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (itemImagePreview) URL.revokeObjectURL(itemImagePreview);
+                    setItemImagePreview(file ? URL.createObjectURL(file) : null);
+                    setItemImageFile(file);
+                  }}
+                />
+                {itemDraft.referenceImageUrl && (
+                  <button type="button" onClick={() => setItemDraft((draft) => ({ ...draft, referenceImageUrl: null }))} className="text-rose-600 hover:underline text-xs">Remove image</button>
+                )}
               </div>
+              {itemImageFile && <p className="mt-1 text-xs text-slate-500">New: {itemImageFile.name}</p>}
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
               <Button variant="outline" disabled={savingItem} onClick={() => setEditingItem(null)}>Cancel</Button>
@@ -1207,8 +1241,15 @@ export function OrderDetailModulePage() {
                                 )}
                               </div>
                               {item.referenceImageUrl && (
-                                <button onClick={() => window.open(item.referenceImageUrl!, "_blank", "noopener,noreferrer")} className="mt-2 flex items-center gap-1 text-[11px] text-emerald-700 hover:underline">
-                                  <ImageIcon className="h-3 w-3" /> View reference image
+                                <button
+                                  onClick={() => setItemLightboxUrl(item.referenceImageUrl!)}
+                                  className="group mt-2 block w-16 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 hover:border-emerald-400 transition-colors"
+                                >
+                                  <img
+                                    src={item.referenceImageUrl}
+                                    alt={`${item.inventoryItemName || "Item"} reference`}
+                                    className="h-12 w-16 object-cover group-hover:scale-105 transition-transform duration-200"
+                                  />
                                 </button>
                               )}
                             </div>

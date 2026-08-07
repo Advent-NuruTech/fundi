@@ -380,9 +380,12 @@ export function CustomerProfileModulePage() {
   );
 
   const badgeVariant =
-    balance > 0 ? "warning" : orders.length === 0 ? "default" : "success";
-  const badgeText =
-    balance > 0 ? "Balance due" : orders.length === 0 ? "No orders yet" : "Cleared";
+    balance > 0 && !isMemberCustomer ? "warning" : orders.length === 0 ? "default" : "success";
+  const badgeText = isMemberCustomer
+    ? orders.length > 0
+      ? `${orders.length} ${orders.length === 1 ? "garment" : "garments"} in the group`
+      : "No garments yet"
+    : balance > 0 ? "Balance due" : orders.length === 0 ? "No orders yet" : "Cleared";
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -801,9 +804,11 @@ export function CustomerProfileModulePage() {
                 </p>
               </div>
               <div className="rounded-xl bg-blue-50 p-2.5 text-center">
-                <p className="text-lg font-bold text-blue-700">{orders.length}</p>
+                <p className="text-lg font-bold text-blue-700">
+                  {orders.reduce((sum, o) => sum + (o.items?.length ?? 0), 0)}
+                </p>
                 <p className="text-[10px] text-blue-500 font-medium uppercase tracking-wide mt-0.5">
-                  Orders
+                  Garments
                 </p>
               </div>
               <div className={`rounded-xl p-2.5 text-center ${balance > 0 ? "bg-rose-50" : "bg-slate-50"}`}>
@@ -1023,9 +1028,9 @@ export function CustomerProfileModulePage() {
           <div className="rounded-3xl border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="font-bold text-slate-900">{isMemberCustomer ? "Garment History" : "Order History"}</h3>
+                <h3 className="font-bold text-slate-900">{isMemberCustomer ? "Garment History (by group)" : "Order History"}</h3>
                 {isMemberCustomer && (
-                  <p className="mt-0.5 text-xs text-slate-500">Items assigned to this member. Payment is managed by the group account.</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Only the garments assigned to this member are listed.</p>
                 )}
               </div>
               {activeOrders > 0 && (
@@ -1035,13 +1040,16 @@ export function CustomerProfileModulePage() {
               )}
             </div>
             {sortedOrders.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-6">No orders yet.</p>
+              <p className="text-sm text-slate-400 text-center py-6">
+                {isMemberCustomer ? "No garments assigned to you yet." : "No orders yet."}
+              </p>
             ) : (
               <div className="space-y-2">
                 {sortedOrders.map((order) => {
                   const isGroupAssignedOrder = isMemberCustomer && order.customerId !== customer.id;
                   const orderBalance = order.balanceAmount ?? (order.subtotalAmount - order.amountPaid);
                   const isSettled = orderBalance <= 0;
+                  const memberItems = order.items ?? [];
                   return (
                     <div key={order.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
@@ -1077,6 +1085,17 @@ export function CustomerProfileModulePage() {
                           <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600">{formatKes(orderBalance)} due</span>
                         )}
                       </div>
+                      {isMemberCustomer && memberItems.length > 0 && (
+                        <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
+                          {memberItems.map((item) => (
+                            <p key={item.id} className="text-xs text-slate-600">
+                              <span className="text-slate-400">•</span> {item.inventoryItemName || "Item"}
+                              {item.size ? ` (${item.size}${item.color ? `, ${item.color}` : ""})` : ""}
+                              <span className="text-slate-400"> × {item.quantity}</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
