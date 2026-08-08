@@ -21,6 +21,23 @@ async function callOnboardAPI(accessToken: string, body: Record<string, unknown>
   }
 }
 
+// Coalesce concurrent onboard calls for the same user. During sign-up several
+// triggers fire at once (registerOwner + SIGNED_IN/INITIAL_SESSION auth events
+// + the Google callback page), and each used to fire its own request — the
+// server-side race could create duplicate businesses. Sharing the in-flight
+// promise means only ONE request ever reaches /api/auth/onboard per user.
+const onboardInFlight = new Map<string, Promise<void>>();
+
+function onboardOnce(userId: string, accessToken: string, body: Record<string, unknown>): Promise<void> {
+  const existing = onboardInFlight.get(userId);
+  if (existing) return existing;
+  const promise = callOnboardAPI(accessToken, body).finally(() => {
+    onboardInFlight.delete(userId);
+  });
+  onboardInFlight.set(userId, promise);
+  return promise;
+}
+
 export async function loginWithEmail(email: string, password: string) {
   const res = await fetch("/api/auth/login", {
     method: "POST",
@@ -98,7 +115,7 @@ export async function registerOwner(input: {
     );
   }
 
-  await callOnboardAPI(sessionData.session.access_token, {
+  await onboardOnce(data.user.id, sessionData.session.access_token, {
     displayName: input.displayName,
     phone: input.phone,
     businessName: input.businessName,
@@ -157,7 +174,7 @@ export async function ensureProfileExists(user: User): Promise<boolean> {
   // the call is triggered on first login (email-confirmation flow).
   const meta = user.user_metadata ?? {};
   try {
-    await callOnboardAPI(sessionData.session.access_token, {
+    await onboardOnce(user.id, sessionData.session.access_token, {
       displayName: meta.display_name || meta.full_name || meta.name,
       phone: meta.phone,
       businessName: meta.business_name,

@@ -66,121 +66,35 @@ export async function POST(request: Request) {
     const resolvedName = displayName || meta.full_name || meta.name || user.email.split("@")[0];
     const resolvedBusiness = businessName || `${resolvedName}'s Workshop`;
 
-    // ── Idempotency check: profile + member both exist? ───────────────────
-    const { data: existingProfile } = await admin
-      .from("profiles")
-      .select("id, business_id")
-      .eq("id", user.id)
-      .maybeSingle();
+    // ── Atomic, idempotent onboarding ─────────────────────────────────────
+    // All profile/business/member/inventory work happens inside one DB
+    // transaction (onboard_user, migration 0054) that serializes concurrent
+    // requests per owner via an advisory lock. Concurrent onboard calls can no
+    // longer double-create the business. See supabase/migrations/0054.
+    const { data: businessId, error: onboardErr } = await admin.rpc("onboard_user", {
+      p_uid: user.id,
+      p_email: user.email,
+      p_display_name: resolvedName,
+      p_phone: phone ?? null,
+      p_business_name: resolvedBusiness,
+      p_location: location ?? "",
+      p_business_type: businessType,
+      p_units: typeConfig.inventoryUnits,
+      p_categories: typeConfig.inventoryCategories,
+    });
 
-    if (existingProfile?.business_id) {
-      // Repair missing business_member record (can happen if a prior run
-      // crashed between step 3 and step 4).
-      await admin.from("business_members").upsert(
-        {
-          profile_id: user.id,
-          business_id: existingProfile.business_id,
-          role: "owner",
-          roles: ["owner"],
-          active: true,
-        },
-        { onConflict: "profile_id,business_id" }
+    if (onboardErr || !businessId) {
+      return NextResponse.json(
+        { error: `Account setup failed: ${onboardErr?.message ?? "onboarding did not complete"}` },
+        { status: 500 }
       );
-      return NextResponse.json({ success: true });
     }
-
-    // ── Also check if a business already exists for this owner ─────────────
-    const { data: existingBusiness } = await admin
-      .from("businesses")
-      .select("id")
-      .eq("owner_uid", user.id)
-      .maybeSingle();
-
-    // ── Step 1: upsert profile (no business_id yet) ────────────────────────
-    const { error: profileErr } = await admin.from("profiles").upsert(
-      {
-        id: user.id,
-        email: user.email,
-        display_name: resolvedName,
-        role: "owner",
-        roles: ["owner"],
-        active: true,
-        must_change_password: false,
-        phone: phone ?? null,
-      },
-      { onConflict: "id" }
-    );
-    if (profileErr) {
-      return NextResponse.json({ error: `Profile setup failed: ${profileErr.message}` }, { status: 500 });
-    }
-
-    // ── Step 2: create or reuse business ──────────────────────────────────
-    let businessId: string;
-    if (existingBusiness) {
-      businessId = existingBusiness.id;
-    } else {
-      const { data: bizData, error: bizErr } = await admin
-        .from("businesses")
-        .insert({
-          name: resolvedBusiness,
-          phone: phone ?? "",
-          location: location ?? "",
-          currency: "KES",
-          country: "Kenya",
-          business_type: businessType,
-          owner_uid: user.id,
-          order_counter: 0,
-          employee_counter: 0,
-        })
-        .select("id")
-        .single();
-      if (bizErr || !bizData) {
-        return NextResponse.json({ error: `Business setup failed: ${bizErr?.message}` }, { status: 500 });
-      }
-      businessId = bizData.id;
-    }
-
-    // ── Step 3: link profile → business ───────────────────────────────────
-    const { error: linkErr } = await admin
-      .from("profiles")
-      .update({ business_id: businessId })
-      .eq("id", user.id);
-    if (linkErr) {
-      return NextResponse.json({ error: `Account link failed: ${linkErr.message}` }, { status: 500 });
-    }
-
-    // ── Step 4: upsert business_members ───────────────────────────────────
-    const { error: memberErr } = await admin.from("business_members").upsert(
-      {
-        profile_id: user.id,
-        business_id: businessId,
-        role: "owner",
-        roles: ["owner"],
-        active: true,
-      },
-      { onConflict: "profile_id,business_id" }
-    );
-    if (memberErr) {
-      return NextResponse.json({ error: `Member setup failed: ${memberErr.message}` }, { status: 500 });
-    }
-
-    // ── Step 5: industry-specific inventory units & categories (idempotent) ─
-    const units = typeConfig.inventoryUnits;
-    const categories = typeConfig.inventoryCategories;
-    await Promise.allSettled([
-      ...units.map((name) =>
-        admin.from("inventory_units").upsert({ business_id: businessId, name }, { onConflict: "business_id,name" })
-      ),
-      ...categories.map((name) =>
-        admin.from("inventory_categories").upsert({ business_id: businessId, name }, { onConflict: "business_id,name" })
-      ),
-    ]);
 
     // NOTE: tenants never become the system owner. The platform owner is
     // bootstrapped exclusively via /api/ffmanage/auth/bootstrap-owner
     // (platform domain) — see migration 00022/00026.
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, businessId });
   } catch (err) {
     console.error("[onboard]", err);
     return NextResponse.json(
