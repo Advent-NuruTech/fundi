@@ -18,7 +18,8 @@ export default function PortalMarketplacePage() {
               Browse tailored clothing from verified workshops
             </p>
           </div>
-          <Link href="/globalsell" target="_blank">
+    
+          <Link href="#" target="_blank"> 
             <Button className="gap-2 bg-emerald-700 hover:bg-emerald-800 w-full">
               <ExternalLink className="h-4 w-4" /> Open Marketplace
             </Button>
@@ -27,4 +28,6 @@ export default function PortalMarketplacePage() {
       </Card>
     </div>
   );
+
+  
 }

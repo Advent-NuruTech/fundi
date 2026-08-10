@@ -12,6 +12,8 @@ import { summarizeConversation } from "@/lib/ai/summarize";
 import { executeAssistantReply, InsufficientUsageError } from "@/lib/ai/assistant-service";
 import { InsufficientAICreditsError } from "@/lib/ai-billing/wallet-service";
 import { AI_FEATURE_CHAT } from "@/lib/ai/feature";
+import { allowedAIContextScopes, intersectAIContextScopes } from "@/lib/ai/access";
+import { buildRecordContext } from "@/lib/ai/record-context";
 import type { AIMessageRecord, AIConversationSummary } from "@/lib/ai/types";
 import type { AIProviderUsage } from "@/types/ai-billing";
 
@@ -29,6 +31,8 @@ interface Caller {
   userId: string;
   businessId: string;
   role: string;
+  roles: string[];
+  isFinanceOwner: boolean;
 }
 
 // ─── Auth: resolve the caller and verify active membership ──────────────────
@@ -43,7 +47,7 @@ async function resolveCaller(admin: SupabaseClient, req: Request): Promise<Calle
 
   const { data: profile } = await admin
     .from("profiles")
-    .select("business_id, role")
+    .select("business_id, role, roles")
     .eq("id", user.id)
     .maybeSingle();
   if (!profile?.business_id) return null;
@@ -51,17 +55,31 @@ async function resolveCaller(admin: SupabaseClient, req: Request): Promise<Calle
   // Active-membership check — a deactivated member must not reach tenant data.
   const { data: member } = await admin
     .from("business_members")
-    .select("id")
+    .select("id, role, roles")
     .eq("business_id", profile.business_id)
     .eq("profile_id", user.id)
     .eq("active", true)
     .maybeSingle();
   if (!member) return null;
 
+  const roles = Array.isArray(member.roles)
+    ? member.roles.map(String)
+    : Array.isArray(profile.roles)
+      ? profile.roles.map(String)
+      : [String(member.role ?? profile.role ?? "tailor")];
+  const { data: business } = await admin
+    .from("businesses")
+    .select("finance_access")
+    .eq("id", profile.business_id)
+    .maybeSingle();
+  const coOwners = (business?.finance_access as { coOwnerUids?: unknown } | null)?.coOwnerUids;
+
   return {
     userId: user.id,
     businessId: profile.business_id as string,
-    role: (profile.role as string) ?? "owner",
+    role: String(member.role ?? profile.role ?? "tailor"),
+    roles,
+    isFinanceOwner: roles.includes("owner") || (Array.isArray(coOwners) && coOwners.includes(user.id)),
   };
 }
 
@@ -175,6 +193,7 @@ async function handleChat(
 ): Promise<NextResponse> {
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) return json({ error: "Message is required" }, 400);
+  if (message.length > 4_000) return json({ error: "Please keep messages under 4,000 characters." }, 400);
 
   if (!(await planAllowsAi(admin, caller.businessId))) {
     return json(
@@ -196,10 +215,10 @@ async function handleChat(
   if (conversationId) {
     const { data: conv } = await admin
       .from("ai_conversations")
-      .select("business_id, persona_id, summary, summary_message_count")
+      .select("business_id, user_id, persona_id, summary, summary_message_count")
       .eq("id", conversationId)
       .maybeSingle();
-    if (!conv || conv.business_id !== caller.businessId) {
+    if (!conv || conv.business_id !== caller.businessId || conv.user_id !== caller.userId) {
       return json({ error: "Conversation not found" }, 404);
     }
     convRow = conv;
@@ -304,13 +323,21 @@ async function handleChat(
   // Business memory — private snapshot scoped to the persona's data permissions.
   // Cached per business (see context.ts) so the system prompt stays stable and
   // the provider's prompt cache keeps hitting across turns.
-  const context = await buildBusinessContext(admin, caller.businessId, persona.contextScopes).catch(
-    () => ""
+  const permittedScopes = intersectAIContextScopes(
+    persona.contextScopes,
+    allowedAIContextScopes(caller)
   );
+  const [context, recordContext] = await Promise.all([
+    buildBusinessContext(admin, caller.businessId, permittedScopes).catch(() => ""),
+    buildRecordContext(admin, caller.businessId, message, permittedScopes).catch(() => ""),
+  ]);
 
   const systemPrompt = buildBusinessPersonaPrompt(persona, businessName);
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
-    { role: "system", content: context ? `${systemPrompt}\n\n${context}` : systemPrompt },
+    {
+      role: "system",
+      content: [systemPrompt, context, recordContext].filter(Boolean).join("\n\n"),
+    },
     ...llmHistory,
     { role: "user", content: message },
   ];
@@ -420,6 +447,7 @@ export async function GET(req: Request) {
       .from("ai_conversations")
       .select("*")
       .eq("business_id", caller.businessId)
+      .eq("user_id", caller.userId)
       .eq("status", "active");
     if (personaId && isPersonaId(personaId)) query = query.eq("persona_id", personaId);
     const { data } = await query
@@ -433,10 +461,10 @@ export async function GET(req: Request) {
     if (!conversationId) return json({ error: "conversationId is required" }, 400);
     const { data: conv } = await admin
       .from("ai_conversations")
-      .select("business_id")
+      .select("business_id, user_id")
       .eq("id", conversationId)
       .maybeSingle();
-    if (!conv || conv.business_id !== caller.businessId) {
+    if (!conv || conv.business_id !== caller.businessId || conv.user_id !== caller.userId) {
       return json({ error: "Conversation not found" }, 404);
     }
     const { data } = await admin
@@ -464,10 +492,10 @@ export async function POST(req: Request) {
   const ownConversation = async (id: string): Promise<boolean> => {
     const { data } = await admin
       .from("ai_conversations")
-      .select("business_id")
+      .select("business_id, user_id")
       .eq("id", id)
       .maybeSingle();
-    return Boolean(data && data.business_id === caller.businessId);
+    return Boolean(data && data.business_id === caller.businessId && data.user_id === caller.userId);
   };
 
   switch (mode) {

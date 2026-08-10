@@ -288,7 +288,7 @@ function LoginForm() {
                   {step === "setting_up" && inviteToken ? "Accepting invitation..." : "Preparing your workspace..."}
                   {step === "redirecting" && "Taking you to your dashboard..."}
                 </p>
-                <p className="text-xs text-slate-400">Please wait a moment</p>
+                <p className="text-xs text-slate-400">Please tell more tailors about fundiflow</p>
               </div>
             </div>
           )}

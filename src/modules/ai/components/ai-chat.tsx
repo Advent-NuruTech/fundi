@@ -24,6 +24,7 @@ import {
 } from "@/services/ai.service";
 import { Markdown } from "./markdown";
 import { PersonaPicker, personaIcon } from "./persona-picker";
+import { StatusBubble } from "./status-bubble";
 import { SuggestedPrompts } from "./suggested-prompts";
 import { cn } from "@/lib/utils";
 
@@ -32,8 +33,6 @@ interface LocalMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
-  creditsCharged?: number;
-  balanceAfter?: number | null;
 }
 
 function timeAgo(iso: string | null): string {
@@ -49,19 +48,21 @@ function timeAgo(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-function TypingDots() {
-  return (
-    <div className="flex items-center gap-1 px-1 py-2">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"
-          style={{ animationDelay: `${i * 0.15}s` }}
-        />
-      ))}
-    </div>
-  );
-}
+const DEFAULT_STATUSES = [
+  "Thinking…",
+  "Looking carefully…",
+  "Checking your data…",
+  "Finalizing…",
+];
+
+const PERSONA_STATUSES: Partial<Record<AIAssistantPersonaId, string[]>> = {
+  inventory_advisor: ["Checking your stock…", "Comparing reorder levels…", "Looking carefully at your materials…", "Finalizing…"],
+  financial_analyst: ["Crunching your numbers…", "Reviewing revenue & expenses…", "Looking carefully at your records…", "Finalizing…"],
+  operations_manager: ["Reviewing orders & deadlines…", "Looking carefully at the workflow…", "Finalizing…"],
+  production_planner: ["Planning the shop floor…", "Sequencing production…", "Looking carefully at due dates…", "Finalizing…"],
+  customer_service: ["Reviewing customer notes…", "Drafting a reply…", "Looking carefully at the details…", "Finalizing…"],
+  sales_assistant: ["Reviewing customer & order history…", "Looking for opportunities…", "Drafting options…", "Finalizing…"],
+};
 
 export function AiChat({ businessName }: { businessName: string }) {
   const [activePersonaId, setActivePersonaId] = useState<AIAssistantPersonaId>("business_consultant");
@@ -75,8 +76,21 @@ export function AiChat({ businessName }: { businessName: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const activePersona = useMemo(() => getBusinessPersona(activePersonaId), [activePersonaId]);
+  const statuses = useMemo(
+    () => PERSONA_STATUSES[activePersonaId] ?? DEFAULT_STATUSES,
+    [activePersonaId]
+  );
+
+  // Auto-resize the composer so it grows with the message.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  }, [input]);
 
   // Load conversation list once.
   const refreshConversations = useCallback(async () => {
@@ -106,7 +120,6 @@ export function AiChat({ businessName }: { businessName: string }) {
         role: m.role,
         content: m.content,
         createdAt: m.createdAt,
-        creditsCharged: m.creditsCharged,
       }))
     );
     setLoadingMsgs(false);
@@ -172,8 +185,6 @@ export function AiChat({ businessName }: { businessName: string }) {
         role: "assistant",
         content: result.reply,
         createdAt: new Date().toISOString(),
-        creditsCharged: result.creditsCharged,
-        balanceAfter: result.balanceAfter,
       },
     ]);
   }, [input, sending, activeConversationId, activePersonaId, refreshConversations]);
@@ -234,12 +245,19 @@ export function AiChat({ businessName }: { businessName: string }) {
           const Icon = personaIcon(conv.personaId);
           const active = conv.id === activeConversationId;
           return (
-            <button
+            <div
               key={conv.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => openConversation(conv.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openConversation(conv.id);
+                }
+              }}
               className={cn(
-                "group flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left transition",
+                "group flex w-full cursor-pointer items-start gap-2 rounded-xl px-3 py-2 text-left transition",
                 active ? "bg-emerald-50 ring-1 ring-emerald-200" : "hover:bg-slate-100"
               )}
             >
@@ -274,7 +292,7 @@ export function AiChat({ businessName }: { businessName: string }) {
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -379,20 +397,12 @@ export function AiChat({ businessName }: { businessName: string }) {
                       ) : (
                         <p className="whitespace-pre-wrap text-sm">{m.content}</p>
                       )}
-                      {m.role === "assistant" && m.creditsCharged ? (
-                        <p className="mt-1.5 text-[10px] text-slate-400">
-                          Used {m.creditsCharged} credit{m.creditsCharged === 1 ? "" : "s"}
-                          {typeof m.balanceAfter === "number" ? ` · ${m.balanceAfter} left` : ""}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
                 ))}
               {sending && (
                 <div className="flex justify-start">
-                  <div className="rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-2 shadow-sm">
-                    <TypingDots />
-                  </div>
+                  <StatusBubble statuses={statuses} />
                 </div>
               )}
             </div>
@@ -410,6 +420,7 @@ export function AiChat({ businessName }: { businessName: string }) {
         <div className="border-t border-slate-200 bg-white px-3 py-3 sm:px-4">
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

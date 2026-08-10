@@ -24,6 +24,14 @@ interface OpenAIUsageShape {
   };
 }
 
+/** A real OpenAI model id must not contain spaces or marketing suffixes. */
+const MODEL_ID_RE = /^[a-z0-9][a-z0-9._-]*$/i;
+
+function resolveModelId(configured?: string | null): string {
+  if (configured && MODEL_ID_RE.test(configured)) return configured;
+  return process.env.OPENAI_MODEL ?? "gpt-5.5";
+}
+
 function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
   const baseURL = process.env.OPENAI_BASE_URL;
@@ -109,7 +117,7 @@ export class OpenAIAdapter implements AIProviderAdapter {
     const client = getOpenAIClient();
     const started = Date.now();
     const completion = await client.chat.completions.create({
-      model: this.model,
+      model: resolveModelId(request.model ?? this.model),
       messages: request.messages,
       ...(request.maxTokens != null ? { max_completion_tokens: request.maxTokens } : {}),
       ...(request.options ?? {}),

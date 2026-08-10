@@ -21,7 +21,7 @@ export const BUSINESS_AI_PERSONAS: AIAssistantPersona[] = [
     description: "Your chief strategic advisor for growing revenue, protecting profit and running the business with confidence.",
     icon: "Briefcase",
     accent: "bg-emerald-100 text-emerald-700",
-    contextScopes: ["business", "finance", "orders", "customers", "payments", "inventory"],
+    contextScopes: ["business", "finance", "orders", "customers", "payments", "inventory", "team", "branches", "messages", "billing"],
     suggestedPrompts: [
       "What should I focus on this week to grow revenue?",
       "How profitable is my business right now?",
@@ -66,7 +66,7 @@ You are the business's operations manager. You optimise the daily workflow: orde
     description: "Protects and grows cash flow and profit — revenue, expenses, debts, and where every shilling goes.",
     icon: "TrendingUp",
     accent: "bg-violet-100 text-violet-700",
-    contextScopes: ["business", "finance", "payments"],
+    contextScopes: ["business", "finance", "payments", "billing"],
     suggestedPrompts: [
       "How is my cash flow looking this month?",
       "Which customers owe the most money?",
@@ -199,7 +199,7 @@ You are the business's marketing strategist. You help win more customers cheaply
     description: "Your long-term partner for scaling — combining finance, operations, marketing and strategy into one plan.",
     icon: "Rocket",
     accent: "bg-fuchsia-100 text-fuchsia-700",
-    contextScopes: ["business", "finance", "orders", "customers", "inventory", "payments", "team"],
+    contextScopes: ["business", "finance", "orders", "customers", "inventory", "payments", "team", "branches", "billing"],
     suggestedPrompts: [
       "Give me a weekly review of my business",
       "What are the 3 best growth moves for me right now?",

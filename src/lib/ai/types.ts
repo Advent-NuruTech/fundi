@@ -29,7 +29,10 @@ export type AIContextScope =
   | "customers"
   | "payments"
   | "team"
-  | "production";
+  | "production"
+  | "branches"
+  | "messages"
+  | "billing";
 
 export interface AIAssistantPersona {
   id: AIAssistantPersonaId;

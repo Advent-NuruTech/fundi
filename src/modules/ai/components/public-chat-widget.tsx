@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Send, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatusBubble } from "./status-bubble";
 
 interface WidgetMessage {
   id: string;
@@ -29,6 +30,14 @@ export function PublicChatWidget() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  }, [input]);
 
   useEffect(() => {
     if (open) setOpen(true);
@@ -117,15 +126,7 @@ export function PublicChatWidget() {
             ))}
             {sending && (
               <div className="flex justify-start">
-                <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"
-                      style={{ animationDelay: `${i * 0.15}s` }}
-                    />
-                  ))}
-                </div>
+                <StatusBubble />
               </div>
             )}
           </div>
@@ -136,6 +137,7 @@ export function PublicChatWidget() {
           {/* Composer */}
           <div className="flex items-end gap-2 border-t border-slate-200 bg-white p-3">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
