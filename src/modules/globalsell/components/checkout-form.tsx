@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -12,7 +12,7 @@ const schema = z.object({
   buyerName: z.string().min(2, "Full name is required"),
   buyerPhone: z.string().min(9, "Valid phone number required"),
   buyerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
-  deliveryLocation: z.string().optional(),
+  deliveryLocation: z.string().min(5, "Delivery address is required"),
   notes: z.string().optional(),
   paymentMethod: z.enum(["manual", "cash", "mpesa", "bank_transfer"]).optional(),
 });
@@ -33,6 +33,7 @@ export function CheckoutForm({
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -46,11 +47,22 @@ export function CheckoutForm({
     },
   });
 
+  useEffect(() => {
+    reset({
+      buyerName: defaultValues?.buyerName ?? "",
+      buyerPhone: defaultValues?.buyerPhone ?? "",
+      buyerEmail: defaultValues?.buyerEmail ?? "",
+      deliveryLocation: defaultValues?.deliveryLocation ?? "",
+      notes: defaultValues?.notes ?? "",
+      paymentMethod: defaultValues?.paymentMethod ?? "manual",
+    });
+  }, [defaultValues, reset]);
+
   async function handleFormSubmit(values: FormValues) {
     await onSubmit({
       ...values,
       buyerEmail: values.buyerEmail || undefined,
-      deliveryLocation: values.deliveryLocation || undefined,
+      deliveryLocation: values.deliveryLocation,
       notes: values.notes || undefined,
     });
   }
@@ -108,13 +120,16 @@ export function CheckoutForm({
         {/* Delivery Location */}
         <div className="sm:col-span-2">
           <label className="mb-1.5 block text-sm font-medium text-slate-700">
-            Delivery Location
+            Shipping / Delivery Address *
           </label>
           <input
             {...register("deliveryLocation")}
-            placeholder="Nairobi CBD, Westlands, Mombasa Road…"
+            placeholder="Building, street, area, town and delivery instructions"
             className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
           />
+          {errors.deliveryLocation && (
+            <p className="mt-1 text-xs text-rose-500">{errors.deliveryLocation.message}</p>
+          )}
         </div>
 
         {/* Payment Method */}

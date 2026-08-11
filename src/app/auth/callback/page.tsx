@@ -57,7 +57,8 @@ export default function AuthCallbackPage() {
 
         if (!mounted) return;
         setStep("redirecting");
-        router.replace("/dashboard");
+        const redirect = new URLSearchParams(window.location.search).get("redirect");
+        router.replace(getSafeRedirect(redirect));
       } catch (err) {
         if (!mounted) return;
         setStep("error");
@@ -105,4 +106,8 @@ export default function AuthCallbackPage() {
       </div>
     </div>
   );
+}
+
+function getSafeRedirect(redirect: string | null) {
+  return redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : "/dashboard";
 }

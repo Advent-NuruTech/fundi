@@ -33,6 +33,7 @@ function LoginForm() {
   const { login, loginWithGoogle, refreshProfile } = useAuth();
 
   const inviteToken = searchParams.get("invite");
+  const requestedRedirect = searchParams.get("redirect");
   const [step, setStep] = useState<"idle" | "authenticating" | "setting_up" | "redirecting">("idle");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -64,7 +65,7 @@ function LoginForm() {
       toast.success(inviteToken ? "Invitation accepted! Welcome aboard." : "Welcome back");
 
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push(getSafeRedirect(requestedRedirect));
       }, 700);
     } catch (err) {
       setStep("idle");
@@ -84,7 +85,7 @@ function LoginForm() {
     if (isBusy) return;
     try {
       setError("");
-      await loginWithGoogle();
+      await loginWithGoogle(getSafeRedirect(requestedRedirect));
     } catch {
       setError("Google sign-in failed. Please try again.");
     }
@@ -128,7 +129,7 @@ function LoginForm() {
                   FundiFlow
                 </CardTitle>
                 <p className="mt-1 text-sm text-slate-500">
-                  {inviteToken ? "Accept your invitation" : "Welcome back to your workshop"}
+                  {inviteToken ? "Accept your invitation" : requestedRedirect ? "Sign in to continue to checkout" : "Welcome back to your workshop"}
                 </p>
               </div>
             </div>
@@ -263,7 +264,7 @@ function LoginForm() {
               <p className="text-slate-600">
                 New tailoring business?{" "}
                 <Link
-                  href="/register"
+                  href={`/register${requestedRedirect ? `?redirect=${encodeURIComponent(getSafeRedirect(requestedRedirect))}` : ""}`}
                   className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors hover:underline underline-offset-2"
                 >
                   Create account
@@ -309,4 +310,8 @@ function LoginFallback() {
       </Card>
     </div>
   );
+}
+
+function getSafeRedirect(redirect: string | null) {
+  return redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : "/dashboard";
 }

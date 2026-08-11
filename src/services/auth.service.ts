@@ -64,11 +64,15 @@ export async function loginWithEmail(email: string, password: string) {
   });
 }
 
-export async function loginWithGoogle() {
+export async function loginWithGoogle(redirect?: string) {
+  const callbackUrl = new URL("/auth/callback", window.location.origin);
+  if (redirect?.startsWith("/") && !redirect.startsWith("//")) {
+    callbackUrl.searchParams.set("redirect", redirect);
+  }
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: callbackUrl.toString(),
     },
   });
   if (error) throw error;

@@ -43,7 +43,7 @@ interface AuthContextValue {
   onboardingStep: OnboardingStep;
   setOnboardingStep: (step: OnboardingStep) => void;
   login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: (redirect?: string) => Promise<void>;
   registerOwner: (input: {
     email: string;
     password: string;
@@ -331,8 +331,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loginWithEmail(email, password);
         // loading is cleared by authStateListener after profile resolves
       },
-      loginWithGoogle: async () => {
-        await loginWithGoogle();
+      loginWithGoogle: async (redirect) => {
+        await loginWithGoogle(redirect);
       },
       registerOwner: async (input) => {
         setLoading(true);

@@ -64,11 +64,32 @@ export async function POST(request: Request) {
     const body = (await request.json()) as OrderRequestBody;
     const { sellerBusinessId, cartItems, checkout } = body;
 
-    if (!sellerBusinessId || !cartItems?.length || !checkout?.buyerName || !checkout?.buyerPhone) {
+    if (!sellerBusinessId || !cartItems?.length || !checkout?.buyerName || !checkout?.buyerPhone || !checkout?.deliveryLocation) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
     const client = createServiceSupabaseClient();
+    const accessToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    if (!accessToken) {
+      return NextResponse.json({ error: "Please sign in before checking out" }, { status: 401 });
+    }
+
+    // Never trust identity fields sent by the browser. A single FundiFlow
+    // Supabase identity can represent either a business member or a customer,
+    // so resolve it from the verified session on every order.
+    const { data: authData, error: authError } = await client.auth.getUser(accessToken);
+    if (authError || !authData.user) {
+      return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
+    }
+
+    const { data: profile } = await client
+      .from("profiles")
+      .select("business_id")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+
+    const buyerUserId = authData.user.id;
+    const buyerBusinessId = profile?.business_id ?? null;
 
     const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
     const total = subtotal;
@@ -78,8 +99,8 @@ export async function POST(request: Request) {
     const orderPayload = {
       order_number: orderNumber,
       seller_business_id: sellerBusinessId,
-      buyer_business_id: checkout.buyerBusinessId ?? null,
-      buyer_user_id: checkout.buyerUserId ?? null,
+      buyer_business_id: buyerBusinessId,
+      buyer_user_id: buyerUserId,
       buyer_name: checkout.buyerName,
       buyer_phone: checkout.buyerPhone,
       buyer_email: checkout.buyerEmail ?? null,

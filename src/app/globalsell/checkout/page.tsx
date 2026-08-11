@@ -1,15 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChevronLeft, Package, CheckCircle2, ArrowRight } from "lucide-react";
+import { ChevronLeft, Package, CheckCircle2, ArrowRight, Building2, LogIn, UserPlus } from "lucide-react";
 import { useCartStore } from "@/store/cart-store";
 import { CheckoutForm } from "@/modules/globalsell/components/checkout-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatKes } from "@/lib/utils";
 import { toast } from "sonner";
 import type { CheckoutInput } from "@/types/ecommerce";
+import { useAuth } from "@/features/auth/components/auth-context";
+import { getMyCustomerRecords } from "@/services/customer-portal.service";
+import { supabase } from "@/lib/supabase";
+import type { Customer } from "@/types/domain";
 
 type OrderResult = {
   orderNumber: string;
@@ -22,6 +26,50 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [placedOrders, setPlacedOrders] = useState<OrderResult[]>([]);
   const [done, setDone] = useState(false);
+  const { user, business, loading: authLoading } = useAuth();
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [authEmail, setAuthEmail] = useState<string | undefined>();
+  const [authPhone, setAuthPhone] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!user || business) {
+      setCustomer(null);
+      return;
+    }
+    getMyCustomerRecords().then((records) => setCustomer(records[0] ?? null));
+  }, [user, business]);
+
+  useEffect(() => {
+    if (!user) {
+      setAuthEmail(undefined);
+      setAuthPhone(undefined);
+      return;
+    }
+    supabase.auth.getUser().then(({ data }) => {
+      setAuthEmail((data.user?.user_metadata?.email as string | undefined) ?? data.user?.email);
+      setAuthPhone(data.user?.user_metadata?.phone as string | undefined);
+    });
+  }, [user]);
+
+  const checkoutDefaults = useMemo<Partial<CheckoutInput> | undefined>(() => {
+    if (!user) return undefined;
+    if (business) {
+      return {
+        buyerName: business.name,
+        buyerPhone: business.phone ?? user.phone ?? authPhone ?? "",
+        buyerEmail: business.email ?? authEmail ?? user.email,
+        deliveryLocation: business.address ?? business.location ?? "",
+        buyerBusinessId: business.id,
+        buyerUserId: user.uid,
+      };
+    }
+    return {
+      buyerName: customer?.fullName ?? user.name,
+      buyerPhone: customer?.phone ?? user.phone ?? authPhone ?? "",
+      buyerEmail: customer?.email ?? authEmail,
+      buyerUserId: user.uid,
+    };
+  }, [authEmail, authPhone, business, customer, user]);
 
   if (items.length === 0 && !done) {
     return (
@@ -104,7 +152,10 @@ export default function CheckoutPage() {
 
         const res = await fetch("/api/globalsell/orders", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ""}`,
+          },
           body: JSON.stringify({
             sellerBusinessId,
             cartItems,
@@ -154,10 +205,23 @@ export default function CheckoutPage() {
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Delivery Information</CardTitle>
+              <CardTitle>{business ? "Confirm business & delivery details" : "Confirm your delivery details"}</CardTitle>
             </CardHeader>
             <CardContent>
-              <CheckoutForm onSubmit={handleCheckout} submitting={submitting} />
+              {authLoading ? (
+                <p className="py-8 text-center text-sm text-slate-500">Checking your FundiFlow account…</p>
+              ) : !user ? (
+                <CheckoutAccountChoice />
+              ) : (
+                <>
+                  <p className="mb-5 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    {business
+                      ? "Using your existing FundiFlow business account. Review the prefilled details before placing the order."
+                      : "Using your existing FundiFlow customer account. Review or update the prefilled details before placing the order."}
+                  </p>
+                  <CheckoutForm defaultValues={checkoutDefaults} onSubmit={handleCheckout} submitting={submitting} />
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -212,6 +276,30 @@ export default function CheckoutPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CheckoutAccountChoice() {
+  const redirect = encodeURIComponent("/globalsell/checkout");
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-600">Sign in once with your FundiFlow identity to continue. New shoppers can create a customer account.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link href={`/login?redirect=${redirect}`} className="rounded-xl border border-slate-200 p-4 transition hover:border-emerald-400 hover:bg-emerald-50">
+          <Building2 className="mb-2 h-5 w-5 text-emerald-700" />
+          <p className="font-semibold text-slate-900">I have a FundiFlow business</p>
+          <p className="mt-1 text-xs text-slate-500">Sign in to use your business details.</p>
+        </Link>
+        <Link href={`/auth/customer-login?redirect=${redirect}`} className="rounded-xl border border-slate-200 p-4 transition hover:border-emerald-400 hover:bg-emerald-50">
+          <LogIn className="mb-2 h-5 w-5 text-emerald-700" />
+          <p className="font-semibold text-slate-900">I am a customer</p>
+          <p className="mt-1 text-xs text-slate-500">Sign in with the account your business created for you.</p>
+        </Link>
+      </div>
+      <Link href={`/auth/customer-register?redirect=${redirect}`} className="flex items-center justify-center gap-2 text-sm font-medium text-emerald-700 hover:underline">
+        <UserPlus className="h-4 w-4" /> New customer? Create your FundiFlow account
+      </Link>
     </div>
   );
 }

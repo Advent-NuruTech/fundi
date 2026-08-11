@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { loginCustomerPortal } from "@/services/customer-portal.service";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 export default function CustomerLoginPage() {
+  return <Suspense fallback={<CustomerAuthFallback />}><CustomerLoginForm /></Suspense>;
+}
+
+function CustomerLoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -29,7 +33,7 @@ export default function CustomerLoginPage() {
     if (error) {
       toast.error(error);
     } else {
-      router.push("/portal");
+      router.push(getSafeRedirect(searchParams.get("redirect")));
     }
   };
 
@@ -104,4 +108,12 @@ export default function CustomerLoginPage() {
       </Card>
     </div>
   );
+}
+
+function getSafeRedirect(redirect: string | null) {
+  return redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : "/portal";
+}
+
+function CustomerAuthFallback() {
+  return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Loading sign in…</div>;
 }

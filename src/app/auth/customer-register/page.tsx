@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { registerCustomerPortal } from "@/services/customer-portal.service";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 export default function CustomerRegisterPage() {
+  return <Suspense fallback={<CustomerAuthFallback />}><CustomerRegisterForm /></Suspense>;
+}
+
+function CustomerRegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -38,7 +43,7 @@ export default function CustomerRegisterPage() {
       toast.error(error);
     } else {
       toast.success("Account created! You can now track your orders.");
-      router.push("/portal");
+      router.push(getSafeRedirect(searchParams.get("redirect")));
     }
   };
 
@@ -139,7 +144,7 @@ export default function CustomerRegisterPage() {
 
           <p className="mt-4 text-center text-xs text-slate-500">
             Already have an account?{" "}
-            <Link href="/auth/customer-login" className="font-medium text-emerald-700 hover:underline">
+            <Link href={`/auth/customer-login?redirect=${encodeURIComponent(getSafeRedirect(searchParams.get("redirect")))}`} className="font-medium text-emerald-700 hover:underline">
               Sign in
             </Link>
           </p>
@@ -154,4 +159,12 @@ export default function CustomerRegisterPage() {
       </Card>
     </div>
   );
+}
+
+function getSafeRedirect(redirect: string | null) {
+  return redirect?.startsWith("/") && !redirect.startsWith("//") ? redirect : "/portal";
+}
+
+function CustomerAuthFallback() {
+  return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Loading registration…</div>;
 }
