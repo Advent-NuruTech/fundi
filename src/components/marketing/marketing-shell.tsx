@@ -7,6 +7,7 @@ import { Menu, X, Scissors, MessageCircle, Globe } from "lucide-react";
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/story", label: "Our Story" },
   { href: "/about", label: "About" },
   { href: "/globalsell", label: "Marketplace" },
 ];

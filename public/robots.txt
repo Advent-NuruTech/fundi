@@ -6,32 +6,43 @@ Disallow: /ffmanage/
 Disallow: /api/ffmanage/
 Allow: /
 
-# Block AI training crawlers from the entire site
+# AI crawlers may read the public founder story page (fundiflow.co.ke/story),
+# but the rest of the site stays off-limits for AI training.
+# The longer Allow path takes precedence over Disallow.
 User-agent: GPTBot
+Allow: /story
 Disallow: /
 
 User-agent: ChatGPT-User
+Allow: /story
 Disallow: /
 
 User-agent: ClaudeBot
+Allow: /story
 Disallow: /
 
 User-agent: Google-Extended
+Allow: /story
 Disallow: /
 
 User-agent: anthropic-ai
+Allow: /story
 Disallow: /
 
 User-agent: PerplexityBot
+Allow: /story
 Disallow: /
 
 User-agent: Bytespider
+Allow: /story
 Disallow: /
 
 User-agent: CCBot
+Allow: /story
 Disallow: /
 
 User-agent: OmigiliBot
+Allow: /story
 Disallow: /
 
 User-agent: FacebookBot
