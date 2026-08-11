@@ -1,5 +1,11 @@
 import type { Business, Order, TaxMode } from "@/types/domain";
 
+/** The business fields that are safe and required on a customer-facing document. */
+export type ReceiptBusiness = Pick<
+  Business,
+  "name" | "logoUrl" | "phone" | "email" | "location" | "receiptFooter" | "currency" | "taxEnabled" | "taxRate" | "taxMode" | "taxLabel"
+>;
+
 /**
  * Receipt math, kept pure so it can be unit-tested and reused by any surface
  * (order detail, POS, customer portal, PDF export…).
@@ -63,7 +69,7 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-export function buildReceiptTotals(order: Order, business: Business): ReceiptTotals {
+export function buildReceiptTotals(order: Order, business: ReceiptBusiness): ReceiptTotals {
   const taxEnabled = business.taxEnabled ?? false;
   const taxRate = business.taxRate ?? 16;
   const taxMode: TaxMode = business.taxMode ?? "inclusive";
@@ -90,7 +96,7 @@ export function buildReceiptTotals(order: Order, business: Business): ReceiptTot
   return { taxEnabled: true, taxLabel, taxRate, taxMode, subtotal, tax, total: round2(agreed) };
 }
 
-export function buildReceiptData(order: Order, business: Business): ReceiptData {
+export function buildReceiptData(order: Order, business: ReceiptBusiness): ReceiptData {
   const items: ReceiptLineItem[] = (order.items && order.items.length > 0
     ? order.items.map((item) => ({
         name: item.inventoryItemName || "Item",
@@ -104,15 +110,45 @@ export function buildReceiptData(order: Order, business: Business): ReceiptData 
           .join(" · ") || undefined,
         quantity: item.quantity,
         rate: item.unitPrice ?? 0,
-        amount: round2((item.unitPrice ?? 0) * item.quantity - (item.discount ?? 0)),
+        // `totalAmount` is the price snapshot committed at sale time. Prefer it
+        // over recalculation so rounding and negotiated line prices stay exact.
+        amount: round2(
+          Number.isFinite(item.totalAmount)
+            ? item.totalAmount
+            : (item.unitPrice ?? 0) * item.quantity - (item.discount ?? 0)
+        ),
       }))
-    : (order.garments ?? []).map((g) => ({
+    : (order.members && order.members.some((member) => member.garments?.length)
+        ? order.members.flatMap((member) =>
+            (member.garments ?? []).map((garment) => ({
+              name: garment.name,
+              notes: [`For: ${member.memberName}`, garment.styleNotes, garment.notes].filter(Boolean).join(" · ") || undefined,
+              quantity: garment.quantity,
+              rate: garment.agreedPrice,
+              amount: round2(garment.agreedPrice * garment.quantity),
+            }))
+          )
+        : (order.garments ?? []).map((g) => ({
         name: g.name,
         notes: g.styleNotes,
         quantity: g.quantity,
         rate: g.agreedPrice,
         amount: round2(g.agreedPrice * g.quantity),
-      })));
+      }))));
+
+  // Historic snapshots can differ from a later agreed subtotal. Show the
+  // difference explicitly so every document reconciles to the order ledger.
+  const itemTotal = round2(items.reduce((sum, item) => sum + item.amount, 0));
+  const difference = round2(Number(order.subtotalAmount ?? 0) - itemTotal);
+  if (Math.abs(difference) >= 0.01) {
+    items.push({
+      name: difference > 0 ? "Order adjustment" : "Order discount",
+      notes: "Reconciles this document to the agreed order amount.",
+      quantity: 1,
+      rate: difference,
+      amount: difference,
+    });
+  }
 
   // Delivery fee renders as its own line, and ONLY for delivery orders — pickup
   // orders get no delivery row and no placeholder at all.

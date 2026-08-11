@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
-import { ArrowLeft, MessageCircle, CheckCircle2, Circle, Loader2 } from "lucide-react";
-import { getMyOrderById } from "@/services/customer-portal.service";
+import { ArrowLeft, MessageCircle, CheckCircle2, Circle, FileText, Loader2 } from "lucide-react";
+import { getMyOrderById, getMyOrderDocument } from "@/services/customer-portal.service";
 import type { CustomerSafeOrder } from "@/services/customer-portal.service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
+import { OrderReceipt } from "@/components/receipt/order-receipt";
+import type { Order } from "@/types/domain";
+import type { ReceiptBusiness } from "@/lib/receipt";
 import { formatKes } from "@/lib/utils";
 import { STAGE_LABEL, STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL, STAGE_ORDER, stageLabel } from "../../_shared";
 
@@ -16,6 +20,8 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
   const [order, setOrder] = useState<CustomerSafeOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [document, setDocument] = useState<{ order: Order; business: ReceiptBusiness } | null>(null);
+  const [loadingDocument, setLoadingDocument] = useState(false);
 
   useEffect(() => {
     getMyOrderById(id).then((data) => {
@@ -46,6 +52,13 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
 
   const stageIndex = STAGE_ORDER.indexOf(order.stage);
 
+  const openDocument = async () => {
+    setLoadingDocument(true);
+    const data = await getMyOrderDocument(order.id);
+    setDocument(data);
+    setLoadingDocument(false);
+  };
+
   return (
     <div className="space-y-4">
       {/* Back */}
@@ -68,6 +81,11 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
           </div>
         </CardContent>
       </Card>
+
+      <Button variant="outline" onClick={openDocument} disabled={loadingDocument} className="w-full gap-2">
+        {loadingDocument ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+        {loadingDocument ? "Preparing document…" : "View invoice / receipt"}
+      </Button>
 
       {/* Stage timeline */}
       <Card>
@@ -162,6 +180,12 @@ export default function PortalOrderDetailPage({ params }: { params: Promise<{ id
           Contact Support
         </Button>
       </Link>
+
+      {document && (
+        <Dialog open={!!document} onClose={() => setDocument(null)} className="max-w-xl p-0">
+          <OrderReceipt order={document.order} business={document.business} onClose={() => setDocument(null)} />
+        </Dialog>
+      )}
     </div>
   );
 }

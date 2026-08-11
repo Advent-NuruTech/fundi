@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { transformArrayToCamel } from "@/lib/case-utils";
-import type { Customer, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
+import type { Customer, Order, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
+import type { ReceiptBusiness } from "@/lib/receipt";
 
 // ── API helper ────────────────────────────────────────────────────────────────
 
@@ -361,6 +362,15 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     createdAt: order.created_at as string,
     updatedAt: order.updated_at as string,
   };
+}
+
+/** Fetch the authoritative invoice/receipt data after server-side ownership verification. */
+export async function getMyOrderDocument(orderId: string): Promise<{
+  order: Order;
+  business: ReceiptBusiness;
+} | null> {
+  const result = await portalFetch<{ order: Order; business: ReceiptBusiness }>("order-document", { orderId });
+  return result.data ?? null;
 }
 
 // ── Payments ──────────────────────────────────────────────────────────────────

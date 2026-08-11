@@ -7,6 +7,9 @@ import {
   normalizePhoneForAuth,
   isSyntheticPortalEmail,
 } from "@/lib/customer-portal";
+import { transformKeysToCamel } from "@/lib/case-utils";
+import type { Order, OrderItem, OrderMember } from "@/types/domain";
+import type { ReceiptBusiness } from "@/lib/receipt";
 
 function getSupabaseUrl() {
   return (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/rest\/v1\/?$/, "");
@@ -633,6 +636,58 @@ async function handleRelink(admin: AdminClient, caller: { id: string; email?: st
   return NextResponse.json({ success: true, linked: toLink.length });
 }
 
+/** Return the complete, customer-safe document for one order the caller owns. */
+async function handleOrderDocument(
+  admin: AdminClient,
+  caller: { id: string },
+  body: Record<string, unknown>
+) {
+  const orderId = typeof body.orderId === "string" ? body.orderId : "";
+  if (!orderId) return NextResponse.json({ error: "Missing orderId" }, { status: 400 });
+
+  const { data: orderRow } = await admin.from("orders").select("*").eq("id", orderId).maybeSingle();
+  if (!orderRow) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  const { data: owner } = await admin
+    .from("customers")
+    .select("id")
+    .eq("id", orderRow.customer_id as string)
+    .eq("portal_user_id", caller.id)
+    .maybeSingle();
+  if (!owner) return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+
+  const [{ data: itemRows }, { data: garmentRows }, { data: memberRows }, { data: business }] = await Promise.all([
+    admin.from("order_items").select("*").eq("order_id", orderId).order("sort_order", { ascending: true }),
+    admin.from("order_garments").select("*").eq("order_id", orderId).order("sort_order", { ascending: true }),
+    admin.from("order_members").select("*").eq("order_id", orderId).order("sort_order", { ascending: true }),
+    admin.from("businesses").select("name, logo_url, phone, email, location, receipt_footer, currency, tax_enabled, tax_rate, tax_mode, tax_label").eq("id", orderRow.business_id as string).maybeSingle(),
+  ]);
+  if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
+
+  const memberIds = (memberRows ?? []).map((member) => member.id as string);
+  const { data: memberGarments } = memberIds.length
+    ? await admin.from("order_member_garments").select("*").in("order_member_id", memberIds).order("sort_order", { ascending: true })
+    : { data: [] };
+  const garmentsByMember = new Map<string, Record<string, unknown>[]>();
+  for (const garment of memberGarments ?? []) {
+    const key = garment.order_member_id as string;
+    garmentsByMember.set(key, [...(garmentsByMember.get(key) ?? []), garment as Record<string, unknown>]);
+  }
+
+  const order = transformKeysToCamel<Order>(orderRow as Record<string, unknown>);
+  order.items = (itemRows ?? []).map((item) => transformKeysToCamel<OrderItem>(item as Record<string, unknown>));
+  order.garments = (garmentRows ?? []).map((garment) => transformKeysToCamel<Order["garments"][number]>(garment as Record<string, unknown>));
+  order.members = (memberRows ?? []).map((member) => {
+    const mapped = transformKeysToCamel<OrderMember>(member as Record<string, unknown>);
+    mapped.garments = (garmentsByMember.get(member.id as string) ?? []).map((garment) => transformKeysToCamel<NonNullable<OrderMember["garments"]>[number]>(garment));
+    return mapped;
+  });
+
+  return NextResponse.json({
+    order,
+    business: transformKeysToCamel<ReceiptBusiness>(business as Record<string, unknown>),
+  });
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const action = body.action as string;
@@ -673,6 +728,8 @@ export async function POST(request: Request) {
         return await handleMarkOnboarding(admin, caller, body);
       case "message-info":
         return await handleMessageInfo(admin, caller, body);
+      case "order-document":
+        return await handleOrderDocument(admin, caller, body);
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }

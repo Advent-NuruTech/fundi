@@ -422,6 +422,20 @@ async function handleChat(
         429
       );
     }
+    const errMessage = err instanceof Error ? err.message : String(err);
+    if (errMessage.includes("OPENAI_API_KEY")) {
+      // Works locally (key is in .env.local) but fails on a host where the
+      // key was never added — surface the real cause instead of a generic 500.
+      console.error("[ai] AI provider not configured", err);
+      return json(
+        {
+          error:
+            "The AI provider isn't configured on this server yet (missing OPENAI_API_KEY in the live environment). Add the key to the live environment and redeploy.",
+          code: "AI_NOT_CONFIGURED",
+        },
+        503
+      );
+    }
     console.error("[ai] chat failed", err);
     return json({ error: "Something went wrong. Please try again." }, 500);
   }

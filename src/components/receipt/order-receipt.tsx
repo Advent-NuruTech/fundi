@@ -1,15 +1,15 @@
 "use client";
 
-import { useRef } from "react";
-import { Printer, X } from "lucide-react";
-import type { Business, Order } from "@/types/domain";
-import { buildReceiptData, formatReceiptMoney } from "@/lib/receipt";
+import { useMemo, useRef, useState } from "react";
+import { Download, X } from "lucide-react";
+import type { Order } from "@/types/domain";
+import { buildReceiptData, formatReceiptMoney, type ReceiptBusiness } from "@/lib/receipt";
 
 const NAVY = "#16265c";
 
 interface OrderReceiptProps {
   order: Order;
-  business: Business;
+  business: ReceiptBusiness;
   /** Optional close handler — renders a close button in the action bar. */
   onClose?: () => void;
 }
@@ -26,6 +26,9 @@ interface OrderReceiptProps {
 export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
   const data = buildReceiptData(order, business);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const [documentType, setDocumentType] = useState<"invoice" | "receipt">(
+    order.balanceAmount > 0 ? "invoice" : "receipt"
+  );
   const { totals } = data;
 
   const created = data.order.createdAt ? new Date(data.order.createdAt) : new Date();
@@ -33,6 +36,11 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
   const timeStr = created.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" });
   const currency = data.business.currency;
 
+  const documentLabel = documentType === "invoice" ? "Invoice" : "Payment Receipt";
+  const documentNumber = useMemo(
+    () => `${documentType === "invoice" ? "INV" : "RCT"}-${data.order.number}`,
+    [data.order.number, documentType]
+  );
   const handlePrint = () => window.print();
 
   return (
@@ -56,13 +64,17 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
 
       {/* Action bar — hidden on print */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 print:hidden">
-        <span className="text-sm font-semibold text-slate-700">Receipt — {data.order.number}</span>
+        <span className="text-sm font-semibold text-slate-700">{documentLabel} — {data.order.number}</span>
         <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-slate-200 p-0.5">
+            <button onClick={() => setDocumentType("invoice")} className={`rounded-md px-2 py-1 text-xs font-semibold ${documentType === "invoice" ? "bg-slate-100 text-slate-900" : "text-slate-500"}`}>Invoice</button>
+            <button onClick={() => setDocumentType("receipt")} className={`rounded-md px-2 py-1 text-xs font-semibold ${documentType === "receipt" ? "bg-slate-100 text-slate-900" : "text-slate-500"}`}>Receipt</button>
+          </div>
           <button
             onClick={handlePrint}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#16265c] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#0f1c46]"
           >
-            <Printer className="h-3.5 w-3.5" /> Print
+            <Download className="h-3.5 w-3.5" /> Download PDF
           </button>
           {onClose && (
             <button
@@ -110,7 +122,7 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
               className="mt-1 inline-block px-5 py-1 text-sm font-bold uppercase tracking-widest text-white"
               style={{ backgroundColor: NAVY }}
             >
-              Receipt
+              {documentLabel}
             </span>
           </div>
 
@@ -123,6 +135,7 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
             )}
             <Row label="Date" value={dateStr} />
             <Row label="Time" value={timeStr} />
+            <Row label={`${documentType === "invoice" ? "Invoice" : "Receipt"} No.`} value={documentNumber} />
             {data.business.location && <Row label="Location" value={data.business.location} />}
             {data.business.email && <Row label="Email" value={data.business.email} />}
           </dl>
@@ -130,8 +143,9 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
           <div className="my-5 border-t border-slate-300" />
 
           <dl className="space-y-2 text-sm">
-            <Row label="Order Reference ID" value={data.order.number} bold />
+            <Row label="Order Reference" value={data.order.number} bold />
             <Row label="Customer" value={data.order.customerName} />
+            {data.order.customerPhone && <Row label="Customer phone" value={data.order.customerPhone} />}
           </dl>
 
           {/* ── Items table ── */}
@@ -190,7 +204,7 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
             {order.payerName && <Row label="Paid By" value={order.payerName} />}
             <Row label="Amount Paid" value={`${currency} ${formatReceiptMoney(data.payment.amountPaid)}`} />
             {data.payment.balance > 0 ? (
-              <Row label="Balance Due" value={`${currency} ${formatReceiptMoney(data.payment.balance)}`} bold />
+              <Row label={documentType === "invoice" ? "Balance Due" : "Outstanding Balance"} value={`${currency} ${formatReceiptMoney(data.payment.balance)}`} bold />
             ) : (
               <div className="flex justify-end">
                 <span
