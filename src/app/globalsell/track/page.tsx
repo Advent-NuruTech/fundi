@@ -14,21 +14,19 @@ import type { EcommerceOrder } from "@/types/ecommerce";
 function TrackOrderContent() {
   const searchParams = useSearchParams();
   const [orderNumber, setOrderNumber] = useState(searchParams.get("order") ?? "");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(searchParams.get("phone") ?? "");
   const [loading, setLoading] = useState(false);
   const [order, setOrder] = useState<EcommerceOrder | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  async function handleTrack(e: React.FormEvent) {
-    e.preventDefault();
-    if (!orderNumber.trim() || !phone.trim()) return;
+  async function handleTrack(orderToTrack?: string, phoneToTrack?: string) {
+    const orderNo = (orderToTrack ?? orderNumber).trim();
+    const phoneNo = (phoneToTrack ?? phone).trim();
+    if (!orderNo || !phoneNo) return;
     setLoading(true);
     setNotFound(false);
     try {
-      const result = await trackOrderByNumberAndPhone(
-        orderNumber.trim(),
-        phone.trim()
-      );
+      const result = await trackOrderByNumberAndPhone(orderNo, phoneNo);
       if (result) {
         setOrder(result);
         setNotFound(false);
@@ -44,6 +42,17 @@ function TrackOrderContent() {
     }
   }
 
+  // Deep links from the customer portal carry ?order=&phone= so the tracking
+  // portal resolves the order immediately without the customer re-typing it.
+  useEffect(() => {
+    const orderParam = searchParams.get("order")?.trim();
+    const phoneParam = searchParams.get("phone")?.trim();
+    if (orderParam && phoneParam) {
+      handleTrack(orderParam, phoneParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="mx-auto max-w-xl px-4 py-12 sm:px-6">
       <div className="text-center mb-8">
@@ -56,7 +65,7 @@ function TrackOrderContent() {
       {/* Search form */}
       <Card>
         <CardContent className="pt-5">
-          <form onSubmit={handleTrack} className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); handleTrack(); }} className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Order Number

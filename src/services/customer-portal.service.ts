@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
-import { transformArrayToCamel } from "@/lib/case-utils";
+import { transformKeysToCamel, transformArrayToCamel } from "@/lib/case-utils";
 import type { Customer, Order, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
+import type { EcommerceOrder, EcommerceOrderItem, EcommerceStore } from "@/types/ecommerce";
 import type { ReceiptBusiness } from "@/lib/receipt";
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -362,6 +363,210 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     createdAt: order.created_at as string,
     updatedAt: order.updated_at as string,
   };
+}
+
+// ── Global Sell (ecommerce) orders — customer-safe ──────────────────────────
+
+/**
+ * Unified order card shown across the customer portal. Both tailoring
+ * (`orders`) and Global Sell marketplace (`ecommerce_orders`) orders are
+ * merged so the customer sees everything they have ever purchased in one list.
+ */
+export interface PortalOrderItem {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface PortalOrder {
+  id: string;
+  source: "tailoring" | "globalsell";
+  orderNumber: string;
+  businessId: string;
+  businessName: string;
+  customerName: string;
+  /** Tailoring: ProductionStage. Global Sell: EcommerceOrderStatus. */
+  statusKey: string;
+  /** Tailoring: PaymentStatus. Global Sell: EcommercePaymentStatus. */
+  paymentStatus: string;
+  isActive: boolean;
+  isDelivered: boolean;
+  isCancelled: boolean;
+  totalAmount: number;
+  amountPaid: number;
+  balanceAmount: number;
+  dueDate?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: PortalOrderItem[];
+  /** Deep-link to the public Global Sell tracking portal for this order. */
+  trackingUrl?: string;
+  tailoring?: CustomerSafeOrder;
+  globalsell?: EcommerceOrder;
+}
+
+/** Orders placed from the customer's portal account on Global Sell. */
+export async function getMyEcommerceOrders(userId: string): Promise<EcommerceOrder[]> {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from("ecommerce_orders")
+    .select(
+      `
+      *,
+      items:ecommerce_order_items(*),
+      store:ecommerce_stores!seller_business_id(id, slug, store_name)
+    `
+    )
+    .eq("buyer_user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error || !data?.length) return [];
+
+  return (data as Record<string, unknown>[]).map((row) => {
+    const order = transformKeysToCamel<EcommerceOrder>(row);
+    if (Array.isArray(row.items)) {
+      order.items = transformArrayToCamel<EcommerceOrderItem>(
+        row.items as Record<string, unknown>[]
+      );
+    }
+    if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
+      order.store = transformKeysToCamel<Pick<EcommerceStore, "id" | "slug" | "storeName">>(
+        row.store as Record<string, unknown>
+      );
+    }
+    return order;
+  });
+}
+
+export async function getMyEcommerceOrderById(
+  orderId: string,
+  userId: string
+): Promise<EcommerceOrder | null> {
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from("ecommerce_orders")
+    .select(
+      `
+      *,
+      items:ecommerce_order_items(*),
+      store:ecommerce_stores!seller_business_id(id, slug, store_name)
+    `
+    )
+    .eq("id", orderId)
+    .eq("buyer_user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const order = transformKeysToCamel<EcommerceOrder>(data as Record<string, unknown>);
+  if (Array.isArray(data.items)) {
+    order.items = transformArrayToCamel<EcommerceOrderItem>(
+      data.items as Record<string, unknown>[]
+    );
+  }
+  if (data.store && typeof data.store === "object" && !Array.isArray(data.store)) {
+    order.store = transformKeysToCamel<Pick<EcommerceStore, "id" | "slug" | "storeName">>(
+      data.store as Record<string, unknown>
+    );
+  }
+  return order;
+}
+
+function toPortalOrder(order: CustomerSafeOrder): PortalOrder {
+  return {
+    id: order.id,
+    source: "tailoring",
+    orderNumber: order.orderNumber,
+    businessId: order.businessId,
+    businessName: order.businessName,
+    customerName: order.customerName,
+    statusKey: order.stage,
+    paymentStatus: order.paymentStatus,
+    isActive: order.stage !== "delivered",
+    isDelivered: order.stage === "delivered",
+    isCancelled: false,
+    totalAmount: order.subtotalAmount,
+    amountPaid: order.amountPaid,
+    balanceAmount: order.balanceAmount,
+    dueDate: order.dueDate,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    items: order.garments.map((g) => ({
+      name: g.name,
+      quantity: g.quantity,
+      unitPrice: g.agreedPrice,
+    })),
+    tailoring: order,
+  };
+}
+
+function toEcommercePortalOrder(order: EcommerceOrder): PortalOrder {
+  const isCancelled = order.status === "cancelled" || order.status === "rejected";
+  const isDelivered = order.status === "delivered";
+  const isPaid = order.paymentStatus === "paid" || order.paymentStatus === "refunded";
+  const amountPaid = isPaid ? order.total : 0;
+  const balanceAmount = !isCancelled && order.paymentStatus === "unpaid" ? order.total : 0;
+
+  return {
+    id: order.id,
+    source: "globalsell",
+    orderNumber: order.orderNumber,
+    businessId: order.sellerBusinessId,
+    businessName: order.store?.storeName ?? "Global Sell",
+    customerName: order.buyerName,
+    statusKey: order.status,
+    paymentStatus: order.paymentStatus,
+    isActive: !isCancelled && !isDelivered,
+    isDelivered,
+    isCancelled,
+    totalAmount: order.total,
+    amountPaid,
+    balanceAmount,
+    dueDate: order.deliveredAt ?? null,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    items: (order.items ?? []).map((i) => ({
+      name: i.variantName ? `${i.productName} (${i.variantName})` : i.productName,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+    })),
+    trackingUrl: `/globalsell/track?order=${encodeURIComponent(order.orderNumber)}&phone=${encodeURIComponent(order.buyerPhone)}`,
+    globalsell: order,
+  };
+}
+
+/** All of the customer's orders: tailoring + Global Sell purchases. */
+export async function getMyPortalOrders(
+  customerIds: string[],
+  userId: string
+): Promise<PortalOrder[]> {
+  const [tailoring, ecommerce] = await Promise.all([
+    getMyOrders(customerIds),
+    getMyEcommerceOrders(userId),
+  ]);
+
+  const all = [
+    ...tailoring.map(toPortalOrder),
+    ...ecommerce.map(toEcommercePortalOrder),
+  ];
+
+  return all.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+
+export async function getMyPortalOrderById(
+  orderId: string,
+  customerIds: string[],
+  userId: string
+): Promise<PortalOrder | null> {
+  const tailoring = await getMyOrderById(orderId);
+  if (tailoring) return toPortalOrder(tailoring);
+
+  const ecommerce = await getMyEcommerceOrderById(orderId, userId);
+  if (ecommerce) return toEcommercePortalOrder(ecommerce);
+
+  return null;
 }
 
 /** Fetch the authoritative invoice/receipt data after server-side ownership verification. */

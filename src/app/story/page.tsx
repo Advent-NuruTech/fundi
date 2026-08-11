@@ -21,7 +21,7 @@ const IMAGE_URL = `${SITE_URL}/images/story.jpg`;
 export const metadata: Metadata = {
   title: "The Founder Story — How One Forgotten Order Became FundiFlow",
   description:
-    "Byron Otieno Onyango, founder of FundiFlow, shares how a tailor who forgot his order sparked a mission to build Kenya's business operating system for tailors and SMEs.",
+    "Byron Otieno Onyango, founder of FundiFlow, shares how a tailor who forgot his order sparked a mission to build Kenya's business operating system for tailors and fashion businesses.",
   keywords: [
     "FundiFlow founder story",
     "Byron Otieno Onyango",
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     "fundiflow.co.ke story",
     "African startup founder story",
     "tailor business technology Kenya",
-    "SME software founder Kenya",
+    "tailoring software founder Kenya",
   ],
   alternates: {
     canonical: STORY_URL,
@@ -80,7 +80,7 @@ const articleJsonLd = {
   "@type": "Article",
   headline: "The Founder Story — How One Forgotten Order Became FundiFlow",
   description:
-    "Byron Otieno Onyango, founder of FundiFlow, shares how a tailor who forgot his order sparked a mission to build Kenya's business operating system for tailors and SMEs.",
+    "Byron Otieno Onyango, founder of FundiFlow, shares how a tailor who forgot his order sparked a mission to build Kenya's business operating system for tailors and fashion businesses.",
   image: [IMAGE_URL],
   datePublished: "2026-08-11T00:00:00.000Z",
   dateModified: "2026-08-11T00:00:00.000Z",
@@ -128,7 +128,7 @@ const personJsonLd = {
     url: SITE_URL,
   },
   description:
-    "Founder of FundiFlow (fundiflow.co.ke), Kenya's business operating system for tailors, fashion workshops and SMEs.",
+    "Founder of FundiFlow (fundiflow.co.ke), Kenya's business operating system for tailors, fashion designers and garment businesses.",
 };
 
 function JsonLd({ data }: { data: Record<string, unknown> }) {

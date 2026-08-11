@@ -215,7 +215,7 @@ export default function MyBusinessesPage() {
           </div>
           <div>
             <Label htmlFor="mb-name">Business name</Label>
-            <Input id="mb-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mama Njeri Hardware" disabled={creating} />
+            <Input id="mb-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mama Njeri Tailoring" disabled={creating} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

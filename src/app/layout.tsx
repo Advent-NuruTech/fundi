@@ -21,9 +21,9 @@ const geistMono = Geist_Mono({
 
 const SITE_URL = "https://www.fundiflow.co.ke";
 const SITE_NAME = "FundiFlow";
-const TITLE_DEFAULT = "FundiFlow – Kenya's #1 Tailoring & SME Business Software";
+const TITLE_DEFAULT = "FundiFlow – Kenya's #1 Tailoring & Fashion Business Software";
 const DESCRIPTION =
-  "Kenya's leading business OS for tailors, wholesalers, retailers & hardware stores. Orders, measurements, inventory, finance & M-Pesa payments — offline-first.";
+  "Kenya's leading tailoring & fashion business OS. Orders, measurements, fabric inventory, finance & M-Pesa payments — offline-first.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -36,13 +36,13 @@ export const metadata: Metadata = {
     "tailoring management software Kenya",
     "tailor shop management app",
     "fashion workshop management system",
-    "business management software Kenya",
+    "tailoring software Kenya",
     "POS system for tailors",
     "M-Pesa business software",
-    "SME inventory management Kenya",
-    "multi-branch business software Kenya",
+    "tailoring inventory management Kenya",
+    "multi-branch tailoring software Kenya",
     "custom tailoring order tracking",
-    "hardware store management software Kenya",
+    "fashion design business software Kenya",
   ],
   applicationName: SITE_NAME,
   category: "business software",
@@ -66,23 +66,23 @@ export const metadata: Metadata = {
     locale: "en_KE",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: "FundiFlow – The Leading Business OS for Tailors & SMEs in Kenya",
+    title: "FundiFlow – The Leading Business OS for Tailors & Fashion in Kenya",
     description:
-      "Manage orders, measurements, inventory, staff, finance and M-Pesa payments from one offline-first platform built for Kenyan tailors, retailers, wholesalers and hardware stores.",
+      "Manage orders, measurements, fabric inventory, staff, finance and M-Pesa payments from one offline-first platform built for Kenyan tailors, dressmakers, uniform makers, boutiques and fashion designers.",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "FundiFlow — Business Operating System for African SMEs",
+        alt: "FundiFlow — Tailoring & Fashion Operating System for African Businesses",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "FundiFlow – The Leading Business OS for Tailors & SMEs in Kenya",
+    title: "FundiFlow – The Leading Business OS for Tailors & Fashion in Kenya",
     description:
-      "Orders, measurements, inventory, finance & M-Pesa payments — one offline-first platform for Kenyan tailors and SMEs.",
+      "Orders, measurements, inventory, finance & M-Pesa payments — one offline-first platform for Kenyan tailors and fashion businesses.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -152,7 +152,7 @@ const softwareApplicationJsonLd = {
   operatingSystem: "Web, Android, iOS",
   url: SITE_URL,
   description:
-    "Business management software for tailors, fashion workshops, retailers, wholesalers and hardware stores in Kenya. Track orders, measurements, inventory, staff and finances, with M-Pesa payments and offline-first sync.",
+    "Business management software for tailors, dressmakers, uniform makers, boutiques and fashion designers in Kenya. Track orders, measurements, fabric inventory, staff and finances, with M-Pesa payments and offline-first sync.",
   offers: {
     "@type": "Offer",
     price: "690",

@@ -4,37 +4,37 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ShoppingBag, Search } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
-import { getMyOrders } from "@/services/customer-portal.service";
-import type { CustomerSafeOrder } from "@/services/customer-portal.service";
+import { getMyPortalOrders } from "@/services/customer-portal.service";
+import type { PortalOrder } from "@/services/customer-portal.service";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatKes } from "@/lib/utils";
-import { STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL, stageLabel } from "../_shared";
+import { portalStatusColor, portalStatusLabel, portalPaymentColor, portalPaymentLabel } from "../_shared";
 
 export default function PortalOrdersPage() {
-  const { customerIds, isLoaded } = useCustomerPortal();
-  const [orders, setOrders] = useState<CustomerSafeOrder[]>([]);
+  const { customerIds, userId, isLoaded } = useCustomerPortal();
+  const [orders, setOrders] = useState<PortalOrder[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isLoaded || !customerIds.length) {
+    if (!isLoaded) {
       setLoading(false);
       return;
     }
-    getMyOrders(customerIds).then((data) => {
+    getMyPortalOrders(customerIds, userId).then((data) => {
       setOrders(data);
       setLoading(false);
     });
-  }, [isLoaded, customerIds]);
+  }, [isLoaded, customerIds, userId]);
 
   const filtered = orders.filter((o) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
       o.orderNumber.toLowerCase().includes(q) ||
-      o.garments.some((g) => g.name.toLowerCase().includes(q)) ||
+      o.items.some((g) => g.name.toLowerCase().includes(q)) ||
       o.businessName.toLowerCase().includes(q)
     );
   });
@@ -82,18 +82,21 @@ export default function PortalOrdersPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900">{order.orderNumber}</p>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">
-                        {order.garments.map((g) => `${g.name} ×${g.quantity}`).join(", ") || "—"}
+                        {order.items.map((g) => `${g.name} ×${g.quantity}`).join(", ") || "—"}
                       </p>
                       <p className="text-xs text-slate-400 mt-1">
-                        {order.businessName} · Due {new Date(order.dueDate).toLocaleDateString()}
+                        {order.businessName}
+                        {order.dueDate
+                          ? ` · Due ${new Date(order.dueDate).toLocaleDateString()}`
+                          : ` · ${new Date(order.createdAt).toLocaleDateString()}`}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <Badge className={STAGE_COLOR[order.stage]}>
-                        {stageLabel(order)}
+                      <Badge className={portalStatusColor(order)}>
+                        {portalStatusLabel(order)}
                       </Badge>
-                      <Badge className={PAYMENT_COLOR[order.paymentStatus]}>
-                        {PAYMENT_LABEL[order.paymentStatus]}
+                      <Badge className={portalPaymentColor(order)}>
+                        {portalPaymentLabel(order)}
                       </Badge>
                       {order.balanceAmount > 0 && (
                         <p className="text-xs font-semibold text-rose-600">

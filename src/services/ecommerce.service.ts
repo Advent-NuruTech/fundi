@@ -718,24 +718,45 @@ export async function createOrder(
     (itemsData ?? []) as Record<string, unknown>[]
   );
 
-  // Reserve stock
+  // Reserve stock and reduce available stock
   for (const item of cartItems) {
     try {
       if (item.variantId) {
-        await supabase.rpc("reserve_variant_stock" as never, {
-          p_variant_id: item.variantId,
-          p_quantity: item.quantity,
-        });
+        const { data: vd } = await supabase
+          .from("ecommerce_product_variants")
+          .select("stock_quantity, reserved_quantity")
+          .eq("id", item.variantId)
+          .maybeSingle();
+        if (vd) {
+          const { stock_quantity, reserved_quantity } = vd as {
+            stock_quantity: number;
+            reserved_quantity: number;
+          };
+          await supabase
+            .from("ecommerce_product_variants")
+            .update({
+              stock_quantity: Math.max((stock_quantity ?? 0) - item.quantity, 0),
+              reserved_quantity: (reserved_quantity ?? 0) + item.quantity,
+            })
+            .eq("id", item.variantId);
+        }
       } else {
         const { data: pd } = await supabase
           .from("ecommerce_products")
-          .select("reserved_stock")
+          .select("total_stock, reserved_stock")
           .eq("id", item.productId)
           .maybeSingle();
         if (pd) {
+          const { total_stock, reserved_stock } = pd as {
+            total_stock: number;
+            reserved_stock: number;
+          };
           await supabase
             .from("ecommerce_products")
-            .update({ reserved_stock: ((pd as { reserved_stock: number }).reserved_stock ?? 0) + item.quantity })
+            .update({
+              total_stock: Math.max((total_stock ?? 0) - item.quantity, 0),
+              reserved_stock: (reserved_stock ?? 0) + item.quantity,
+            })
             .eq("id", item.productId);
         }
       }
@@ -875,6 +896,79 @@ export async function updateOrderStatus(
     .eq("seller_business_id", businessId);
 
   if (error) throw error;
+
+  // Return reserved stock to available when an order is cancelled or rejected
+  if (status === "cancelled" || status === "rejected") {
+    try {
+      const order = await fetchOrderById(orderId);
+      const { data: items } = await supabase
+        .from("ecommerce_order_items")
+        .select("product_id, variant_id, quantity")
+        .eq("order_id", orderId);
+
+      for (const item of items ?? []) {
+        const { product_id, variant_id, quantity } = item as {
+          product_id: string;
+          variant_id: string | null;
+          quantity: number;
+        };
+
+        if (variant_id) {
+          const { data: vd } = await supabase
+            .from("ecommerce_product_variants")
+            .select("stock_quantity, reserved_quantity")
+            .eq("id", variant_id)
+            .maybeSingle();
+          if (vd) {
+            const { stock_quantity, reserved_quantity } = vd as {
+              stock_quantity: number;
+              reserved_quantity: number;
+            };
+            await supabase
+              .from("ecommerce_product_variants")
+              .update({
+                stock_quantity: (stock_quantity ?? 0) + quantity,
+                reserved_quantity: Math.max((reserved_quantity ?? 0) - quantity, 0),
+              })
+              .eq("id", variant_id);
+          }
+        } else {
+          const { data: pd } = await supabase
+            .from("ecommerce_products")
+            .select("total_stock, reserved_stock")
+            .eq("id", product_id)
+            .maybeSingle();
+          if (pd) {
+            const { total_stock, reserved_stock } = pd as {
+              total_stock: number;
+              reserved_stock: number;
+            };
+            await supabase
+              .from("ecommerce_products")
+              .update({
+                total_stock: (total_stock ?? 0) + quantity,
+                reserved_stock: Math.max((reserved_stock ?? 0) - quantity, 0),
+              })
+              .eq("id", product_id);
+          }
+        }
+
+        if (order?.sellerBusinessId) {
+          await supabase.from("ecommerce_inventory_logs").insert({
+            business_id: order.sellerBusinessId,
+            product_id,
+            variant_id: variant_id ?? null,
+            order_id: orderId,
+            change_type: "released",
+            quantity_change: quantity,
+            note: `Released for ${status} order`,
+          });
+        }
+      }
+    } catch {
+      /* non-critical */
+    }
+  }
 
   // Add notification for buyer if they were logged in
   const order = await fetchOrderById(orderId);

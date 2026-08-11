@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { CreditCard, Banknote, ChevronRight } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
-import { getMyPayments, getMyOrders } from "@/services/customer-portal.service";
-import type { CustomerSafeOrder } from "@/services/customer-portal.service";
+import { getMyPayments, getMyPortalOrders } from "@/services/customer-portal.service";
+import type { PortalOrder } from "@/services/customer-portal.service";
 import type { Payment } from "@/types/domain";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,23 +12,23 @@ import { cn, formatKes } from "@/lib/utils";
 import { OutstandingBalancesDialog } from "../_modals";
 
 export default function PortalPaymentsPage() {
-  const { customerIds, isLoaded } = useCustomerPortal();
+  const { customerIds, userId, isLoaded } = useCustomerPortal();
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [orders, setOrders] = useState<CustomerSafeOrder[]>([]);
+  const [orders, setOrders] = useState<PortalOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [showBalances, setShowBalances] = useState(false);
 
   useEffect(() => {
-    if (!isLoaded || !customerIds.length) {
+    if (!isLoaded) {
       setLoading(false);
       return;
     }
-    Promise.all([getMyPayments(customerIds), getMyOrders(customerIds)]).then(([pmts, ords]) => {
+    Promise.all([getMyPayments(customerIds), getMyPortalOrders(customerIds, userId)]).then(([pmts, ords]) => {
       setPayments(pmts);
       setOrders(ords);
       setLoading(false);
     });
-  }, [isLoaded, customerIds]);
+  }, [isLoaded, customerIds, userId]);
 
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
   const outstandingOrders = orders.filter((o) => o.balanceAmount > 0);

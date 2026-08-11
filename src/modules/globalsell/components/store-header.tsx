@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";
-import { getBusinessTypeConfig } from "@/lib/business-types";
 import { isAllowedImageUrl } from "@/lib/utils";
 
 interface StoreHeaderProps {
@@ -11,7 +10,6 @@ interface StoreHeaderProps {
 }
 
 export function StoreHeader({ store }: StoreHeaderProps) {
-  const category = store.storeType ? getBusinessTypeConfig(store.storeType) : null;
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Banner */}
@@ -31,7 +29,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
       {/* Store info */}
       <div className="px-5 pb-5">
         {/* Logo + name row */}
-        <div className="flex items-end gap-4 -mt-10 mb-3">
+        <div className="relative z-10 flex items-end gap-4 -mt-2.5 mb-3">
           <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-md">
             {isAllowedImageUrl(store.logoUrl) ? (
               <Image
@@ -49,19 +47,13 @@ export function StoreHeader({ store }: StoreHeaderProps) {
             )}
           </div>
 
-          <div className="pb-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h1 className="text-xl font-bold text-slate-900">{store.storeName}</h1>
-              {store.isVerified && (
-                <BadgeCheck className="h-5 w-5 text-emerald-500" />
-              )}
-              {category && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                  <span>{category.emoji}</span>
-                  {category.label}
-                </span>
-              )}
-            </div>
+            <div className="pb-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h1 className="text-xl font-bold text-slate-900">{store.storeName}</h1>
+                {store.isVerified && (
+                  <BadgeCheck className="h-5 w-5 text-emerald-500" />
+                )}
+              </div>
             {/* Rating placeholder */}
             <div className="mt-0.5 flex items-center gap-1">
               {[1, 2, 3, 4, 5].map((s) => (

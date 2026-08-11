@@ -161,7 +161,7 @@ export function BusinessSwitcher() {
               id="biz-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Mama Njeri Hardware"
+              placeholder="e.g. Mama Njeri Tailoring"
               disabled={creating}
             />
           </div>

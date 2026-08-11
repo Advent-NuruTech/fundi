@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ShoppingBag, CreditCard, Clock, AlertCircle, ChevronRight, PackageCheck } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
-import { getMyOrders } from "@/services/customer-portal.service";
-import type { CustomerSafeOrder } from "@/services/customer-portal.service";
+import { getMyPortalOrders } from "@/services/customer-portal.service";
+import type { PortalOrder } from "@/services/customer-portal.service";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn, formatKes } from "@/lib/utils";
-import { STAGE_COLOR, PAYMENT_COLOR, PAYMENT_LABEL, stageLabel } from "@/app/(customer)/portal/_shared";
+import { portalStatusColor, portalStatusLabel, portalPaymentColor, portalPaymentLabel } from "@/app/(customer)/portal/_shared";
 import { OrderDetailsDialog, OutstandingBalancesDialog } from "@/app/(customer)/portal/_modals";
 
 type TabKey = "active" | "delivered" | "outstanding";
@@ -21,32 +21,32 @@ const TABS: { key: TabKey; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function PortalHomePage() {
-  const { customerIds, primaryCustomer, isLoaded } = useCustomerPortal();
-  const [orders, setOrders] = useState<CustomerSafeOrder[]>([]);
+  const { customerIds, primaryCustomer, userId, isLoaded } = useCustomerPortal();
+  const [orders, setOrders] = useState<PortalOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("active");
-  const [selectedOrder, setSelectedOrder] = useState<CustomerSafeOrder | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<PortalOrder | null>(null);
   const [showBalances, setShowBalances] = useState(false);
 
   useEffect(() => {
-    if (!isLoaded || !customerIds.length) {
+    if (!isLoaded) {
       setLoading(false);
       return;
     }
-    getMyOrders(customerIds).then((data) => {
+    getMyPortalOrders(customerIds, userId).then((data) => {
       setOrders(data);
       setLoading(false);
     });
-  }, [isLoaded, customerIds]);
+  }, [isLoaded, customerIds, userId]);
 
-  const active = orders.filter((o) => o.stage !== "delivered");
-  const delivered = orders.filter((o) => o.stage === "delivered");
+  const active = orders.filter((o) => o.isActive);
+  const delivered = orders.filter((o) => o.isDelivered);
   const outstanding = orders.filter((o) => o.balanceAmount > 0);
   const balance = orders.reduce((s, o) => s + o.balanceAmount, 0);
   const today = new Date().toISOString().slice(0, 10);
-  const urgent = active.filter((o) => o.dueDate <= today);
+  const urgent = active.filter((o) => o.dueDate && o.dueDate <= today);
 
-  const listFor: Record<TabKey, CustomerSafeOrder[]> = { active, delivered, outstanding };
+  const listFor: Record<TabKey, PortalOrder[]> = { active, delivered, outstanding };
   const visible = listFor[activeTab];
 
   const handleTabClick = (key: TabKey) => {
@@ -207,10 +207,10 @@ function OrderCard({
   order,
   onClick,
 }: {
-  order: CustomerSafeOrder;
+  order: PortalOrder;
   onClick: () => void;
 }) {
-  const orderName = order.garments.map((g) => g.name).join(", ");
+  const orderName = order.items.map((g) => g.name).join(", ");
   return (
     <button onClick={onClick} className="w-full text-left cursor-pointer">
       <Card className="hover:border-emerald-300 transition-colors">
@@ -218,9 +218,9 @@ function OrderCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-slate-900">{order.orderNumber}</p>
-              {order.garments.length > 0 ? (
+              {order.items.length > 0 ? (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {order.garments.map((g, i) => (
+                  {order.items.map((g, i) => (
                     <span
                       key={i}
                       className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
@@ -235,15 +235,18 @@ function OrderCard({
                 )
               )}
               <p className="text-xs text-slate-400 mt-1">
-                {order.businessName} · Due {new Date(order.dueDate).toLocaleDateString()}
+                {order.businessName}
+                {order.dueDate
+                  ? ` · Due ${new Date(order.dueDate).toLocaleDateString()}`
+                  : ` · ${new Date(order.createdAt).toLocaleDateString()}`}
               </p>
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
-              <Badge className={STAGE_COLOR[order.stage]}>
-                {stageLabel(order)}
+              <Badge className={portalStatusColor(order)}>
+                {portalStatusLabel(order)}
               </Badge>
-              <Badge className={PAYMENT_COLOR[order.paymentStatus]}>
-                {PAYMENT_LABEL[order.paymentStatus]}
+              <Badge className={portalPaymentColor(order)}>
+                {portalPaymentLabel(order)}
               </Badge>
               {order.balanceAmount > 0 && (
                 <p className="text-xs font-semibold text-rose-600">

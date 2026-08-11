@@ -155,40 +155,46 @@ export async function POST(request: Request) {
       (itemsData ?? []) as Record<string, unknown>[]
     );
 
-    // Reserve stock for each item (non-critical — don't fail the order if this errors)
+    // Reserve stock for each item and reduce available stock (non-critical — don't fail the order if this errors)
     for (const item of cartItems) {
       try {
         if (item.variantId) {
           const { data: variantData } = await client
             .from("ecommerce_product_variants")
-            .select("reserved_quantity")
+            .select("stock_quantity, reserved_quantity")
             .eq("id", item.variantId)
             .maybeSingle();
 
           if (variantData) {
+            const { stock_quantity, reserved_quantity } = variantData as {
+              stock_quantity: number;
+              reserved_quantity: number;
+            };
             await client
               .from("ecommerce_product_variants")
               .update({
-                reserved_quantity:
-                  ((variantData as { reserved_quantity: number }).reserved_quantity ?? 0) +
-                  item.quantity,
+                stock_quantity: Math.max((stock_quantity ?? 0) - item.quantity, 0),
+                reserved_quantity: (reserved_quantity ?? 0) + item.quantity,
               })
               .eq("id", item.variantId);
           }
         } else {
           const { data: productData } = await client
             .from("ecommerce_products")
-            .select("reserved_stock")
+            .select("total_stock, reserved_stock")
             .eq("id", item.productId)
             .maybeSingle();
 
           if (productData) {
+            const { total_stock, reserved_stock } = productData as {
+              total_stock: number;
+              reserved_stock: number;
+            };
             await client
               .from("ecommerce_products")
               .update({
-                reserved_stock:
-                  ((productData as { reserved_stock: number }).reserved_stock ?? 0) +
-                  item.quantity,
+                total_stock: Math.max((total_stock ?? 0) - item.quantity, 0),
+                reserved_stock: (reserved_stock ?? 0) + item.quantity,
               })
               .eq("id", item.productId);
           }
