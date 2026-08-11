@@ -328,6 +328,66 @@ export async function fetchProductById(
   return product;
 }
 
+export async function fetchRelatedProducts(
+  productId: string,
+  categoryId?: string,
+  storeId?: string,
+  limit = 8
+): Promise<EcommerceProduct[]> {
+  let query = supabase
+    .from("ecommerce_products")
+    .select(
+      `
+      *,
+      category:ecommerce_categories(id, name, slug),
+      images:ecommerce_product_images(*),
+      variants:ecommerce_product_variants(*),
+      store:ecommerce_stores!inner(id, slug, store_name, logo_url, location, is_active, is_suspended)
+    `
+    )
+    .eq("status", "published")
+    .eq("ecommerce_stores.is_active", true)
+    .eq("ecommerce_stores.is_suspended", false)
+    .neq("id", productId)
+    .limit(limit);
+
+  if (categoryId) {
+    query = query.eq("category_id", categoryId);
+  } else if (storeId) {
+    query = query.eq("store_id", storeId);
+  }
+
+  query = query.order("order_count", { ascending: false });
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => {
+    const product = transformKeysToCamel<EcommerceProduct>(row);
+    if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
+      product.store = transformKeysToCamel<
+        Pick<EcommerceStore, "id" | "slug" | "storeName" | "logoUrl" | "location">
+      >(row.store as Record<string, unknown>);
+    }
+    if (Array.isArray(row.images)) {
+      product.images = transformArrayToCamel<EcommerceProductImage>(
+        row.images as Record<string, unknown>[]
+      );
+    }
+    if (Array.isArray(row.variants)) {
+      product.variants = transformArrayToCamel<EcommerceProductVariant>(
+        row.variants as Record<string, unknown>[]
+      );
+    }
+    if (row.category && typeof row.category === "object" && !Array.isArray(row.category)) {
+      product.category = transformKeysToCamel<EcommerceCategory>(
+        row.category as Record<string, unknown>
+      );
+    }
+    return product;
+  });
+}
+
 export async function fetchMyProducts(
   businessId: string
 ): Promise<EcommerceProduct[]> {

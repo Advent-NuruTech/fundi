@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Loader2,
   Package,
@@ -13,29 +14,43 @@ import {
   MapPin,
   Check,
 } from "lucide-react";
-import { fetchProductById } from "@/services/ecommerce.service";
+import { fetchProductById, fetchRelatedProducts } from "@/services/ecommerce.service";
 import { useCartStore } from "@/store/cart-store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ProductCard } from "@/modules/globalsell/components/product-card";
 import { formatKes, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { EcommerceProduct, EcommerceProductVariant } from "@/types/ecommerce";
+import type { CartItem, EcommerceProduct, EcommerceProductVariant } from "@/types/ecommerce";
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [product, setProduct] = useState<EcommerceProduct | null>(null);
   const [loading, setLoading] = useState(true);
+  const [related, setRelated] = useState<EcommerceProduct[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState<EcommerceProductVariant | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
   const addItem = useCartStore((s) => s.addItem);
+  const updateQuantity = useCartStore((s) => s.updateQuantity);
+  const cartItems = useCartStore((s) => s.items);
+  const router = useRouter();
 
   useEffect(() => {
     fetchProductById(id)
       .then((p) => {
         setProduct(p);
         if (p?.variants?.length) setSelectedVariant(p.variants[0]);
+        if (p) {
+          fetchRelatedProducts(p.id, p.categoryId, p.storeId, 8)
+            .then(setRelated)
+            .catch(() => {})
+            .finally(() => setRelatedLoading(false));
+        } else {
+          setRelatedLoading(false);
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -70,9 +85,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     !product.trackInventory ||
     product.allowBackorder;
 
-  function handleAddToCart() {
-    if (!inStock) return;
-    addItem({
+  function buildCartItem(): CartItem {
+    return {
       id: crypto.randomUUID(),
       productId: product!.id,
       variantId: selectedVariant?.id,
@@ -85,10 +99,34 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       quantity,
       unitPrice: displayPrice,
       maxStock: selectedVariant?.stockQuantity ?? product!.totalStock,
-    });
+    };
+  }
+
+  function handleAddToCart() {
+    if (!inStock) return;
+    addItem(buildCartItem());
     setAdded(true);
     toast.success("Added to cart!");
     setTimeout(() => setAdded(false), 2000);
+  }
+
+  function handleCheckout() {
+    if (!product) return;
+    if (!inStock) {
+      toast.error("This item is out of stock");
+      return;
+    }
+    const existing = cartItems.find(
+      (i) =>
+        i.productId === product.id &&
+        (i.variantId ?? undefined) === (selectedVariant?.id ?? undefined)
+    );
+    if (existing) {
+      updateQuantity(existing.id, quantity);
+    } else {
+      addItem(buildCartItem());
+    }
+    router.push("/globalsell/checkout");
   }
 
   // Group variant options
@@ -108,7 +146,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-7xl px-4 pb-32 pt-8 sm:px-6">
       {/* Back */}
       <Link
         href="/globalsell"
@@ -121,7 +159,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         {/* Images */}
         <div className="space-y-3">
-          <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
+          <div className="relative mx-auto aspect-square w-full max-w-md overflow-hidden rounded-2xl bg-slate-100">
             {primaryImage ? (
               <Image
                 src={primaryImage.url}
@@ -169,7 +207,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </Link>
           )}
 
-          <h1 className="text-2xl font-bold text-slate-900">{product.name}</h1>
+          <h1 className="text-lg font-bold text-slate-900">{product.name}</h1>
 
           {product.brand && (
             <p className="text-sm text-slate-500">Brand: {product.brand}</p>
@@ -262,44 +300,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </span>
           </div>
 
-          {/* Quantity + Add to cart */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-2">
-              <button
-                onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="h-10 w-8 flex items-center justify-center text-slate-600 hover:text-slate-900"
-              >
-                −
-              </button>
-              <span className="w-8 text-center text-sm font-semibold">{quantity}</span>
-              <button
-                onClick={() => setQuantity(quantity + 1)}
-                className="h-10 w-8 flex items-center justify-center text-slate-600 hover:text-slate-900"
-              >
-                +
-              </button>
-            </div>
-
-            <Button
-              onClick={handleAddToCart}
-              disabled={!inStock}
-              size="lg"
-              className={cn("flex-1 gap-2", added && "bg-emerald-700")}
-            >
-              {added ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  Added!
-                </>
-              ) : (
-                <>
-                  <ShoppingCart className="h-4 w-4" />
-                  Add to Cart
-                </>
-              )}
-            </Button>
-          </div>
-
           {/* Description */}
           {product.description && (
             <div className="rounded-xl border border-slate-200 p-4">
@@ -324,6 +324,78 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               {product.store.location}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* You may also like */}
+      {!relatedLoading && related.length > 0 && (
+        <div className="mt-12">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">You may also like</h2>
+            <Link
+              href="/globalsell"
+              className="text-sm text-emerald-600 hover:underline"
+            >
+              View all
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {related.map((item) => (
+              <ProductCard key={item.id} product={item} showStore />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Floating quantity + add to cart + checkout bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-1.5">
+            <button
+              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+              aria-label="Decrease quantity"
+              className="h-10 w-8 flex items-center justify-center text-slate-600 hover:text-slate-900"
+            >
+              −
+            </button>
+            <span className="w-7 text-center text-sm font-semibold">{quantity}</span>
+            <button
+              onClick={() => setQuantity(quantity + 1)}
+              aria-label="Increase quantity"
+              className="h-10 w-8 flex items-center justify-center text-slate-600 hover:text-slate-900"
+            >
+              +
+            </button>
+          </div>
+
+          <Button
+            onClick={handleAddToCart}
+            disabled={!inStock}
+            size="lg"
+            className={cn("flex-1 gap-2", added && "bg-emerald-700")}
+          >
+            {added ? (
+              <>
+                <Check className="h-4 w-4" />
+                Added!
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="h-4 w-4" />
+                Add to Cart
+              </>
+            )}
+          </Button>
+
+          <Button
+            onClick={handleCheckout}
+            disabled={!inStock}
+            size="lg"
+            variant="outline"
+            className="flex-1 gap-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+          >
+            Checkout
+          </Button>
         </div>
       </div>
     </div>

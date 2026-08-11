@@ -5,6 +5,7 @@ import Image from "next/image";
 import { X, ShoppingCart, Plus, Minus, Package, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatKes } from "@/lib/utils";
+import { isAllowedImageUrl } from "@/lib/utils";
 import { useCartStore } from "@/store/cart-store";
 import type { CartItem } from "@/types/ecommerce";
 
@@ -19,7 +20,7 @@ function CartItemRow({ item }: { item: CartItem }) {
   return (
     <div className="flex gap-3 py-3 border-b border-slate-100 last:border-0">
       <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-        {item.imageUrl ? (
+        {isAllowedImageUrl(item.imageUrl) ? (
           <Image src={item.imageUrl} alt={item.productName} fill className="object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center">

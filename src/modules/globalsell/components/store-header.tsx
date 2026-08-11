@@ -4,6 +4,7 @@ import Image from "next/image";
 import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";
 import { getBusinessTypeConfig } from "@/lib/business-types";
+import { isAllowedImageUrl } from "@/lib/utils";
 
 interface StoreHeaderProps {
   store: EcommerceStore;
@@ -15,7 +16,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Banner */}
       <div className="relative h-40 bg-gradient-to-r from-emerald-600 to-emerald-400 sm:h-52">
-        {store.bannerUrl && (
+        {isAllowedImageUrl(store.bannerUrl) && (
           <Image
             src={store.bannerUrl}
             alt={`${store.storeName} banner`}
@@ -32,7 +33,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
         {/* Logo + name row */}
         <div className="flex items-end gap-4 -mt-10 mb-3">
           <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-md">
-            {store.logoUrl ? (
+            {isAllowedImageUrl(store.logoUrl) ? (
               <Image
                 src={store.logoUrl}
                 alt={store.storeName}
