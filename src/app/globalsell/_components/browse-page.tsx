@@ -56,9 +56,9 @@ export function BrowsePage({
           <p className="mt-0.5 text-sm text-slate-500">{heroSubtitle}</p>
         </div>
 
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_1fr]">
           {/* Sidebar — desktop */}
-          <aside className="hidden w-64 shrink-0 lg:block lg:self-stretch">
+          <aside className="hidden lg:block">
             <div className="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto pr-1">
               <MarketplaceFilters
                 filters={filters}
@@ -69,7 +69,7 @@ export function BrowsePage({
           </aside>
 
           {/* Main content */}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             {/* Results summary + mobile filters toggle */}
             <div className="mb-4 flex items-center justify-between gap-3">
               <p className="text-sm text-slate-600">
