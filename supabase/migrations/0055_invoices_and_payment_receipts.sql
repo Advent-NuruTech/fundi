@@ -1,15 +1,19 @@
 -- First-class customer billing documents. Numbers are per business and are
 -- allocated under a row lock, so concurrent cashiers cannot issue duplicates.
-CREATE TYPE invoice_status AS ENUM ('draft', 'issued', 'partial', 'paid', 'overdue', 'void');
+DO $$
+BEGIN
+  CREATE TYPE invoice_status AS ENUM ('draft', 'issued', 'partial', 'paid', 'overdue', 'void');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE document_number_counters (
+CREATE TABLE IF NOT EXISTS document_number_counters (
   business_id UUID PRIMARY KEY REFERENCES businesses(id) ON DELETE CASCADE,
   next_invoice_number BIGINT NOT NULL DEFAULT 1,
   next_receipt_number BIGINT NOT NULL DEFAULT 1,
   CHECK (next_invoice_number > 0), CHECK (next_receipt_number > 0)
 );
 
-CREATE TABLE invoices (
+CREATE TABLE IF NOT EXISTS invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
   order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT, customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   invoice_number TEXT NOT NULL, due_date DATE NOT NULL, status invoice_status NOT NULL DEFAULT 'issued',
@@ -18,17 +22,17 @@ CREATE TABLE invoices (
   UNIQUE (business_id, invoice_number)
 );
 
-ALTER TABLE payments ADD COLUMN invoice_id UUID REFERENCES invoices(id) ON DELETE RESTRICT, ADD COLUMN payment_reference TEXT;
-CREATE TABLE payment_receipts (
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS invoice_id UUID REFERENCES invoices(id) ON DELETE RESTRICT, ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+CREATE TABLE IF NOT EXISTS payment_receipts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
   invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT, payment_id UUID NOT NULL UNIQUE REFERENCES payments(id) ON DELETE RESTRICT,
   receipt_number TEXT NOT NULL, amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), payment_method payment_method NOT NULL,
   payment_reference TEXT, received_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE (business_id, receipt_number)
 );
-CREATE INDEX idx_invoices_business_status_due ON invoices(business_id, status, due_date);
-CREATE INDEX idx_invoices_customer ON invoices(customer_id);
-CREATE INDEX idx_payments_invoice ON payments(invoice_id);
-CREATE INDEX idx_payment_receipts_invoice ON payment_receipts(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_business_status_due ON invoices(business_id, status, due_date);
+CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_payment_receipts_invoice ON payment_receipts(invoice_id);
 
 CREATE OR REPLACE FUNCTION next_business_document_number(p_business_id UUID, p_kind TEXT)
 RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -81,8 +85,11 @@ BEGIN
   RETURN NEW;
 END; $$;
 
+DROP TRIGGER IF EXISTS orders_create_invoice ON orders;
 CREATE TRIGGER orders_create_invoice AFTER INSERT ON orders FOR EACH ROW EXECUTE FUNCTION create_invoice_for_order();
+DROP TRIGGER IF EXISTS payments_assign_invoice ON payments;
 CREATE TRIGGER payments_assign_invoice BEFORE INSERT ON payments FOR EACH ROW EXECUTE FUNCTION assign_payment_invoice();
+DROP TRIGGER IF EXISTS payments_finalize_receipt ON payments;
 CREATE TRIGGER payments_finalize_receipt AFTER INSERT ON payments FOR EACH ROW EXECUTE FUNCTION finalize_payment_receipt_and_balances();
 
 CREATE OR REPLACE FUNCTION sync_invoice_from_order()
@@ -96,12 +103,13 @@ BEGIN
     updated_at = now() WHERE order_id = NEW.id;
   RETURN NEW;
 END; $$;
+DROP TRIGGER IF EXISTS orders_sync_invoice ON orders;
 CREATE TRIGGER orders_sync_invoice AFTER UPDATE OF due_date, subtotal_amount, delivery_fee ON orders FOR EACH ROW EXECUTE FUNCTION sync_invoice_from_order();
 
 -- Backfill documents without changing historical balances.
 INSERT INTO invoices (business_id, order_id, customer_id, invoice_number, due_date, status, total_amount, amount_paid, balance_amount, issued_at)
 SELECT o.business_id, o.id, o.customer_id, next_business_document_number(o.business_id, 'invoice'), o.due_date,
-  CASE WHEN o.balance_amount <= 0 THEN 'paid' WHEN o.amount_paid > 0 THEN 'partial' ELSE 'issued' END,
+  CASE WHEN o.balance_amount <= 0 THEN 'paid' WHEN o.amount_paid > 0 THEN 'partial' ELSE 'issued' END::invoice_status,
   COALESCE(o.subtotal_amount, 0) + COALESCE(o.delivery_fee, 0), COALESCE(o.amount_paid, 0), COALESCE(o.balance_amount, 0), o.created_at
 FROM orders o WHERE NOT EXISTS (SELECT 1 FROM invoices i WHERE i.order_id = o.id);
 UPDATE payments p SET invoice_id = i.id FROM invoices i WHERE i.order_id = p.order_id AND p.invoice_id IS NULL;
@@ -112,6 +120,8 @@ ALTER TABLE payments ALTER COLUMN invoice_id SET NOT NULL;
 
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_receipts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS invoices_select ON invoices;
 CREATE POLICY invoices_select ON invoices FOR SELECT USING (has_business_capability(business_id, 'payments.read'));
+DROP POLICY IF EXISTS payment_receipts_select ON payment_receipts;
 CREATE POLICY payment_receipts_select ON payment_receipts FOR SELECT USING (has_business_capability(business_id, 'payments.read'));
 GRANT SELECT ON invoices, payment_receipts TO authenticated;
