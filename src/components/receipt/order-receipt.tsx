@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, X } from "lucide-react";
-import type { Order } from "@/types/domain";
+import type { Invoice, Order, PaymentReceipt } from "@/types/domain";
 import { buildReceiptData, formatReceiptMoney, type ReceiptBusiness } from "@/lib/receipt";
+import { supabase } from "@/lib/supabase";
 
 const NAVY = "#16265c";
 
@@ -27,9 +28,26 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
   const data = buildReceiptData(order, business);
   const receiptRef = useRef<HTMLDivElement>(null);
   const [documentType, setDocumentType] = useState<"invoice" | "receipt">(
-    order.balanceAmount > 0 ? "invoice" : "receipt"
+    "invoice"
   );
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [latestReceipt, setLatestReceipt] = useState<PaymentReceipt | null>(null);
   const { totals } = data;
+
+  // Document numbers must come from the persisted entities, never from an
+  // order number. The receipt shown is the latest payment receipt for invoice.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data: invoiceRow } = await supabase.from("invoices").select("*").eq("order_id", order.id).maybeSingle();
+      if (!invoiceRow || cancelled) return;
+      const nextInvoice = invoiceRow as Invoice;
+      setInvoice(nextInvoice);
+      const { data: receiptRow } = await supabase.from("payment_receipts").select("*").eq("invoice_id", nextInvoice.id).order("received_at", { ascending: false }).limit(1).maybeSingle();
+      if (!cancelled && receiptRow) setLatestReceipt(receiptRow as PaymentReceipt);
+    })();
+    return () => { cancelled = true; };
+  }, [order.id]);
 
   const created = data.order.createdAt ? new Date(data.order.createdAt) : new Date();
   const dateStr = created.toLocaleDateString("en-KE", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -37,10 +55,9 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
   const currency = data.business.currency;
 
   const documentLabel = documentType === "invoice" ? "Invoice" : "Payment Receipt";
-  const documentNumber = useMemo(
-    () => `${documentType === "invoice" ? "INV" : "RCT"}-${data.order.number}`,
-    [data.order.number, documentType]
-  );
+  const documentNumber = documentType === "invoice"
+    ? invoice?.invoiceNumber ?? "Generating…"
+    : latestReceipt?.receiptNumber ?? "No receipt issued";
   const handlePrint = () => window.print();
 
   return (
@@ -68,7 +85,7 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-slate-200 p-0.5">
             <button onClick={() => setDocumentType("invoice")} className={`rounded-md px-2 py-1 text-xs font-semibold ${documentType === "invoice" ? "bg-slate-100 text-slate-900" : "text-slate-500"}`}>Invoice</button>
-            <button onClick={() => setDocumentType("receipt")} className={`rounded-md px-2 py-1 text-xs font-semibold ${documentType === "receipt" ? "bg-slate-100 text-slate-900" : "text-slate-500"}`}>Receipt</button>
+            <button disabled={!latestReceipt} onClick={() => setDocumentType("receipt")} className={`rounded-md px-2 py-1 text-xs font-semibold ${documentType === "receipt" ? "bg-slate-100 text-slate-900" : "text-slate-500"} disabled:cursor-not-allowed disabled:opacity-50`}>Receipt</button>
           </div>
           <button
             onClick={handlePrint}
@@ -136,6 +153,8 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
             <Row label="Date" value={dateStr} />
             <Row label="Time" value={timeStr} />
             <Row label={`${documentType === "invoice" ? "Invoice" : "Receipt"} No.`} value={documentNumber} />
+            {documentType === "invoice" && invoice && <Row label="Due Date" value={new Date(`${invoice.dueDate}T00:00:00`).toLocaleDateString("en-KE")} />}
+            {documentType === "invoice" && invoice && <Row label="Status" value={invoice.status} />}
             {data.business.location && <Row label="Location" value={data.business.location} />}
             {data.business.email && <Row label="Email" value={data.business.email} />}
           </dl>
@@ -203,6 +222,7 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
           <div className="mt-5 space-y-2 text-sm">
             {order.payerName && <Row label="Paid By" value={order.payerName} />}
             <Row label="Amount Paid" value={`${currency} ${formatReceiptMoney(data.payment.amountPaid)}`} />
+            {documentType === "receipt" && latestReceipt && <Row label="Payment Method" value={latestReceipt.paymentMethod.toUpperCase()} />}
             {data.payment.balance > 0 ? (
               <Row label={documentType === "invoice" ? "Balance Due" : "Outstanding Balance"} value={`${currency} ${formatReceiptMoney(data.payment.balance)}`} bold />
             ) : (

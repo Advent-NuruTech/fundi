@@ -17,7 +17,8 @@ export type ProductionStage =
 
 export type DeliveryStatus = "pending" | "ready" | "picked";
 export type PaymentStatus = "unpaid" | "partial" | "paid";
-export type PaymentMethod = "cash" | "mpesa";
+export type PaymentMethod = "cash" | "mpesa" | "bank";
+export type InvoiceStatus = "draft" | "issued" | "partial" | "paid" | "overdue" | "void";
 
 /** How an order reaches the customer. */
 export type DeliveryMethod = "delivery" | "pickup";
@@ -799,13 +800,25 @@ export interface Payment {
   customerName: string;
   orderId: string;
   orderNumber: string;
+  invoiceId: string;
   amount: number;
   method: PaymentMethod;
   mpesaCode?: string;
+  paymentReference?: string;
   description?: string;
   recordedAt: string;
   recordedByUid: string;
   recordedByName: string;
+}
+
+export interface Invoice {
+  id: string; businessId: string; orderId: string; customerId: string; invoiceNumber: string; dueDate: string;
+  status: InvoiceStatus; totalAmount: number; amountPaid: number; balanceAmount: number; issuedAt: string; paidAt?: string;
+}
+
+export interface PaymentReceipt {
+  id: string; businessId: string; invoiceId: string; paymentId: string; receiptNumber: string; amount: number;
+  paymentMethod: PaymentMethod; paymentReference?: string; receivedAt: string;
 }
 
 export interface CustomerChangeEntry {

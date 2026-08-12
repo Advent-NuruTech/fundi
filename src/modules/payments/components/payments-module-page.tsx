@@ -8,12 +8,14 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
-import type { Order, Payment } from "@/types/domain";
+import type { Invoice, Order, Payment, PaymentReceipt } from "@/types/domain";
 import { paymentSchema, type PaymentInput, type PaymentValues } from "@/schemas/payment.schema";
 
 import {
   listenOrders,
   listenPayments,
+  listenPaymentReceipts,
+  listenInvoices,
   recordPayment,
 } from "@/services/firestore.service";
 
@@ -91,6 +93,8 @@ export function PaymentsModulePage() {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   const {
     register,
@@ -116,10 +120,14 @@ export function PaymentsModulePage() {
 
     const unsubOrders = listenOrders(businessId, setOrders);
     const unsubPayments = listenPayments(businessId, setPayments);
+    const unsubReceipts = listenPaymentReceipts(businessId, setReceipts);
+    const unsubInvoices = listenInvoices(businessId, setInvoices);
 
     return () => {
       unsubOrders();
       unsubPayments();
+      unsubReceipts();
+      unsubInvoices();
     };
   }, [businessId, ready]);
 
@@ -202,7 +210,8 @@ export function PaymentsModulePage() {
 
         amount: values.amount,
         method: values.method,
-        mpesaCode: values.mpesaCode || "",
+        mpesaCode: values.method === "mpesa" ? values.mpesaCode || "" : "",
+        paymentReference: values.method === "bank" ? values.mpesaCode || "" : undefined,
         description,
 
         actorUid: user.uid,
@@ -344,17 +353,20 @@ export function PaymentsModulePage() {
                     <option value="mpesa">
                       M-Pesa
                     </option>
+                    <option value="bank">
+                      Bank transfer
+                    </option>
                   </select>
                 </div>
 
-                {paymentMethod === "mpesa" && (
+                {(paymentMethod === "mpesa" || paymentMethod === "bank") && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium">
-                      M-Pesa Code
+                      {paymentMethod === "mpesa" ? "M-Pesa Code" : "Bank reference"}
                     </label>
 
                     <Input
-                      placeholder="e.g. QWE123XYZ"
+                      placeholder={paymentMethod === "mpesa" ? "e.g. QWE123XYZ" : "e.g. transfer reference"}
                       {...register("mpesaCode")}
                     />
                   </div>
@@ -386,7 +398,10 @@ export function PaymentsModulePage() {
                   No payments recorded yet.
                 </div>
               ) : (
-                payments.map((payment) => (
+                payments.map((payment) => {
+                  const receipt = receipts.find((item) => item.paymentId === payment.id);
+                  const invoice = invoices.find((item) => item.id === payment.invoiceId);
+                  return (
                   <div
                     key={payment.id}
                     className="rounded-xl border border-slate-200 px-4 py-3"
@@ -400,10 +415,20 @@ export function PaymentsModulePage() {
                         <p className="text-xs text-slate-500">
                           {payment.orderNumber} -{" "}
                           {payment.method.toUpperCase()}
-                          {payment.mpesaCode
-                            ? ` (${payment.mpesaCode})`
+                          {payment.paymentReference || payment.mpesaCode
+                            ? ` (${payment.paymentReference || payment.mpesaCode})`
                             : ""}
                         </p>
+                        {receipt && (
+                          <p className="text-xs font-medium text-indigo-600">
+                            Receipt {receipt.receiptNumber}
+                          </p>
+                        )}
+                        {invoice && (
+                          <p className="text-xs text-slate-500">
+                            Invoice {invoice.invoiceNumber} · due {invoice.dueDate} · {invoice.status}
+                          </p>
+                        )}
 
                         {payment.description && (
                           <p className="text-xs text-slate-400 italic leading-relaxed pt-0.5">
@@ -417,7 +442,8 @@ export function PaymentsModulePage() {
                       </Badge>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </CardContent>
           </Card>
@@ -481,7 +507,12 @@ export function PaymentsModulePage() {
                           {order.customerName}
                         </p>
                         <p className="text-xs text-slate-500">
-                          #{order.orderNumber} &middot; Due {order.dueDate}
+                          {(() => {
+                            const invoice = invoices.find((item) => item.orderId === order.id);
+                            return invoice
+                              ? `${invoice.invoiceNumber} · ${invoice.status} · Due ${invoice.dueDate}`
+                              : `Order #${order.orderNumber} · Due ${order.dueDate}`;
+                          })()}
                         </p>
                         {order.assignedTailorName && (
                           <p className="text-xs text-slate-400">

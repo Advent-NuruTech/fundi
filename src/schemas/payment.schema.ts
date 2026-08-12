@@ -3,7 +3,7 @@ import { z } from "zod";
 export const paymentSchema = z.object({
   orderId: z.string().min(1),
   amount: z.coerce.number().min(1),
-  method: z.enum(["cash", "mpesa"]),
+  method: z.enum(["cash", "mpesa", "bank"]),
   mpesaCode: z.string().optional(),
   description: z.string().optional(),
 });

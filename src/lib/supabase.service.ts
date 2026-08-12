@@ -48,6 +48,8 @@ import type {
   OrderMember,
   OrderMemberGarment,
   Payment,
+  Invoice,
+  PaymentReceipt,
   PurchaseOrder,
   StockMovement,
   Supplier,
@@ -2053,7 +2055,7 @@ export async function createOrder(
     const needsProduction = orderItems.some((i) => i.itemType === "tailored" || i.itemType === "alteration");
     const autoDeliver = !needsProduction && DEFAULT_DELIVERY_CONFIG.autoDeliverReadyMade;
     const initialStagePoint = await buildInitialStagePoint(businessId);
-    const balance = Math.max(0, payload.subtotalAmount + deliveryFee - depositAmount);
+    const invoiceTotal = payload.subtotalAmount + deliveryFee;
 
     const deliveryStage: DeliveryStage = autoDeliver
       ? deliveryMethod === "pickup" ? "pickup_ready" : "delivered"
@@ -2083,9 +2085,9 @@ export async function createOrder(
       currentStageId: autoDeliver ? null : initialStagePoint?.currentStageId ?? null,
       currentStageName: autoDeliver ? null : initialStagePoint?.currentStageName ?? null,
       completedStageIds: autoDeliver ? [] : initialStagePoint?.completedStageIds ?? [],
-      paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
-      amountPaid: depositAmount,
-      balanceAmount: balance,
+      paymentStatus: "unpaid",
+      amountPaid: 0,
+      balanceAmount: payload.subtotalAmount + deliveryFee,
       deliveryMethod,
       deliveryFee,
       deliveryAddress: payload.deliveryAddress ?? null,
@@ -2196,7 +2198,9 @@ export async function createOrder(
 
     const cachedCustomer = await getCachedById<Customer>('customers', businessId, payload.customerId);
     await offlineUpdate(businessId, 'customers', payload.customerId, {
-      outstandingBalance: Number(cachedCustomer?.outstandingBalance ?? 0) + balance,
+      // The queued deposit below will reduce this locally, just as the database
+      // payment trigger does online. Start with the full invoice amount here.
+      outstandingBalance: Number(cachedCustomer?.outstandingBalance ?? 0) + invoiceTotal,
       lastOrderAt: now,
     });
 
@@ -2275,9 +2279,9 @@ export async function createOrder(
       currentStageId: autoDeliver ? null : initialStagePoint?.currentStageId ?? null,
       currentStageName: autoDeliver ? null : initialStagePoint?.currentStageName ?? null,
       completedStageIds: autoDeliver ? [] : initialStagePoint?.completedStageIds ?? [],
-      paymentStatus: depositAmount > 0 ? "partial" : "unpaid",
-      amountPaid: depositAmount,
-      balanceAmount: Math.max(0, payload.subtotalAmount + deliveryFee - depositAmount),
+      paymentStatus: "unpaid",
+      amountPaid: 0,
+      balanceAmount: payload.subtotalAmount + deliveryFee,
       deliveryMethod,
       deliveryFee,
       deliveryAddress: payload.deliveryAddress ?? null,
@@ -2357,7 +2361,9 @@ export async function createOrder(
 
   if (customerData) {
     const currentBalance = Number(customerData.outstanding_balance ?? 0);
-    const newBalance = currentBalance + Math.max(0, payload.subtotalAmount + deliveryFee - depositAmount);
+    // The payment insert below reduces this through the DB trigger. Adding the
+    // full invoice here prevents an initial deposit being subtracted twice.
+    const newBalance = currentBalance + payload.subtotalAmount + deliveryFee;
     await supabase
       .from('customers')
       .update({ outstanding_balance: newBalance, last_order_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -4688,6 +4694,16 @@ export function listenPayments(businessId: string, callback: (rows: Payment[]) =
   return listenToTable<Payment>('payments', businessId, callback, { orderBy: 'recorded_at', orderDir: 'desc' });
 }
 
+/** Invoices are created by the database alongside orders; never synthesize their numbers in the client. */
+export function listenInvoices(businessId: string, callback: (rows: Invoice[]) => void) {
+  return listenToTable<Invoice>('invoices', businessId, callback, { orderBy: 'issued_at', orderDir: 'desc' });
+}
+
+/** One immutable receipt is issued for each successful payment. */
+export function listenPaymentReceipts(businessId: string, callback: (rows: PaymentReceipt[]) => void) {
+  return listenToTable<PaymentReceipt>('payment_receipts', businessId, callback, { orderBy: 'received_at', orderDir: 'desc' });
+}
+
 export async function recordPayment(
   businessId: string,
   payload: {
@@ -4698,6 +4714,7 @@ export async function recordPayment(
     amount: number;
     method: PaymentMethod;
     mpesaCode?: string;
+    paymentReference?: string;
     description?: string;
     actorUid: string;
     actorName: string;
@@ -4714,6 +4731,7 @@ export async function recordPayment(
       orderId: payload.orderId, orderNumber: payload.orderNumber,
       amount: payload.amount, method: payload.method,
       mpesaCode: payload.mpesaCode ?? null,
+      paymentReference: payload.paymentReference ?? null,
       description: payload.description ?? "",
       recordedByUid: payload.actorUid, recordedByName: payload.actorName,
       recordedAt: now,
@@ -4739,24 +4757,7 @@ export async function recordPayment(
   };
   if (isOffline()) return recordOffline();
 
-  const { data: orderData, error: orderFetchError } = await supabase
-    .from('orders')
-    .select('amount_paid, subtotal_amount, delivery_fee')
-    .eq('id', payload.orderId)
-    .single();
-  if (orderFetchError && isNetworkError(orderFetchError)) return recordOffline();
-  if (!orderData) {
-    throw new Error("Order not found.");
-  }
-
-  const currentPaid = Number((orderData as any).amount_paid ?? 0);
-  const subtotal = Number((orderData as any).subtotal_amount ?? 0);
-  const deliveryFee = Number((orderData as any).delivery_fee ?? 0);
-  const nextPaid = currentPaid + payload.amount;
-  const nextBalance = Math.max(0, subtotal + deliveryFee - nextPaid);
-  const nextStatus = nextBalance === 0 ? "paid" : "partial";
-
-  await supabase
+  const { error } = await supabase
     .from('payments')
     .insert(transformKeysToSnake({
       businessId,
@@ -4767,33 +4768,17 @@ export async function recordPayment(
       amount: payload.amount,
       method: payload.method,
       mpesaCode: payload.mpesaCode,
+      paymentReference: payload.paymentReference,
       description: payload.description,
       recordedByUid: payload.actorUid,
       recordedByName: payload.actorName,
     } as unknown as Record<string, unknown>));
-
-  await supabase
-    .from('orders')
-    .update({
-      amount_paid: nextPaid,
-      balance_amount: nextBalance,
-      payment_status: nextStatus,
-    } as any)
-    .eq('id', payload.orderId)
-    .eq('business_id', businessId);
-
-  const { data: customerData } = await supabase
-    .from('customers')
-    .select('outstanding_balance')
-    .eq('id', payload.customerId)
-    .single();
-  if (customerData) {
-    const currentBalance = Number((customerData as any).outstanding_balance ?? 0);
-    await supabase
-      .from('customers')
-      .update({ outstanding_balance: Math.max(0, currentBalance - payload.amount) } as any)
-      .eq('id', payload.customerId);
+  if (error) {
+    if (isNetworkError(error)) return recordOffline();
+    throw error;
   }
+  // Invoice totals, order cache fields and the receipt are updated atomically
+  // by database triggers in migration 0055.
 }
 
 // â”€â”€â”€ EXPENSES â”€â”€â”€
