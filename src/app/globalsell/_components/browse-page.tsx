@@ -58,8 +58,8 @@ export function BrowsePage({
 
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
           {/* Sidebar — desktop */}
-          <aside className="hidden w-64 shrink-0 lg:block">
-            <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-1">
+          <aside className="hidden w-64 shrink-0 lg:block lg:self-stretch">
+            <div className="sticky top-14 max-h-[calc(100vh-3.5rem)] overflow-y-auto pr-1">
               <MarketplaceFilters
                 filters={filters}
                 categories={categories}
