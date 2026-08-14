@@ -8,7 +8,10 @@ import type {
   EcommerceCategory,
   EcommerceOrder,
   EcommerceOrderItem,
+  EcommerceOrderPayment,
   EcommerceNotification,
+  EcommercePaymentMethod,
+  EcommercePaymentStatus,
   MarketplaceFilters,
   ProductFormInput,
   StoreSettingsInput,
@@ -984,6 +987,88 @@ export async function updateOrderStatus(
   }
 }
 
+// ── Payments ─────────────────────────────────────────────────────────────────
+
+export async function fetchEcommerceOrderPayments(
+  orderId: string
+): Promise<EcommerceOrderPayment[]> {
+  const { data, error } = await supabase
+    .from("ecommerce_order_payments")
+    .select("*")
+    .eq("order_id", orderId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return transformArrayToCamel<EcommerceOrderPayment>(
+    (data ?? []) as Record<string, unknown>[]
+  );
+}
+
+export async function recordEcommercePayment(
+  businessId: string,
+  orderId: string,
+  input: {
+    amount: number;
+    method: EcommercePaymentMethod;
+    paymentReference?: string;
+    note?: string;
+    actorUid?: string;
+    actorName?: string;
+  }
+): Promise<void> {
+  if (!input.amount || input.amount <= 0) {
+    throw new Error("Payment amount must be greater than zero");
+  }
+
+  const order = await fetchOrderById(orderId);
+  if (!order || order.sellerBusinessId !== businessId) {
+    throw new Error("Order not found");
+  }
+  if (order.status === "cancelled" || order.status === "rejected") {
+    throw new Error("Cannot record a payment on a cancelled or rejected order");
+  }
+
+  const now = new Date().toISOString();
+
+  const { error: insertError } = await supabase
+    .from("ecommerce_order_payments")
+    .insert({
+      business_id: businessId,
+      order_id: orderId,
+      amount: input.amount,
+      method: input.method,
+      payment_reference: input.paymentReference ?? null,
+      note: input.note ?? null,
+      recorded_by_uid: input.actorUid ?? null,
+      recorded_by_name: input.actorName ?? null,
+    });
+  if (insertError) throw insertError;
+
+  // Recompute the order payment status from the sum of recorded payments
+  const { data: payments, error: sumError } = await supabase
+    .from("ecommerce_order_payments")
+    .select("amount")
+    .eq("order_id", orderId);
+  if (sumError) throw sumError;
+
+  const paid = (payments ?? []).reduce(
+    (n, p) => n + Number((p as { amount: number }).amount),
+    0
+  );
+  const nextStatus: EcommercePaymentStatus =
+    paid >= Number(order.total) ? "paid" : paid > 0 ? "partial" : "unpaid";
+
+  const { error: updateError } = await supabase
+    .from("ecommerce_orders")
+    .update({
+      payment_status: nextStatus,
+      payment_method: input.method,
+      paid_at: nextStatus === "paid" ? now : null,
+    })
+    .eq("id", orderId);
+  if (updateError) throw updateError;
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export async function fetchEcommerceNotifications(
@@ -1027,11 +1112,17 @@ export function listenSellerOrders(
   businessId: string,
   callback: (orders: EcommerceOrder[]) => void
 ): () => void {
+  let destroyed = false;
+  const fetchAndCallback = () => {
+    if (destroyed) return;
+    fetchSellerOrders(businessId).then(callback).catch(() => {});
+  };
+
   // Initial fetch
-  fetchSellerOrders(businessId).then(callback).catch(() => {});
+  fetchAndCallback();
 
   const channel = supabase
-    .channel(`ecommerce_orders_seller_${businessId}`)
+    .channel(`ecommerce_orders_seller_${businessId}_${crypto.randomUUID()}`)
     .on(
       "postgres_changes",
       {
@@ -1040,13 +1131,12 @@ export function listenSellerOrders(
         table: "ecommerce_orders",
         filter: `seller_business_id=eq.${businessId}`,
       },
-      () => {
-        fetchSellerOrders(businessId).then(callback).catch(() => {});
-      }
+      fetchAndCallback
     )
     .subscribe();
 
   return () => {
+    destroyed = true;
     supabase.removeChannel(channel);
   };
 }
@@ -1055,10 +1145,15 @@ export function listenEcommerceNotifications(
   businessId: string,
   callback: (notifications: EcommerceNotification[]) => void
 ): () => void {
-  fetchEcommerceNotifications(businessId).then(callback).catch(() => {});
+  let destroyed = false;
+  const fetchAndCallback = () => {
+    if (destroyed) return;
+    fetchEcommerceNotifications(businessId).then(callback).catch(() => {});
+  };
+  fetchAndCallback();
 
   const channel = supabase
-    .channel(`ecommerce_notifications_${businessId}`)
+    .channel(`ecommerce_notifications_${businessId}_${crypto.randomUUID()}`)
     .on(
       "postgres_changes",
       {
@@ -1067,13 +1162,12 @@ export function listenEcommerceNotifications(
         table: "ecommerce_notifications",
         filter: `business_id=eq.${businessId}`,
       },
-      () => {
-        fetchEcommerceNotifications(businessId).then(callback).catch(() => {});
-      }
+      fetchAndCallback
     )
     .subscribe();
 
   return () => {
+    destroyed = true;
     supabase.removeChannel(channel);
   };
 }

@@ -18,7 +18,6 @@ import { useSellerOrders } from "@/modules/globalsell/hooks/use-my-orders";
 import { useMyProducts } from "@/modules/globalsell/hooks/use-my-products";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { OrderStatusBadge } from "@/modules/globalsell/components/order-status-badge";
 import { formatKes } from "@/lib/utils";
 
@@ -30,7 +29,7 @@ export default function SellOverviewPage() {
     businessId,
     business?.name ?? ""
   );
-  const { orders, unreadCount, loading: ordersLoading } = useSellerOrders(businessId);
+  const { orders, notifications, unreadCount, loading: ordersLoading } = useSellerOrders(businessId);
 
   const publishedCount = products.filter((p) => p.status === "published").length;
   const pendingOrders = orders.filter((o) => o.status === "pending").length;
@@ -39,11 +38,12 @@ export default function SellOverviewPage() {
     .reduce((n, o) => n + o.total, 0);
 
   const recentOrders = orders.slice(0, 5);
+  const firstUnreadOrderId = notifications.find((n) => !n.read && n.orderId)?.orderId;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold text-slate-900">Global Sell</h1>
@@ -58,7 +58,7 @@ export default function SellOverviewPage() {
             {store ? `Your store: ${store.storeName}` : "Manage your marketplace store"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href="/globalsell" target="_blank">
             <Button variant="outline" size="sm" className="gap-2">
               <Globe className="h-4 w-4" />
@@ -149,7 +149,7 @@ export default function SellOverviewPage() {
         </div>
       )}
 
-      {/* Notification alert */}
+      {/* Notification alert — takes you straight to the first unread order */}
       {unreadCount > 0 && (
         <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <Bell className="h-5 w-5 text-amber-600 shrink-0" />
@@ -158,7 +158,7 @@ export default function SellOverviewPage() {
               You have {unreadCount} unread order notification{unreadCount !== 1 ? "s" : ""}
             </p>
           </div>
-          <Link href="/sell/orders">
+          <Link href={firstUnreadOrderId ? `/sell/orders/${firstUnreadOrderId}` : "/sell/orders"}>
             <Button size="sm" variant="outline">View Orders</Button>
           </Link>
         </div>

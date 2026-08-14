@@ -1,11 +1,11 @@
 "use client";
 
-import { Archive, Trash2 } from "lucide-react";
+import { Archive, Store, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Notification } from "@/types/domain";
+import type { BellNotification } from "./use-notifications";
 
 interface Props {
-  notification: Notification;
+  notification: BellNotification;
   onClick: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -30,6 +30,9 @@ const typeLabels: Record<string, { color: string }> = {
   order_stage_changed: { color: "text-purple-600" },
   order_completed: { color: "text-emerald-600" },
   materials_consumed: { color: "text-amber-600" },
+  new_order: { color: "text-emerald-600" },
+  order_status_changed: { color: "text-indigo-600" },
+  stock_low: { color: "text-rose-600" },
 };
 
 export function NotificationItem({ notification, onClick, onArchive, onDelete }: Props) {
@@ -38,41 +41,39 @@ export function NotificationItem({ notification, onClick, onArchive, onDelete }:
   return (
     <button
       onClick={onClick}
-      className={cn(
-        "w-full px-4 py-3 text-left transition hover:bg-slate-50",
-        !notification.read && "bg-emerald-50/50"
-      )}
+      className="w-full px-4 py-3 text-left transition hover:bg-slate-50"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            {!notification.read && (
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-            )}
-            <p
-              className={cn(
-                "text-sm font-medium truncate",
-                meta.color
-              )}
-            >
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", meta.color)} />
+            <p className={cn("text-sm font-medium truncate", meta.color)}>
               {notification.title}
             </p>
+            {notification.source === "ecommerce" && (
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                <Store className="h-2.5 w-2.5" />
+                Store
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">
             {notification.message}
           </p>
         </div>
         <div className="flex shrink-0 gap-1">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onArchive();
-            }}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            title="Archive"
-          >
-            <Archive className="h-3.5 w-3.5" />
-          </button>
+          {notification.source === "app" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onArchive();
+              }}
+              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              title="Archive"
+            >
+              <Archive className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();

@@ -10,9 +10,15 @@ import {
   MapPin,
   MessageSquare,
   Printer,
+  Banknote,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
-import { fetchOrderById, updateOrderStatus } from "@/services/ecommerce.service";
+import {
+  fetchOrderById,
+  updateOrderStatus,
+  recordEcommercePayment,
+  fetchEcommerceOrderPayments,
+} from "@/services/ecommerce.service";
 import { OrderTimeline } from "@/modules/globalsell/components/order-timeline";
 import {
   OrderStatusBadge,
@@ -20,9 +26,18 @@ import {
 } from "@/modules/globalsell/components/order-status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { formatKes } from "@/lib/utils";
 import { toast } from "sonner";
-import type { EcommerceOrder, EcommerceOrderStatus } from "@/types/ecommerce";
+import type {
+  EcommerceOrder,
+  EcommerceOrderStatus,
+  EcommerceOrderPayment,
+  EcommercePaymentMethod,
+} from "@/types/ecommerce";
 
 const NEXT_STATUSES: Partial<Record<EcommerceOrderStatus, EcommerceOrderStatus>> = {
   pending: "confirmed",
@@ -40,9 +55,24 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
+  const [payments, setPayments] = useState<EcommerceOrderPayment[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [amount, setAmount] = useState(0);
+  const [method, setMethod] = useState<EcommercePaymentMethod>("cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [note, setNote] = useState("");
+
   async function refresh() {
     const o = await fetchOrderById(id);
     setOrder(o);
+  }
+
+  async function refreshPayments() {
+    const p = await fetchEcommerceOrderPayments(id);
+    setPayments(p);
+    setPaymentsLoading(false);
   }
 
   useEffect(() => {
@@ -50,6 +80,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       .then(setOrder)
       .catch(() => {})
       .finally(() => setLoading(false));
+    fetchEcommerceOrderPayments(id)
+      .then(setPayments)
+      .catch(() => {})
+      .finally(() => setPaymentsLoading(false));
   }, [id]);
 
   async function handleStatusChange(status: EcommerceOrderStatus, reason?: string) {
@@ -78,6 +112,34 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     await handleStatusChange("cancelled", reason);
   }
 
+  async function handleRecordPayment() {
+    if (!order) return;
+    if (!amount || amount <= 0) {
+      toast.error("Enter a valid payment amount");
+      return;
+    }
+    setSavingPayment(true);
+    try {
+      await recordEcommercePayment(businessId, order.id, {
+        amount,
+        method,
+        paymentReference: paymentReference.trim() || undefined,
+        note: note.trim() || undefined,
+        actorUid: user?.uid,
+        actorName: user?.displayName,
+      });
+      toast.success("Payment recorded");
+      setRecordOpen(false);
+      setPaymentReference("");
+      setNote("");
+      await Promise.all([refresh(), refreshPayments()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to record payment");
+    } finally {
+      setSavingPayment(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -97,6 +159,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     order.status !== "delivered" &&
     order.status !== "cancelled" &&
     order.status !== "rejected";
+
+  const paidTotal = payments.reduce((n, p) => n + Number(p.amount), 0);
+  const balance = Math.max(0, Number(order.total) - paidTotal);
+  const canRecordPayment =
+    order.status !== "cancelled" && order.status !== "rejected";
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -172,7 +239,22 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         {/* Payment Info */}
         <Card>
-          <CardHeader><CardTitle>Payment</CardTitle></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Payment</CardTitle>
+            {canRecordPayment && (
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  setAmount(balance > 0 ? balance : Number(order.total));
+                  setRecordOpen(true);
+                }}
+              >
+                <Banknote className="h-4 w-4" />
+                Record Payment
+              </Button>
+            )}
+          </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-slate-600">Method</span>
@@ -187,6 +269,52 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <div className="flex justify-between border-t border-slate-100 pt-2 font-semibold">
               <span>Total</span>
               <span className="text-base">{formatKes(order.total)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Paid</span>
+              <span className="font-medium text-emerald-600">
+                {formatKes(paidTotal)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Balance</span>
+              <span className="font-medium text-slate-900">
+                {formatKes(balance)}
+              </span>
+            </div>
+
+            {/* Payment history */}
+            <div className="border-t border-slate-100 pt-2">
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Payment History
+              </p>
+              {paymentsLoading ? (
+                <p className="text-xs text-slate-400">Loading…</p>
+              ) : payments.length === 0 ? (
+                <p className="text-xs text-slate-400">No payments recorded yet.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {payments.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between text-xs"
+                    >
+                      <span className="text-slate-600">
+                        <span className="font-medium capitalize text-slate-900">
+                          {formatKes(p.amount)}
+                        </span>{" "}
+                        · {p.method.replace("_", " ")}
+                        {p.paymentReference && (
+                          <span className="text-slate-400"> · {p.paymentReference}</span>
+                        )}
+                      </span>
+                      <span className="text-slate-400">
+                        {new Date(p.createdAt).toLocaleDateString("en-KE")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -254,6 +382,86 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
       )}
+
+      {/* Record Payment Dialog */}
+      <Dialog
+        open={recordOpen}
+        onClose={() => setRecordOpen(false)}
+        title={`Record Payment — Order #${order.orderNumber}`}
+      >
+        <div className="space-y-4 p-5">
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm">
+            <span className="text-slate-600">Amount due</span>
+            <span className="font-bold text-slate-900">{formatKes(balance)}</span>
+          </div>
+
+          <div>
+            <Label htmlFor="payment-amount">Amount (KES)</Label>
+            <Input
+              id="payment-amount"
+              type="number"
+              min={1}
+              step="0.01"
+              value={amount || ""}
+              onChange={(e) => setAmount(Number(e.target.value))}
+              placeholder="0.00"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="payment-method">Payment Method</Label>
+            <Select
+              id="payment-method"
+              value={method}
+              onChange={(e) => setMethod(e.target.value as EcommercePaymentMethod)}
+            >
+              <option value="cash">Cash</option>
+              <option value="mpesa">M-Pesa</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="manual">Manual</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="payment-reference">
+              Reference (e.g. M-Pesa code){" "}
+              <span className="font-normal text-slate-400">(optional)</span>
+            </Label>
+            <Input
+              id="payment-reference"
+              value={paymentReference}
+              onChange={(e) => setPaymentReference(e.target.value)}
+              placeholder="e.g. ABC1234XYZ"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="payment-note">
+              Note <span className="font-normal text-slate-400">(optional)</span>
+            </Label>
+            <Input
+              id="payment-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Any extra details"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setRecordOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRecordPayment}
+              disabled={savingPayment}
+              className="gap-2"
+            >
+              {savingPayment && <Loader2 className="h-4 w-4 animate-spin" />}
+              Record Payment
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

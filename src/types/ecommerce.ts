@@ -195,6 +195,21 @@ export interface EcommerceOrderItem {
   createdAt: string;
 }
 
+// ── Order Payment ───────────────────────────────────────────────────────────
+
+export interface EcommerceOrderPayment {
+  id: string;
+  businessId: string;
+  orderId: string;
+  amount: number;
+  method: EcommercePaymentMethod;
+  paymentReference?: string;
+  note?: string;
+  recordedByUid?: string;
+  recordedByName?: string;
+  createdAt: string;
+}
+
 // ── Order ────────────────────────────────────────────────────────────────────
 
 export interface EcommerceOrder {
@@ -214,6 +229,7 @@ export interface EcommerceOrder {
   status: EcommerceOrderStatus;
   paymentMethod: EcommercePaymentMethod;
   paymentStatus: EcommercePaymentStatus;
+  paidAt?: string;
   rejectionReason?: string;
   cancellationReason?: string;
   confirmedAt?: string;

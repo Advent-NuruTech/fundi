@@ -23,8 +23,10 @@ import {
   Settings,
   Sparkles,
   Truck,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/components/auth-context";
@@ -36,6 +38,7 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { MessageBell } from "@/components/messaging/message-bell";
 import { UserAvatar } from "@/components/profile/user-avatar";
 import { SyncIndicator } from "@/components/pwa/sync-indicator";
+import { sellNavigation } from "@/constants/globalsell-navigation";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -56,6 +59,7 @@ const navigation = [
 export function Sidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [sellOpen, setSellOpen] = useState(false);
   const { user, business, memberships, logout } = useAuth();
   const biz = useBusinessType();
   const isOwner = user?.role === "owner";
@@ -120,6 +124,70 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const isInGlobalSell = pathname === "/sell" || pathname.startsWith("/sell/");
+
+  // Full "My Store" section — shown in the mobile drawer (and hidden on lg+) so
+  // store owners can jump anywhere inside Global Sell and back to the business.
+  const renderGlobalSellNav = () => (
+    <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50/60 px-2 py-3">
+      <div className="mb-1.5 flex items-center gap-2 px-1.5">
+        <Globe className="h-4 w-4 text-emerald-600" />
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          My Store
+        </p>
+        {isInGlobalSell && (
+          <span className="ml-auto flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        )}
+      </div>
+      {sellNavigation.map((section) => (
+        <div key={section.title} className="mb-1">
+          <p className="mb-0.5 px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            {section.title}
+          </p>
+          {section.items.map((item) => {
+            const Icon = item.icon;
+            const isExternal = "external" in item && item.external;
+            const active =
+              !isExternal &&
+              (pathname === item.href ||
+                (item.href !== "/sell" && pathname.startsWith(`${item.href}/`)));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                target={isExternal ? "_blank" : undefined}
+                rel={isExternal ? "noopener noreferrer" : undefined}
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+                  active
+                    ? "bg-emerald-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {item.label}
+                {isExternal && (
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-slate-400">
+                    ↗
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+      <Link
+        href="/dashboard"
+        onClick={() => setOpen(false)}
+        className="mt-1 flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+      >
+        <LayoutDashboard className="h-4 w-4 shrink-0" />
+        Back to My Business
+      </Link>
+    </div>
+  );
+
   const Drawer = (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200 px-4 py-4">
@@ -130,6 +198,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {visibleNavigation.map(navItem)}
         {extraNav.map(navItem)}
+        {renderGlobalSellNav()}
         <Link
           href="/settings"
           onClick={() => setOpen(false)}
@@ -234,6 +303,18 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
               {visibleNavigation.map(navItem)}
               {extraNav.map(navItem)}
+              <div className="pt-1">
+                {navItem({ label: "Global Sell", href: "/sell", icon: Globe })}
+                {isInGlobalSell && (
+                  <Link
+                    href="/dashboard"
+                    className="ml-2 mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+                  >
+                    <LayoutDashboard className="h-3.5 w-3.5" />
+                    Back to My Business
+                  </Link>
+                )}
+              </div>
               <Link
                 href="/settings"
                 className={cn(
