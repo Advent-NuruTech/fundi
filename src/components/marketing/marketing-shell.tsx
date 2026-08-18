@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Menu, X, Scissors, MessageCircle, Globe } from "lucide-react";
 
 const NAV_LINKS = [
@@ -23,6 +23,17 @@ const DEMO_URL =
 
 export function MarketingShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+
+  const close = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -79,15 +90,12 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
             >
               Log In
             </Link>
-
-            {/*
             <Link
               href="/register"
               className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500"
             >
-              Get Started Free
+              Sign Up Free
             </Link>
-*/}
           </div>
 
           {/* Mobile toggle */}
@@ -99,53 +107,91 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
             {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
         </div>
-
-        {/* Mobile menu */}
-        {open && (
-          <div className="border-t border-slate-100 bg-white px-4 py-4 md:hidden">
-            <div className="flex flex-col gap-1">
-              {NAV_LINKS.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  onClick={() => setOpen(false)}
-                  className="rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  {l.label}
-                </Link>
-              ))}
-              <a
-                href={DEMO_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Request Demo via WhatsApp
-              </a>
-            </div>
-            <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4">
-              <Link
-                href="/login"
-                onClick={() => setOpen(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Log In
-              </Link>
-             {/*
-<Link
-  href="/register"
-  onClick={() => setOpen(false)}
-  className="rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-emerald-500"
->
-  Get Started Free
-</Link>
-*/}
-            </div>
-          </div>
-        )}
       </header>
+
+      {/* ── MOBILE LEFT DRAWER ── */}
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-300 md:hidden ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        onClick={close}
+        aria-hidden="true"
+      />
+      {/* Drawer panel */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white shadow-2xl transition-transform duration-300 ease-in-out md:hidden ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Drawer header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <Link href="/" className="flex items-center gap-2.5" onClick={close}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 shadow-sm">
+              <Scissors className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-lg font-extrabold tracking-tight text-slate-900">
+              FundiFlow
+            </span>
+          </Link>
+          <button
+            onClick={close}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Auth CTAs — prominent at the top */}
+        <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-4">
+          <Link
+            href="/register"
+            onClick={close}
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500"
+          >
+            Sign Up Free
+          </Link>
+          <Link
+            href="/login"
+            onClick={close}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            Log In
+          </Link>
+        </div>
+
+        {/* Drawer links */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          <div className="flex flex-col gap-0.5">
+            {NAV_LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={close}
+                className={
+                  l.href === "/globalsell"
+                    ? "flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                    : "rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                }
+              >
+                {l.href === "/globalsell" && <Globe className="h-4 w-4" />}
+                {l.label}
+              </Link>
+            ))}
+            <a
+              href={DEMO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={close}
+              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+              Request Demo via WhatsApp
+            </a>
+          </div>
+        </nav>
+      </div>
 
       {/* ── PAGE CONTENT ── */}
       <main className="flex-1">{children}</main>
