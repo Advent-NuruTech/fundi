@@ -81,7 +81,7 @@ export default async function AboutPage() {
             businesses.
           </h1>
           <p className="mx-auto max-w-2xl text-lg leading-relaxed text-slate-300">
-            FundiFlow exists for one reason: to give tailoring and fashion businesses the same
+            FundiFlow exists for one reason: We are not for every business but to give tailoring and fashion businesses the same
             power that large enterprises take for granted — without the complexity, the cost,
             or the need to become a software expert to use it.
           </p>

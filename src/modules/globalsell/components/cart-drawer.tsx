@@ -8,6 +8,7 @@ import { formatKes } from "@/lib/utils";
 import { isAllowedImageUrl } from "@/lib/utils";
 import { useCartStore } from "@/store/cart-store";
 import type { CartItem } from "@/types/ecommerce";
+import { shopUrl } from "@/lib/storefront-url";
 
 interface CartDrawerProps {
   open: boolean;
@@ -115,7 +116,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
               <p className="text-xs text-slate-400 mt-1">
                 Browse the marketplace to find products
               </p>
-              <Link href="/globalsell" onClick={onClose}>
+              <Link href={shopUrl()} onClick={onClose}>
                 <Button size="sm" className="mt-4">Browse Marketplace</Button>
               </Link>
             </div>
@@ -137,7 +138,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
                 {formatKes(subtotal())}
               </span>
             </div>
-            <Link href="/globalsell/checkout" onClick={onClose} className="block">
+            <Link href={shopUrl("checkout")} onClick={onClose} className="block">
               <Button className="w-full gap-2" size="lg">
                 Checkout
                 <ArrowRight className="h-4 w-4" />

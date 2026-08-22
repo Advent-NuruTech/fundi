@@ -7,6 +7,7 @@ import { useCartStore } from "@/store/cart-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatKes } from "@/lib/utils";
+import { shopUrl, storeUrl } from "@/lib/storefront-url";
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, clearCart, subtotal, getSellerGroups } =
@@ -20,7 +21,7 @@ export default function CartPage() {
         <p className="mt-1 text-sm text-slate-400">
           Browse the marketplace to find products you love
         </p>
-        <Link href="/globalsell">
+        <Link href={shopUrl()}>
           <Button className="mt-6">Browse Marketplace</Button>
         </Link>
       </div>
@@ -53,7 +54,7 @@ export default function CartPage() {
                 <CardHeader>
                   <CardTitle className="text-sm">
                     <Link
-                      href={`/globalsell/store/${storeSlug}`}
+                      href={storeUrl(storeSlug)}
                       className="text-emerald-600 hover:underline"
                     >
                       {storeName}
@@ -168,14 +169,14 @@ export default function CartPage() {
                 Payment will be arranged with each seller
               </p>
 
-              <Link href="/globalsell/checkout">
+              <Link href={shopUrl("checkout")}>
                 <Button className="w-full gap-2" size="lg">
                   Proceed to Checkout
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
 
-              <Link href="/globalsell" className="block text-center text-sm text-slate-400 hover:text-emerald-600 transition">
+              <Link href={shopUrl()} className="block text-center text-sm text-slate-400 hover:text-emerald-600 transition">
                 Continue Shopping
               </Link>
             </CardContent>

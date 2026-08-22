@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatKes } from "@/lib/utils";
 import { toast } from "sonner";
+import { productUrl } from "@/lib/storefront-url";
 
 const STATUS_BADGE = {
   published: { label: "Live", variant: "success" as const },
@@ -32,7 +33,7 @@ const STATUS_BADGE = {
 export default function MyProductsPage() {
   const { user, business } = useAuth();
   const businessId = user?.businessId ?? "";
-  const { products, loading, publishProduct, archiveProduct, removeProduct } =
+  const { products, store, loading, publishProduct, archiveProduct, removeProduct } =
     useMyProducts(businessId, business?.name ?? "");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -178,7 +179,7 @@ export default function MyProductsPage() {
                           </button>
                           {product.status === "published" && (
                             <Link
-                              href={`/globalsell/product/${product.id}`}
+                              href={store ? productUrl(store.publicHandle, product.slug) : `/globalsell/product/${product.id}`}
                               target="_blank"
                               onClick={() => setOpenMenuId(null)}
                               className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"

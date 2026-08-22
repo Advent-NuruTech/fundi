@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/store/cart-store";
 import type { EcommerceProduct } from "@/types/ecommerce";
 import { toast } from "sonner";
+import { productUrl } from "@/lib/storefront-url";
 
 interface ProductCardProps {
   product: EcommerceProduct;
@@ -25,7 +26,9 @@ function computeVariantStats(product: EcommerceProduct) {
     .filter((v) => v.isAvailable)
     .map((v) => v.priceOverride ?? product.basePrice);
 
-  const totalStock = variants.reduce((n, v) => n + v.stockQuantity, 0);
+  const totalStock = variants
+    .filter((variant) => variant.isAvailable)
+    .reduce((total, variant) => total + variant.stockQuantity, 0);
   const minPrice = prices.length > 0 ? Math.min(...prices) : product.basePrice;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : product.basePrice;
 
@@ -64,7 +67,7 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
     ? (variantStats?.totalStock ?? 0)
     : product.totalStock;
 
-  const inStock = effectiveStock > 0 || !product.trackInventory;
+  const inStock = effectiveStock > 0 || !product.trackInventory || product.allowBackorder;
 
   const isWholesale = product.saleChannel === "wholesale";
   const isBoth = product.saleChannel === "both";
@@ -76,20 +79,24 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
       id: crypto.randomUUID(),
       productId: product.id,
       sellerBusinessId: product.businessId,
-      sellerStoreSlug: product.store?.slug ?? "",
+      sellerStoreSlug: product.store?.publicHandle ?? product.store?.slug ?? "",
       storeName: product.store?.storeName ?? "Unknown Store",
       productName: product.name,
       imageUrl: primaryImage?.url,
       quantity: 1,
       unitPrice: displayPrice,
-      maxStock: effectiveStock,
+      maxStock: product.trackInventory && !product.allowBackorder ? effectiveStock : undefined,
     });
     toast.success(`${product.name} added to cart`);
   }
 
   return (
     <Link
-      href={`/globalsell/product/${product.id}`}
+      href={
+        product.store?.publicHandle
+          ? productUrl(product.store.publicHandle, product.slug)
+          : `/globalsell/product/${product.id}`
+      }
       className="group flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md hover:-translate-y-0.5"
     >
       {/* Image */}

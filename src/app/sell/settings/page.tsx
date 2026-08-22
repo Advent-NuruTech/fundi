@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Globe, MessageSquare, Save, Store, ExternalLink } from "lucide-react";
+import { CheckCircle2, Loader2, Globe, MessageSquare, Save, Store, ExternalLink, XCircle } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import {
   fetchStoreByBusinessId,
@@ -16,9 +16,16 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import Link from "next/link";
 import type { EcommerceStore } from "@/types/ecommerce";
+import { normalizeHandle, storeUrl } from "@/lib/storefront-url";
 
 const schema = z.object({
   storeName: z.string().min(2, "Store name is required"),
+  publicHandle: z
+    .string()
+    .min(3, "Store address must be at least 3 characters")
+    .max(50, "Store address must be at most 50 characters")
+    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])$/, "Use lowercase letters, numbers, and single hyphens")
+    .refine((value) => !value.includes("--"), "Do not use consecutive hyphens"),
   description: z.string().optional(),
   location: z.string().optional(),
   contactPhone: z.string().optional(),
@@ -35,11 +42,15 @@ export default function StoreSettingsPage() {
   const [store, setStore] = useState<EcommerceStore | null>(null);
   const [loadingStore, setLoadingStore] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [handleAvailable, setHandleAvailable] = useState<boolean | null>(null);
+  const [checkingHandle, setCheckingHandle] = useState(false);
 
   const {
     register,
     handleSubmit,
     reset,
+    control,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
@@ -51,6 +62,7 @@ export default function StoreSettingsPage() {
         if (s) {
           reset({
             storeName: s.storeName,
+            publicHandle: s.publicHandle,
             description: s.description ?? "",
             location: s.location ?? "",
             contactPhone: s.contactPhone ?? "",
@@ -60,12 +72,48 @@ export default function StoreSettingsPage() {
             bannerUrl: s.bannerUrl ?? "",
           });
         } else {
-          reset({ storeName: business?.name ?? "" });
+          const storeName = business?.name ?? "";
+          reset({ storeName, publicHandle: normalizeHandle(storeName) });
         }
       })
       .catch(() => {})
       .finally(() => setLoadingStore(false));
   }, [user?.businessId, business?.name, reset]);
+
+  const publicHandle = useWatch({ control, name: "publicHandle" }) ?? "";
+
+  useEffect(() => {
+    if (!publicHandle || publicHandle.length < 3 || errors.publicHandle) {
+      setHandleAvailable(null);
+      return;
+    }
+    if (store?.publicHandle === publicHandle) {
+      setHandleAvailable(true);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setCheckingHandle(true);
+      try {
+        const query = new URLSearchParams({ handle: publicHandle });
+        const response = await fetch(`/api/globalsell/handles?${query}`, {
+          signal: controller.signal,
+        });
+        const result = (await response.json()) as { available?: boolean };
+        setHandleAvailable(response.ok ? Boolean(result.available) : null);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setHandleAvailable(null);
+        }
+      } finally {
+        setCheckingHandle(false);
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [errors.publicHandle, publicHandle, store?.id, store?.publicHandle]);
 
   async function onSubmit(values: FormValues) {
     if (!user?.businessId) return;
@@ -73,6 +121,7 @@ export default function StoreSettingsPage() {
     try {
       const payload = {
         storeName: values.storeName,
+        publicHandle: values.publicHandle,
         description: values.description || undefined,
         location: values.location || undefined,
         contactPhone: values.contactPhone || undefined,
@@ -83,19 +132,20 @@ export default function StoreSettingsPage() {
       };
 
       if (store) {
-        const updated = await updateStore(store.id, payload);
+        const updated = await updateStore(store.id, user.businessId, payload, values.publicHandle);
         setStore(updated);
       } else {
         const created = await createStore(
           user.businessId,
           business?.name ?? "My Store",
-          payload
+          payload,
+          values.publicHandle
         );
         setStore(created);
       }
       toast.success("Store settings saved!");
-    } catch {
-      toast.error("Failed to save settings");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }
@@ -119,7 +169,7 @@ export default function StoreSettingsPage() {
           </p>
         </div>
         {store && (
-          <Link href={`/globalsell/store/${store.slug}`} target="_blank">
+          <Link href={storeUrl(store.publicHandle)} target="_blank">
             <Button variant="outline" size="sm" className="gap-2">
               <Globe className="h-4 w-4" />
               View Store
@@ -167,6 +217,46 @@ export default function StoreSettingsPage() {
               {errors.storeName && (
                 <p className="mt-1 text-xs text-rose-500">{errors.storeName.message}</p>
               )}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Store Web Address *
+              </label>
+              <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100">
+                <span className="hidden items-center border-r border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 sm:flex">
+                  shop.fundiflow.co.ke/
+                </span>
+                <input
+                  {...register("publicHandle", {
+                    onChange: (event) => {
+                      const normalized = normalizeHandle(event.target.value);
+                      if (normalized !== event.target.value) {
+                        setValue("publicHandle", normalized, { shouldValidate: true });
+                      }
+                    },
+                  })}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="min-w-0 flex-1 px-3 py-2.5 text-sm outline-none"
+                />
+              </div>
+              <div className="mt-1.5 flex min-h-5 items-center gap-1.5 text-xs">
+                {checkingHandle ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking availability…</>
+                ) : handleAvailable === true ? (
+                  <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Address available</span>
+                ) : handleAvailable === false ? (
+                  <span className="flex items-center gap-1 text-rose-600"><XCircle className="h-3.5 w-3.5" /> Address already taken or reserved</span>
+                ) : null}
+              </div>
+              {errors.publicHandle && (
+                <p className="mt-1 text-xs text-rose-500">{errors.publicHandle.message}</p>
+              )}
+              <p className="mt-1 text-xs text-slate-500">
+                Changing this address keeps the old link working through a permanent redirect.
+              </p>
             </div>
 
             <div>
@@ -287,16 +377,16 @@ export default function StoreSettingsPage() {
           <div className="text-xs text-slate-400">
             Store URL:{" "}
             <Link
-              href={`/globalsell/store/${store.slug}`}
+              href={storeUrl(store.publicHandle)}
               target="_blank"
               className="text-emerald-600 hover:underline"
             >
-              /globalsell/store/{store.slug}
+              {storeUrl(store.publicHandle)}
             </Link>
           </div>
         )}
 
-        <Button type="submit" disabled={saving} className="gap-2 min-w-[140px]">
+        <Button type="submit" disabled={saving || checkingHandle || handleAvailable === false} className="gap-2 min-w-[140px]">
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (

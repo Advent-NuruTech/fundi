@@ -2,8 +2,10 @@ import { MarketingShell } from "@/components/marketing/marketing-shell";
 
 const LAST_UPDATED = "5 June 2026";
 const COMPANY = "Advent Nurutech";
+
 const PRODUCT = "FundiFlow";
 const EMAIL = "adventnurutech@gmail.com";
+
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -12,8 +14,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <div className="space-y-3 text-slate-600 text-sm leading-relaxed">{children}</div>
     </section>
   );
-}
 
+
+
+  
+}
 const COOKIE_TABLE = [
   {
     name: "sb-auth-token",

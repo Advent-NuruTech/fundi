@@ -1,6 +1,6 @@
 "use client";
 
-import { SlidersHorizontal, X, LayoutGrid } from "lucide-react";
+import { SlidersHorizontal, X, LayoutGrid, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { EcommerceCategory, MarketplaceFilters } from "@/types/ecommerce";
@@ -45,6 +45,7 @@ export function MarketplaceFilters({
                 : "text-slate-700 hover:bg-slate-100"
             )}
           >
+            <Package className={cn("h-4 w-4", !filters.categorySlug ? "text-emerald-100" : "text-slate-400")} />
             All Products
           </button>
 
@@ -58,6 +59,8 @@ export function MarketplaceFilters({
                     categorySlug: active ? undefined : cat.slug,
                   })
                 }
+
+                
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition",
                   active
@@ -65,6 +68,9 @@ export function MarketplaceFilters({
                     : "text-slate-700 hover:bg-slate-100"
                 )}
               >
+                <span className={cn("h-4 w-4 shrink-0 text-center", active ? "text-emerald-100" : "text-slate-400")}>
+                  {cat.icon ?? "•"}
+                </span>
                 <span className="truncate">{cat.name}</span>
               </button>
             );

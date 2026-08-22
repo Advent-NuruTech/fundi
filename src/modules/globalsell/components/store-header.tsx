@@ -1,5 +1,3 @@
-"use client";
-
 import Image from "next/image";
 import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";

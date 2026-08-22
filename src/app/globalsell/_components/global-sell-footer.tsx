@@ -9,12 +9,13 @@ import {
   Store,
   Truck,
 } from "lucide-react";
+import { shopUrl } from "@/lib/storefront-url";
 
 const SHOP_LINKS = [
-  { href: "/globalsell", label: "All Products" },
-  { href: "/globalsell/retail", label: "Retail" },
-  { href: "/globalsell/wholesale", label: "Wholesale" },
-  { href: "/globalsell/both", label: "Wholesale & Retail" },
+  { href: shopUrl(), label: "All Products" },
+  { href: shopUrl("retail"), label: "Retail" },
+  { href: shopUrl("wholesale"), label: "Wholesale" },
+  { href: shopUrl("both"), label: "Wholesale & Retail" },
 ];
 
 const LEGAL_LINKS = [
@@ -36,7 +37,7 @@ export function GlobalSellFooter() {
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="space-y-4">
-            <Link href="/globalsell" className="flex items-center gap-2.5">
+            <Link href={shopUrl()} className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-600/25">
                 <Globe className="h-5 w-5 text-white" />
               </div>
@@ -81,7 +82,7 @@ export function GlobalSellFooter() {
               ))}
               <li>
                 <Link
-                  href="/globalsell/track"
+                  href={shopUrl("track")}
                   className="flex items-center gap-2 transition-colors hover:text-emerald-400"
                 >
                   <PackageCheck className="h-4 w-4" />

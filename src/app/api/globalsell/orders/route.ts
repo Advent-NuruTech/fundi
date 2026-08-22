@@ -1,281 +1,172 @@
 import { NextResponse } from "next/server";
 import { createServiceSupabaseClient } from "@/lib/supabase";
-import { transformKeysToCamel, transformArrayToCamel } from "@/lib/case-utils";
-import type { CartItem, CheckoutInput, EcommerceOrder, EcommerceOrderItem } from "@/types/ecommerce";
+import { transformArrayToCamel, transformKeysToCamel } from "@/lib/case-utils";
 import { formatPhone, isValidKenyanPhone } from "@/lib/sms/formatPhone";
+import type { CheckoutInput, EcommerceOrder, EcommerceOrderItem } from "@/types/ecommerce";
 
+type UntrustedCartItem = { productId?: string; variantId?: string; quantity?: number };
 type OrderRequestBody = {
-  sellerBusinessId: string;
-  cartItems: CartItem[];
-  checkout: CheckoutInput;
+  sellerBusinessId?: string;
+  cartItems?: UntrustedCartItem[];
+  checkout?: CheckoutInput;
 };
 
-function generateOrderNumber(): string {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `GS-${ts}-${rand}`;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PAYMENT_METHODS = new Set(["manual", "cash", "mpesa", "bank_transfer"]);
+const SAFE_CHECKOUT_ERRORS = [
+  "Cart is empty",
+  "Cart contains too many items",
+  "Invalid item quantity",
+  "Seller store is unavailable",
+  "Valid buyer and delivery details are required",
+  "A cart product is unavailable",
+  "A selected product option is unavailable",
+  "A product has an invalid price",
+];
+
+function safeCheckoutError(message?: string) {
+  if (!message) return "Unable to place this order";
+  const known = SAFE_CHECKOUT_ERRORS.find((candidate) => message.includes(candidate));
+  if (known) return known;
+  if (message.includes("Insufficient stock for")) return "One or more items do not have enough stock";
+  return "Unable to place this order";
 }
 
-async function sendOrderSms(
-  notificationPhone: string,
-  storeName: string,
-  orderNumber: string,
-  buyerName: string,
-  items: CartItem[],
-  total: number
-) {
-  const formattedPhone = formatPhone(notificationPhone);
+async function sendOrderSms(input: {
+  notificationPhone: string;
+  storeName: string;
+  orderNumber: string;
+  buyerName: string;
+  items: EcommerceOrderItem[];
+  total: number;
+}) {
+  const formattedPhone = formatPhone(input.notificationPhone);
   if (!isValidKenyanPhone(formattedPhone)) return;
-
-  const itemSummary = items
-    .slice(0, 3)
-    .map((i) => `${i.quantity} ${i.productName}`)
-    .join(", ");
-  const moreItems = items.length > 3 ? ` and ${items.length - 3} more` : "";
-
+  const itemSummary = input.items.slice(0, 3).map((item) => `${item.quantity} ${item.productName}`).join(", ");
+  const moreItems = input.items.length > 3 ? ` and ${input.items.length - 3} more` : "";
   const message =
-    `Dear merchant, a customer has placed a new order! ` +
-    `Customer: ${buyerName}. ` +
-    `Items: ${itemSummary}${moreItems}. ` +
-    `Total: KES ${total.toLocaleString()}. ` +
-    `Order #${orderNumber}. ` +
-    `Login to FundiFlow to confirm. ` +
-    `Thank you for trusting FundiFlow.`;
-
-  try {
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ??
-      (process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000");
-
-    await fetch(`${baseUrl}/api/send-sms`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recipient: formattedPhone, message }),
-    });
-  } catch {
-    console.error("Failed to send order SMS notification");
-  }
+    `Dear merchant, a customer has placed a new order! Customer: ${input.buyerName}. ` +
+    `Items: ${itemSummary}${moreItems}. Total: KES ${input.total.toLocaleString()}. ` +
+    `Order #${input.orderNumber}. Login to FundiFlow to confirm.`;
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  await fetch(`${baseUrl}/api/send-sms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ recipient: formattedPhone, message }),
+  });
 }
-
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as OrderRequestBody;
-    const { sellerBusinessId, cartItems, checkout } = body;
-
-    if (!sellerBusinessId || !cartItems?.length || !checkout?.buyerName || !checkout?.buyerPhone || !checkout?.deliveryLocation) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    const client = createServiceSupabaseClient();
     const accessToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
     if (!accessToken) {
       return NextResponse.json({ error: "Please sign in before checking out" }, { status: 401 });
     }
+    const idempotencyKey = request.headers.get("idempotency-key")?.trim();
+    if (!idempotencyKey || !/^[a-zA-Z0-9-]{16,128}$/.test(idempotencyKey)) {
+      return NextResponse.json({ error: "A valid checkout request key is required" }, { status: 400 });
+    }
 
-    // Never trust identity fields sent by the browser. A single FundiFlow
-    // Supabase identity can represent either a business member or a customer,
-    // so resolve it from the verified session on every order.
-    const { data: authData, error: authError } = await client.auth.getUser(accessToken);
+    let body: OrderRequestBody;
+    try {
+      body = (await request.json()) as OrderRequestBody;
+    } catch {
+      return NextResponse.json({ error: "Invalid checkout request" }, { status: 400 });
+    }
+    if (!body.sellerBusinessId || !body.cartItems?.length || !body.checkout) {
+      return NextResponse.json({ error: "Missing required checkout fields" }, { status: 400 });
+    }
+    if (!UUID_PATTERN.test(body.sellerBusinessId) || body.cartItems.length > 100) {
+      return NextResponse.json({ error: "Cart contains invalid data" }, { status: 400 });
+    }
+    const cartItems = body.cartItems.map((item) => ({
+      productId: item.productId,
+      variantId: item.variantId ?? null,
+      quantity: item.quantity,
+    }));
+    if (cartItems.some((item) =>
+      !item.productId ||
+      !UUID_PATTERN.test(item.productId) ||
+      (item.variantId !== null && !UUID_PATTERN.test(item.variantId)) ||
+      !Number.isInteger(item.quantity) ||
+      Number(item.quantity) < 1 ||
+      Number(item.quantity) > 1000
+    )) {
+      return NextResponse.json({ error: "Cart contains an invalid item" }, { status: 400 });
+    }
+    const paymentMethod = body.checkout.paymentMethod ?? "manual";
+    if (!PAYMENT_METHODS.has(paymentMethod)) {
+      return NextResponse.json({ error: "Unsupported payment method" }, { status: 400 });
+    }
+
+    const db = createServiceSupabaseClient();
+    const { data: authData, error: authError } = await db.auth.getUser(accessToken);
     if (authError || !authData.user) {
       return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
     }
-
-    const { data: profile } = await client
+    const { data: profile } = await db
       .from("profiles")
       .select("business_id")
       .eq("id", authData.user.id)
       .maybeSingle();
 
-    const buyerUserId = authData.user.id;
-    const buyerBusinessId = profile?.business_id ?? null;
+    const { data: orderId, error: checkoutError } = await db.rpc("place_ecommerce_order", {
+      p_idempotency_key: idempotencyKey,
+      p_buyer_user_id: authData.user.id,
+      p_buyer_business_id: profile?.business_id ?? null,
+      p_seller_business_id: body.sellerBusinessId,
+      p_cart_items: cartItems,
+      p_checkout: {
+        buyerName: body.checkout.buyerName,
+        buyerPhone: body.checkout.buyerPhone,
+        buyerEmail: body.checkout.buyerEmail ?? "",
+        deliveryLocation: body.checkout.deliveryLocation ?? "",
+        notes: body.checkout.notes ?? "",
+        paymentMethod,
+      },
+    });
+    if (checkoutError || !orderId) {
+      return NextResponse.json({ error: safeCheckoutError(checkoutError?.message) }, { status: 400 });
+    }
 
-    const subtotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
-    const total = subtotal;
-    const orderNumber = generateOrderNumber();
-
-    // Create order
-    const orderPayload = {
-      order_number: orderNumber,
-      seller_business_id: sellerBusinessId,
-      buyer_business_id: buyerBusinessId,
-      buyer_user_id: buyerUserId,
-      buyer_name: checkout.buyerName,
-      buyer_phone: checkout.buyerPhone,
-      buyer_email: checkout.buyerEmail ?? null,
-      delivery_location: checkout.deliveryLocation ?? null,
-      notes: checkout.notes ?? null,
-      subtotal,
-      total,
-      currency: "KES",
-      status: "pending",
-      payment_method: checkout.paymentMethod ?? "manual",
-      payment_status: "unpaid",
-    };
-
-    const { data: orderData, error: orderError } = await client
+    const { data: orderRow, error: orderError } = await db
       .from("ecommerce_orders")
-      .insert(orderPayload)
-      .select()
+      .select("*, items:ecommerce_order_items(*)")
+      .eq("id", orderId)
+      .eq("buyer_user_id", authData.user.id)
       .single();
+    if (orderError || !orderRow) throw orderError ?? new Error("Order could not be loaded");
 
-    if (orderError) {
-      console.error("Order creation error:", orderError);
-      return NextResponse.json({ error: orderError.message }, { status: 500 });
-    }
-
-    const order = transformKeysToCamel<EcommerceOrder>(
-      orderData as Record<string, unknown>
-    );
-
-    // Create order items
-    const itemPayloads = cartItems.map((item) => ({
-      order_id: order.id,
-      product_id: item.productId,
-      variant_id: item.variantId ?? null,
-      product_name: item.productName,
-      variant_name: item.variantName ?? null,
-      quantity: item.quantity,
-      unit_price: item.unitPrice,
-      total_price: item.unitPrice * item.quantity,
-    }));
-
-    const { data: itemsData, error: itemsError } = await client
-      .from("ecommerce_order_items")
-      .insert(itemPayloads)
-      .select();
-
-    if (itemsError) {
-      console.error("Order items error:", itemsError);
-      return NextResponse.json({ error: itemsError.message }, { status: 500 });
-    }
-
+    const row = orderRow as Record<string, unknown>;
+    const order = transformKeysToCamel<EcommerceOrder>(row);
     order.items = transformArrayToCamel<EcommerceOrderItem>(
-      (itemsData ?? []) as Record<string, unknown>[]
+      (Array.isArray(row.items) ? row.items : []) as Record<string, unknown>[]
     );
 
-    // Reserve stock for each item and reduce available stock (non-critical — don't fail the order if this errors)
-    for (const item of cartItems) {
+    const { data: store } = await db
+      .from("ecommerce_stores")
+      .select("store_name, notification_phone")
+      .eq("business_id", order.sellerBusinessId)
+      .maybeSingle();
+    if (store?.notification_phone && !order.smsSent) {
       try {
-        if (item.variantId) {
-          const { data: variantData } = await client
-            .from("ecommerce_product_variants")
-            .select("stock_quantity, reserved_quantity")
-            .eq("id", item.variantId)
-            .maybeSingle();
-
-          if (variantData) {
-            const { stock_quantity, reserved_quantity } = variantData as {
-              stock_quantity: number;
-              reserved_quantity: number;
-            };
-            await client
-              .from("ecommerce_product_variants")
-              .update({
-                stock_quantity: Math.max((stock_quantity ?? 0) - item.quantity, 0),
-                reserved_quantity: (reserved_quantity ?? 0) + item.quantity,
-              })
-              .eq("id", item.variantId);
-          }
-        } else {
-          const { data: productData } = await client
-            .from("ecommerce_products")
-            .select("total_stock, reserved_stock")
-            .eq("id", item.productId)
-            .maybeSingle();
-
-          if (productData) {
-            const { total_stock, reserved_stock } = productData as {
-              total_stock: number;
-              reserved_stock: number;
-            };
-            await client
-              .from("ecommerce_products")
-              .update({
-                total_stock: Math.max((total_stock ?? 0) - item.quantity, 0),
-                reserved_stock: (reserved_stock ?? 0) + item.quantity,
-              })
-              .eq("id", item.productId);
-          }
-        }
-      } catch {
-        /* non-critical */
+        await sendOrderSms({
+          notificationPhone: store.notification_phone,
+          storeName: store.store_name,
+          orderNumber: order.orderNumber,
+          buyerName: order.buyerName,
+          items: order.items,
+          total: Number(order.total),
+        });
+        await db.from("ecommerce_orders").update({ sms_sent: true }).eq("id", order.id).eq("sms_sent", false);
+      } catch (error) {
+        console.error("Failed to send ecommerce order SMS", error);
       }
     }
 
-    // Log inventory changes
-    try {
-      const inventoryLogs = cartItems.map((item) => ({
-        business_id: sellerBusinessId,
-        product_id: item.productId,
-        variant_id: item.variantId ?? null,
-        order_id: order.id,
-        change_type: "reserved",
-        quantity_change: -item.quantity,
-        note: `Reserved for order ${orderNumber}`,
-      }));
-      await client.from("ecommerce_inventory_logs").insert(inventoryLogs);
-    } catch {
-      /* non-critical */
-    }
-
-    // In-app notification for seller
-    try {
-      await client.from("ecommerce_notifications").insert({
-        business_id: sellerBusinessId,
-        order_id: order.id,
-        type: "new_order",
-        title: "New Order Received",
-        message: `${checkout.buyerName} placed order ${orderNumber} — KES ${total.toLocaleString()}`,
-        read: false,
-      });
-    } catch {
-      /* non-critical */
-    }
-
-    // Update seller's order count + send SMS
-    try {
-      const { data: storeData } = await client
-        .from("ecommerce_stores")
-        .select("id, total_orders, notification_phone, store_name")
-        .eq("business_id", sellerBusinessId)
-        .maybeSingle();
-
-      if (storeData) {
-        const { notification_phone, store_name, total_orders, id: storeId } = storeData as {
-          id: string;
-          notification_phone: string | null;
-          store_name: string;
-          total_orders: number;
-        };
-
-        await client
-          .from("ecommerce_stores")
-          .update({ total_orders: (total_orders ?? 0) + 1 })
-          .eq("id", storeId);
-
-        if (notification_phone) {
-          await sendOrderSms(
-            notification_phone,
-            store_name,
-            orderNumber,
-            checkout.buyerName,
-            cartItems,
-            total
-          );
-        }
-      }
-    } catch {
-      /* non-critical */
-    }
-
-    return NextResponse.json({ order }, { status: 201 });
+    return NextResponse.json({ order, storeName: store?.store_name ?? "Store" }, { status: 201 });
   } catch (error) {
-    console.error("Order API error:", error);
-    return NextResponse.json(
-      { error: "Failed to create order" },
-      { status: 500 }
-    );
+    console.error("Secure ecommerce checkout failed", error);
+    return NextResponse.json({ error: "Failed to place order" }, { status: 500 });
   }
 }

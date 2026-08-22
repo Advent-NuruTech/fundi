@@ -38,6 +38,9 @@ export interface EcommerceCategory {
 export interface EcommerceStore {
   id: string;
   businessId: string;
+  /** Globally unique, merchant-controlled public storefront address. */
+  publicHandle: string;
+  /** Legacy slug retained for redirects and backwards compatibility. */
   slug: string;
   storeName: string;
   /** Seller industry category, mirrored from the business's businessType. */
@@ -135,7 +138,7 @@ export interface EcommerceProduct {
   ratingCount: number;
   images?: EcommerceProductImage[];
   variants?: EcommerceProductVariant[];
-  store?: Pick<EcommerceStore, 'id' | 'slug' | 'storeName' | 'logoUrl' | 'location'>;
+  store?: Pick<EcommerceStore, 'id' | 'slug' | 'publicHandle' | 'storeName' | 'logoUrl' | 'location'>;
   createdAt: string;
   updatedAt: string;
 }
@@ -304,6 +307,7 @@ export interface EcommerceNotification {
 
 export interface StoreSettingsInput {
   storeName: string;
+  publicHandle?: string;
   description?: string;
   bannerUrl?: string;
   logoUrl?: string;

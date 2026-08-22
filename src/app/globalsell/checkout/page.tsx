@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronLeft, Package, CheckCircle2, ArrowRight, Building2, LogIn, UserPlus } from "lucide-react";
@@ -14,6 +14,7 @@ import { useAuth } from "@/features/auth/components/auth-context";
 import { getMyCustomerRecords } from "@/services/customer-portal.service";
 import { supabase } from "@/lib/supabase";
 import type { Customer } from "@/types/domain";
+import { shopUrl } from "@/lib/storefront-url";
 
 type OrderResult = {
   orderNumber: string;
@@ -30,6 +31,7 @@ export default function CheckoutPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [authEmail, setAuthEmail] = useState<string | undefined>();
   const [authPhone, setAuthPhone] = useState<string | undefined>();
+  const checkoutKeys = useRef<Record<string, string>>({});
 
   useEffect(() => {
     if (!user || business) {
@@ -76,7 +78,7 @@ export default function CheckoutPage() {
       <div className="mx-auto max-w-2xl px-4 py-20 text-center">
         <Package className="mx-auto h-16 w-16 text-slate-200 mb-4" />
         <h1 className="text-xl font-semibold text-slate-700">No items to checkout</h1>
-        <Link href="/globalsell">
+        <Link href={shopUrl()}>
           <button className="mt-4 text-sm text-emerald-600 hover:underline">
             Browse marketplace
           </button>
@@ -113,7 +115,7 @@ export default function CheckoutPage() {
                   {formatKes(order.total)}
                 </p>
                 <Link
-                  href={`/globalsell/track?order=${order.orderNumber}`}
+                  href={`${shopUrl("track")}?order=${encodeURIComponent(order.orderNumber)}`}
                   className="text-xs text-emerald-600 hover:underline"
                 >
                   Track Order →
@@ -124,13 +126,13 @@ export default function CheckoutPage() {
         </div>
 
         <div className="mt-8 flex flex-col gap-3">
-          <Link href="/globalsell/track">
+          <Link href={shopUrl("track")}>
             <button className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 transition">
               Track Your Orders
               <ArrowRight className="h-4 w-4" />
             </button>
           </Link>
-          <Link href="/globalsell" className="text-sm text-slate-400 hover:text-emerald-600">
+          <Link href={shopUrl()} className="text-sm text-slate-400 hover:text-emerald-600">
             Continue shopping
           </Link>
         </div>
@@ -148,13 +150,14 @@ export default function CheckoutPage() {
     try {
       for (const [sellerBusinessId, cartItems] of Object.entries(sellerGroups)) {
         const storeName = cartItems[0]?.storeName ?? "Store";
-        const storeTotal = cartItems.reduce((n, i) => n + i.unitPrice * i.quantity, 0);
+        checkoutKeys.current[sellerBusinessId] ??= crypto.randomUUID();
 
         const res = await fetch("/api/globalsell/orders", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token ?? ""}`,
+            "Idempotency-Key": checkoutKeys.current[sellerBusinessId],
           },
           body: JSON.stringify({
             sellerBusinessId,
@@ -171,12 +174,13 @@ export default function CheckoutPage() {
 
         results.push({
           orderNumber: data.order.orderNumber,
-          storeName,
-          total: storeTotal,
+          storeName: data.storeName ?? storeName,
+          total: Number(data.order.total),
         });
       }
 
       clearCart();
+      checkoutKeys.current = {};
       setPlacedOrders(results);
       setDone(true);
       toast.success("Orders placed successfully!");
@@ -191,7 +195,7 @@ export default function CheckoutPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <Link
-        href="/globalsell/cart"
+        href={shopUrl("cart")}
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-emerald-600 transition"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -281,7 +285,7 @@ export default function CheckoutPage() {
 }
 
 function CheckoutAccountChoice() {
-  const redirect = encodeURIComponent("/globalsell/checkout");
+  const redirect = encodeURIComponent("/checkout");
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">Sign in once with your FundiFlow identity to continue. New shoppers can create a customer account.</p>

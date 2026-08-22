@@ -5,16 +5,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, ChevronDown, LayoutGrid, Tag, Users, Store, PackageSearch, Briefcase, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { shopUrl } from "@/lib/storefront-url";
 
 const CHANNELS = [
-  { label: "All Products", href: "/globalsell", icon: LayoutGrid, exact: true },
-  { label: "Retail", href: "/globalsell/retail", icon: Tag, exact: false },
-  { label: "Wholesale", href: "/globalsell/wholesale", icon: Users, exact: false },
-  { label: "Wholesale & Retail", href: "/globalsell/both", icon: Store, exact: false },
+  { label: "All Products", href: shopUrl(), path: "/", icon: LayoutGrid, exact: true },
+  { label: "Retail", href: shopUrl("retail"), path: "/retail", icon: Tag, exact: false },
+  { label: "Wholesale", href: shopUrl("wholesale"), path: "/wholesale", icon: Users, exact: false },
+  { label: "Wholesale & Retail", href: shopUrl("both"), path: "/both", icon: Store, exact: false },
 ] as const;
 
 const MORE = [
-  { label: "Track Order", href: "/globalsell/track", icon: PackageSearch },
+  { label: "Track Order", href: shopUrl("track"), icon: PackageSearch },
   { label: "Sell Here", href: "/dashboard", icon: Briefcase },
 ] as const;
 
@@ -59,8 +60,8 @@ export function GlobalSellChannelDropdown() {
           <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
             Shop By Channel
           </div>
-          {CHANNELS.map(({ label, href, icon: Icon, exact }) => {
-            const active = isActive(href, exact);
+          {CHANNELS.map(({ label, href, path, icon: Icon, exact }) => {
+            const active = isActive(path, exact);
             return (
               <Link
                 key={href}

@@ -6,6 +6,7 @@ import { CartNavButton } from "./cart-nav-button";
 import { MarketplaceSearchBar } from "./search-bar";
 import { ProfileButton } from "./profile-button";
 import { GlobalSellChannelDropdown } from "./channel-dropdown";
+import { shopUrl } from "@/lib/storefront-url";
 
 export function GlobalSellHeader() {
   return (
@@ -13,7 +14,7 @@ export function GlobalSellHeader() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         {/* Top row */}
         <div className="flex h-14 items-center justify-between gap-3">
-          <Link href="/globalsell" className="flex shrink-0 items-center gap-2">
+          <Link href={shopUrl()} className="flex shrink-0 items-center gap-2">
             <div className="relative h-9 w-9 overflow-hidden rounded-xl border border-slate-200 bg-white">
               <Image
                 src="/images/logo.jpeg"

@@ -54,16 +54,15 @@ export async function fetchEcommerceCategories(): Promise<EcommerceCategory[]> {
 export async function fetchStoreByBusinessId(
   businessId: string
 ): Promise<EcommerceStore | null> {
-  const { data, error } = await supabase
-    .from("ecommerce_stores")
-    .select("*")
-    .eq("business_id", businessId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("get_my_ecommerce_store", {
+    p_business_id: businessId,
+  });
 
   if (error) throw error;
-  if (!data) return null;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
   return transformKeysToCamel<EcommerceStore>(
-    data as Record<string, unknown>
+    row as Record<string, unknown>
   );
 }
 
@@ -72,7 +71,7 @@ export async function fetchStoreBySlug(
 ): Promise<EcommerceStore | null> {
   const { data, error } = await supabase
     .from("ecommerce_stores")
-    .select("*")
+    .select("id, business_id, slug, public_handle, store_name, store_type, description, banner_url, logo_url, contact_phone, contact_email, location, is_active, is_verified, is_suspended, total_products, total_orders, created_at, updated_at")
     .eq("slug", slug)
     .eq("is_active", true)
     .eq("is_suspended", false)
@@ -88,78 +87,43 @@ export async function fetchStoreBySlug(
 export async function createStore(
   businessId: string,
   businessName: string,
-  input: Partial<StoreSettingsInput>
+  input: Partial<StoreSettingsInput>,
+  requestedHandle?: string
 ): Promise<EcommerceStore> {
-  const baseSlug = slugify(input.storeName ?? businessName);
-  // Ensure slug uniqueness
-  let slug = baseSlug;
-  let attempt = 0;
-  while (true) {
-    const { data } = await supabase
-      .from("ecommerce_stores")
-      .select("id")
-      .eq("slug", slug)
-      .maybeSingle();
-    if (!data) break;
-    attempt++;
-    slug = `${baseSlug}-${attempt}`;
-  }
-
-  // Mirror the owning business's industry so the marketplace can categorise
-  // this store and pick sensible channel defaults. Best-effort: a missing
-  // value simply leaves the store uncategorised.
-  const { data: bizRow } = await supabase
-    .from("businesses")
-    .select("business_type")
-    .eq("id", businessId)
-    .maybeSingle();
-
-  const payload = {
-    business_id: businessId,
-    slug,
-    store_name: input.storeName ?? businessName,
-    store_type: (bizRow as { business_type?: string } | null)?.business_type ?? null,
-    description: input.description ?? null,
-    banner_url: input.bannerUrl ?? null,
-    logo_url: input.logoUrl ?? null,
-    contact_phone: input.contactPhone ?? null,
-    notification_phone: input.notificationPhone ?? null,
-    contact_email: input.contactEmail ?? null,
-    location: input.location ?? null,
-    is_active: true,
-  };
-
-  const { data, error } = await supabase
-    .from("ecommerce_stores")
-    .insert(payload)
-    .select()
-    .single();
+  const payload = { ...input, storeName: input.storeName ?? businessName };
+  const { data, error } = await supabase.rpc("save_my_ecommerce_store", {
+    p_business_id: businessId,
+    p_store_id: null,
+    p_input: payload,
+    p_requested_handle: requestedHandle ?? input.publicHandle ?? null,
+  });
 
   if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("Store was not returned after creation");
   return transformKeysToCamel<EcommerceStore>(
-    data as Record<string, unknown>
+    row as Record<string, unknown>
   );
 }
 
 export async function updateStore(
   storeId: string,
-  input: Partial<StoreSettingsInput>
+  businessId: string,
+  input: Partial<StoreSettingsInput>,
+  requestedHandle?: string
 ): Promise<EcommerceStore> {
-  const payload = transformKeysToSnake(
-    input as Record<string, unknown>,
-    false
-  );
-
-  const { data, error } = await supabase
-    .from("ecommerce_stores")
-    .update(payload)
-    .eq("id", storeId)
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("save_my_ecommerce_store", {
+    p_business_id: businessId,
+    p_store_id: storeId,
+    p_input: input,
+    p_requested_handle: requestedHandle ?? input.publicHandle ?? null,
+  });
 
   if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("Store was not returned after update");
   return transformKeysToCamel<EcommerceStore>(
-    data as Record<string, unknown>
+    row as Record<string, unknown>
   );
 }
 
@@ -201,7 +165,7 @@ export async function fetchMarketplaceProducts(
       category:ecommerce_categories(*),
       images:ecommerce_product_images(*),
       variants:ecommerce_product_variants(*),
-      store:ecommerce_stores!inner(id, slug, store_name, logo_url, location, is_active, is_suspended)
+      store:ecommerce_stores!inner(id, slug, public_handle, store_name, logo_url, location, is_active, is_suspended)
     `,
       { count: "exact" }
     )
@@ -264,7 +228,7 @@ export async function fetchMarketplaceProducts(
     const product = transformKeysToCamel<EcommerceProduct>(row);
     if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
       product.store = transformKeysToCamel<
-        Pick<EcommerceStore, "id" | "slug" | "storeName" | "logoUrl" | "location">
+        Pick<EcommerceStore, "id" | "slug" | "publicHandle" | "storeName" | "logoUrl" | "location">
       >(row.store as Record<string, unknown>);
     }
     if (Array.isArray(row.images)) {
@@ -299,7 +263,7 @@ export async function fetchProductById(
       category:ecommerce_categories(*),
       images:ecommerce_product_images(*),
       variants:ecommerce_product_variants(*),
-      store:ecommerce_stores(id, slug, store_name, logo_url, location)
+      store:ecommerce_stores(id, slug, public_handle, store_name, logo_url, location)
     `
     )
     .eq("id", id)
@@ -345,7 +309,7 @@ export async function fetchRelatedProducts(
       category:ecommerce_categories(id, name, slug),
       images:ecommerce_product_images(*),
       variants:ecommerce_product_variants(*),
-      store:ecommerce_stores!inner(id, slug, store_name, logo_url, location, is_active, is_suspended)
+      store:ecommerce_stores!inner(id, slug, public_handle, store_name, logo_url, location, is_active, is_suspended)
     `
     )
     .eq("status", "published")
@@ -369,7 +333,7 @@ export async function fetchRelatedProducts(
     const product = transformKeysToCamel<EcommerceProduct>(row);
     if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
       product.store = transformKeysToCamel<
-        Pick<EcommerceStore, "id" | "slug" | "storeName" | "logoUrl" | "location">
+        Pick<EcommerceStore, "id" | "slug" | "publicHandle" | "storeName" | "logoUrl" | "location">
       >(row.store as Record<string, unknown>);
     }
     if (Array.isArray(row.images)) {
