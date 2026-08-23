@@ -3,6 +3,7 @@ import { transformKeysToCamel, transformArrayToCamel } from "@/lib/case-utils";
 import type { Customer, Order, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
 import type { EcommerceOrder, EcommerceOrderItem, EcommerceStore } from "@/types/ecommerce";
 import type { ReceiptBusiness } from "@/lib/receipt";
+import { shopUrl } from "@/lib/storefront-url";
 
 // ── API helper ────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,15 @@ export async function updatePortalContact(
   return portalFetch<PortalContactResult>("update-contact", params as unknown as Record<string, unknown>);
 }
 
+/** Update a standalone Global Sell customer that is not yet linked to a workshop customer record. */
+export async function updatePortalIdentity(params: {
+  fullName: string;
+  email?: string;
+  phone: string;
+}): Promise<{ data?: PortalContactResult; error?: string }> {
+  return portalFetch<PortalContactResult>("update-identity", params);
+}
+
 // ── First-notification onboarding ─────────────────────────────────────────────
 
 export interface CustomerMessagingInfo {
@@ -239,9 +249,51 @@ export async function getMyCustomerRecords(): Promise<Customer[]> {
   const { data } = await supabase
     .from("customers")
     .select("id, business_id, full_name, phone, email, portal_login_id, outstanding_balance, last_order_at, created_at, updated_at")
-    .eq("portal_user_id", uid);
+    .eq("portal_user_id", uid)
+    .order("created_at", { ascending: true });
 
   return data ? transformArrayToCamel<Customer>(data as Record<string, unknown>[]) : [];
+}
+
+export interface PortalBusinessConnection {
+  id: string;
+  name: string;
+  location?: string;
+  customerId: string;
+  customerName: string;
+}
+
+/** Businesses that recognise this login as one of their customers. */
+export async function getMyPortalBusinesses(
+  customers: Customer[]
+): Promise<PortalBusinessConnection[]> {
+  const businessIds = [...new Set(customers.map((customer) => customer.businessId).filter(Boolean))];
+  if (!businessIds.length) return [];
+
+  const { data } = await supabase
+    .from("businesses")
+    .select("id, name, location")
+    .in("id", businessIds);
+
+  const businessMap = new Map(
+    (data ?? []).map((business) => [business.id as string, business])
+  );
+
+  return businessIds
+    .map((businessId) => {
+      const customer = customers.find((record) => record.businessId === businessId);
+      const business = businessMap.get(businessId);
+      if (!business || !customer) return null;
+      return {
+        id: business.id as string,
+        name: business.name as string,
+        location: (business.location as string | null) ?? undefined,
+        customerId: customer.id,
+        customerName: customer.fullName,
+      } satisfies PortalBusinessConnection;
+    })
+    .filter((connection): connection is PortalBusinessConnection => connection !== null)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ── Orders (customer-safe) ─────────────────────────────────────────────────────
@@ -532,7 +584,7 @@ function toEcommercePortalOrder(order: EcommerceOrder): PortalOrder {
       quantity: i.quantity,
       unitPrice: i.unitPrice,
     })),
-    trackingUrl: `/globalsell/track?order=${encodeURIComponent(order.orderNumber)}&phone=${encodeURIComponent(order.buyerPhone)}`,
+    trackingUrl: `${shopUrl("track")}?order=${encodeURIComponent(order.orderNumber)}&phone=${encodeURIComponent(order.buyerPhone)}`,
     globalsell: order,
   };
 }

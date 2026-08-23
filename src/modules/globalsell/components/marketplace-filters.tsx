@@ -59,18 +59,13 @@ export function MarketplaceFilters({
                     categorySlug: active ? undefined : cat.slug,
                   })
                 }
-
-                
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition",
+                  "flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-medium transition",
                   active
                     ? "bg-emerald-600 text-white shadow-sm"
                     : "text-slate-700 hover:bg-slate-100"
                 )}
               >
-                <span className={cn("h-4 w-4 shrink-0 text-center", active ? "text-emerald-100" : "text-slate-400")}>
-                  {cat.icon ?? "•"}
-                </span>
                 <span className="truncate">{cat.name}</span>
               </button>
             );

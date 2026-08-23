@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ShoppingBag, Search } from "lucide-react";
+import { ShoppingBag, Search, Store, Scissors } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import { getMyPortalOrders } from "@/services/customer-portal.service";
 import type { PortalOrder } from "@/services/customer-portal.service";
@@ -13,9 +13,11 @@ import { formatKes } from "@/lib/utils";
 import { portalStatusColor, portalStatusLabel, portalPaymentColor, portalPaymentLabel } from "../_shared";
 
 export default function PortalOrdersPage() {
-  const { customerIds, userId, isLoaded } = useCustomerPortal();
+  const { customerIds, userId, isLoaded, businesses } = useCustomerPortal();
   const [orders, setOrders] = useState<PortalOrder[]>([]);
   const [search, setSearch] = useState("");
+  const [businessId, setBusinessId] = useState("all");
+  const [source, setSource] = useState<"all" | PortalOrder["source"]>("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,6 +32,8 @@ export default function PortalOrdersPage() {
   }, [isLoaded, customerIds, userId]);
 
   const filtered = orders.filter((o) => {
+    if (businessId !== "all" && o.businessId !== businessId) return false;
+    if (source !== "all" && o.source !== source) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -49,17 +53,51 @@ export default function PortalOrdersPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-bold text-slate-900">My Orders</h1>
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">My orders</h1>
+        <p className="mt-1 text-sm text-slate-500">Marketplace purchases and workshop orders in one place.</p>
+      </div>
 
       {orders.length > 0 && (
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Search orders…"
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search by order, item, or business…"
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={source}
+              onChange={(event) => setSource(event.target.value as typeof source)}
+              className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-emerald-500"
+              aria-label="Filter by order type"
+            >
+              <option value="all">All order types</option>
+              <option value="globalsell">Global Sell purchases</option>
+              <option value="tailoring">Workshop orders</option>
+            </select>
+            <select
+              value={businessId}
+              onChange={(event) => setBusinessId(event.target.value)}
+              className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-emerald-500"
+              aria-label="Filter by business"
+            >
+              <option value="all">All businesses</option>
+              {businesses.map((business) => (
+                <option key={business.id} value={business.id}>{business.name}</option>
+              ))}
+              {orders
+                .filter((order) => !businesses.some((business) => business.id === order.businessId))
+                .filter((order, index, list) => list.findIndex((item) => item.businessId === order.businessId) === index)
+                .map((order) => (
+                  <option key={order.businessId} value={order.businessId}>{order.businessName}</option>
+                ))}
+            </select>
+          </div>
         </div>
       )}
 
@@ -81,6 +119,10 @@ export default function PortalOrdersPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900">{order.orderNumber}</p>
+                      <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        {order.source === "globalsell" ? <Store className="h-3 w-3" /> : <Scissors className="h-3 w-3" />}
+                        {order.source === "globalsell" ? "Global Sell purchase" : "Workshop order"}
+                      </p>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">
                         {order.items.map((g) => `${g.name} ×${g.quantity}`).join(", ") || "—"}
                       </p>

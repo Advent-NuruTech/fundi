@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { User, Phone, Mail, Lock, Loader2, Save } from "lucide-react";
+import { User, Phone, Mail, Lock, Loader2, Save, Store, MapPin, CheckCircle2 } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import { supabase } from "@/lib/supabase";
 import { isSyntheticPortalEmail } from "@/lib/customer-portal";
-import { updatePortalContact } from "@/services/customer-portal.service";
+import { updatePortalContact, updatePortalIdentity } from "@/services/customer-portal.service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,10 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 export default function PortalProfilePage() {
-  const { primaryCustomer, userEmail, refresh } = useCustomerPortal();
+  const { primaryCustomer, userEmail, userName, userPhone, businesses, refresh } = useCustomerPortal();
 
-  const [fullName, setFullName] = useState(primaryCustomer?.fullName ?? "");
-  const [phone, setPhone] = useState(primaryCustomer?.phone ?? "");
+  const [fullName, setFullName] = useState(primaryCustomer?.fullName ?? userName);
+  const [phone, setPhone] = useState(primaryCustomer?.phone ?? userPhone);
   const [email, setEmail] = useState(isSyntheticPortalEmail(userEmail) ? "" : userEmail);
   const [savingContact, setSavingContact] = useState(false);
 
@@ -25,24 +25,29 @@ export default function PortalProfilePage() {
   const [savingPwd, setSavingPwd] = useState(false);
 
   const contactDirty =
-    fullName !== (primaryCustomer?.fullName ?? "") ||
-    phone !== (primaryCustomer?.phone ?? "") ||
+    fullName !== (primaryCustomer?.fullName ?? userName) ||
+    phone !== (primaryCustomer?.phone ?? userPhone) ||
     email.trim() !== (isSyntheticPortalEmail(userEmail) ? "" : userEmail);
 
   const handleSaveContact = async () => {
-    if (!primaryCustomer) return;
     if (!fullName.trim()) {
       toast.error("Please enter your full name");
       return;
     }
     const originalEmail = isSyntheticPortalEmail(userEmail) ? "" : userEmail;
     setSavingContact(true);
-    const { error } = await updatePortalContact({
-      customerId: primaryCustomer.id,
-      fullName: fullName.trim(),
-      ...(phone !== primaryCustomer.phone ? { phone: phone.trim() } : {}),
-      ...(email.trim() !== originalEmail ? { email: email.trim() || undefined } : {}),
-    });
+    const { error } = primaryCustomer
+      ? await updatePortalContact({
+          customerId: primaryCustomer.id,
+          fullName: fullName.trim(),
+          ...(phone !== primaryCustomer.phone ? { phone: phone.trim() } : {}),
+          ...(email.trim() !== originalEmail ? { email: email.trim() || undefined } : {}),
+        })
+      : await updatePortalIdentity({
+          fullName: fullName.trim(),
+          phone: phone.trim(),
+          email: email.trim() || undefined,
+        });
     setSavingContact(false);
     if (error) {
       toast.error(error);
@@ -75,7 +80,26 @@ export default function PortalProfilePage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-bold text-slate-900">My Profile</h1>
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">My customer account</h1>
+        <p className="mt-1 text-sm text-slate-500">Your personal buying profile—not a business or staff profile.</p>
+      </div>
+
+      <Card className="border-emerald-100 bg-emerald-50/60">
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+              <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">One login across every business</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                Orders are connected to this account automatically when a FundiFlow business uses the same phone number or email.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Profile info */}
       <Card>
@@ -137,6 +161,41 @@ export default function PortalProfilePage() {
             {savingContact ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Changes
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Store className="h-4 w-4" /> Connected businesses
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 px-5 pb-5">
+          {businesses.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 p-4">
+              <p className="text-sm font-medium text-slate-700">No workshop connected yet</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Your Global Sell purchases still appear in this portal. Workshop connections appear automatically after a business links your matching contact details.
+              </p>
+            </div>
+          ) : (
+            businesses.map((business) => (
+              <div key={business.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100">
+                  <Store className="h-4 w-4 text-slate-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">{business.name}</p>
+                  {business.location && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-slate-500">
+                      <MapPin className="h-3 w-3" /> {business.location}
+                    </p>
+                  )}
+                </div>
+                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">Connected</span>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 

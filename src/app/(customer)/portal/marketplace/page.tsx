@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Store, ExternalLink, PackageSearch } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { shopUrl } from "@/lib/storefront-url";
 
 export default function PortalMarketplacePage() {
   return (
@@ -19,9 +20,9 @@ export default function PortalMarketplacePage() {
             </p>
           </div>
 
-          <Link href="/globalsell" target="_blank" rel="noopener noreferrer">
+          <Link href={shopUrl()}>
             <Button className="gap-2 bg-emerald-700 hover:bg-emerald-800 w-full">
-              <ExternalLink className="h-4 w-4" /> Open Marketplace
+              <ExternalLink className="h-4 w-4" /> Shop Global Sell
             </Button>
           </Link>
         </CardContent>

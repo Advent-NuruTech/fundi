@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ShoppingBag, CreditCard, Clock, AlertCircle, ChevronRight, PackageCheck } from "lucide-react";
+import { ShoppingBag, CreditCard, Clock, AlertCircle, ChevronRight, PackageCheck, Store } from "lucide-react";
 import { useCustomerPortal } from "@/features/customer-portal/customer-portal-context";
 import { getMyPortalOrders } from "@/services/customer-portal.service";
 import type { PortalOrder } from "@/services/customer-portal.service";
@@ -21,7 +21,7 @@ const TABS: { key: TabKey; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function PortalHomePage() {
-  const { customerIds, primaryCustomer, userId, isLoaded } = useCustomerPortal();
+  const { customerIds, primaryCustomer, userName, businesses, userId, isLoaded } = useCustomerPortal();
   const [orders, setOrders] = useState<PortalOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("active");
@@ -68,13 +68,36 @@ export default function PortalHomePage() {
         <h1 className="text-xl font-bold text-slate-900">
           Hi,{" "}
           {(() => {
-            const first = primaryCustomer?.fullName?.trim().split(" ")[0] ?? "";
+            const first = (primaryCustomer?.fullName || userName).trim().split(" ")[0] ?? "";
             return first ? first.charAt(0).toUpperCase() + first.slice(1).toLowerCase() : "There";
           })()}{" "}
           👋
         </h1>
-        <p className="text-sm text-slate-500">Track your orders progress and payments</p>
+        <p className="text-sm text-slate-500">Everything you buy from FundiFlow businesses, together.</p>
       </div>
+
+      <Card className="border-emerald-100 bg-emerald-50/60">
+        <CardContent className="flex items-center gap-3 p-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+            <Store className="h-4 w-4 text-emerald-700" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900">
+              {businesses.length
+                ? `${businesses.length} connected business${businesses.length === 1 ? "" : "es"}`
+                : "Your standalone customer account"}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {businesses.length
+                ? "Orders stay separated by business while sharing this one login."
+                : "Global Sell orders appear here even before a workshop connects to you."}
+            </p>
+          </div>
+          <Link href="/portal/profile" className="shrink-0 text-xs font-semibold text-emerald-700 hover:underline">
+            View
+          </Link>
+        </CardContent>
+      </Card>
 
       {/* Tab cards — three columns on all screen sizes */}
       <div className="grid grid-cols-3 gap-2">
@@ -218,6 +241,9 @@ function OrderCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-slate-900">{order.orderNumber}</p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                {order.source === "globalsell" ? "Global Sell purchase" : "Workshop order"}
+              </p>
               {order.items.length > 0 ? (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {order.items.map((g, i) => (

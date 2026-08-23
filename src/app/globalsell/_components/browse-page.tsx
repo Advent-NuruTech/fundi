@@ -71,7 +71,7 @@ export function BrowsePage({
           {/* Main content */}
           <div className="min-w-0">
             {/* Results summary + mobile filters toggle */}
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="mb-4 flex items-center gap-3">
               <p className="text-sm text-slate-600">
                 {loading ? (
                   "Loading…"
@@ -82,15 +82,6 @@ export function BrowsePage({
                   </>
                 )}
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="lg:hidden"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Filters
-              </Button>
             </div>
 
             {/* Products grid */}
@@ -173,6 +164,19 @@ export function BrowsePage({
           </div>
         </div>
       </div>
+
+      {/* Thumb-friendly mobile filter action */}
+      {!sidebarOpen && (
+        <Button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 z-30 h-12 -translate-x-1/2 gap-2 rounded-full border border-emerald-400/30 bg-slate-950 px-6 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(15,23,42,0.3)] hover:bg-slate-800 lg:hidden"
+          aria-label="Open filters and sorting"
+        >
+          <SlidersHorizontal className="h-4 w-4 text-emerald-400" />
+          Filter &amp; Sort
+        </Button>
+      )}
 
       {/* Mobile filters drawer */}
       {sidebarOpen && (

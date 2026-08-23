@@ -25,6 +25,7 @@ import { OrderReceipt } from "@/components/receipt/order-receipt";
 import type { Order } from "@/types/domain";
 import type { ReceiptBusiness } from "@/lib/receipt";
 import { formatKes } from "@/lib/utils";
+import { shopUrl } from "@/lib/storefront-url";
 import {
   STAGE_LABEL,
   STAGE_ORDER,
@@ -269,7 +270,7 @@ function GlobalSellOrderDetail({ order }: { order: PortalOrder }) {
       </Card>
 
       {/* Track on Global Sell */}
-      <Link href={order.trackingUrl ?? "/globalsell/track"} target="_blank">
+      <Link href={order.trackingUrl ?? shopUrl("track")}>
         <Button className="w-full gap-2 bg-emerald-700 hover:bg-emerald-800">
           <ExternalLink className="h-4 w-4" />
           Track Order on Global Sell
@@ -343,7 +344,7 @@ function GlobalSellOrderDetail({ order }: { order: PortalOrder }) {
       </Card>
 
       {/* Browse marketplace */}
-      <Link href="/globalsell">
+      <Link href={shopUrl()}>
         <Button variant="outline" className="w-full gap-2">
           <Store className="h-4 w-4" />
           Browse Global Sell Marketplace

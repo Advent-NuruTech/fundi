@@ -20,6 +20,7 @@ export function GlobalSellHeader() {
                 src="/images/logo.jpeg"
                 alt="FundiFlow"
                 fill
+                sizes="36px"
                 className="object-cover"
                 priority
               />

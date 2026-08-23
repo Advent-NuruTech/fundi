@@ -110,10 +110,29 @@ export async function POST(request: Request) {
       .eq("id", authData.user.id)
       .maybeSingle();
 
+    let buyerBusinessId = (profile?.business_id as string | null) ?? null;
+    const requestedBuyerBusinessId = body.checkout.buyerBusinessId;
+    if (requestedBuyerBusinessId) {
+      if (!UUID_PATTERN.test(requestedBuyerBusinessId)) {
+        return NextResponse.json({ error: "Invalid buyer business" }, { status: 400 });
+      }
+      const { data: membership } = await db
+        .from("business_members")
+        .select("id")
+        .eq("profile_id", authData.user.id)
+        .eq("business_id", requestedBuyerBusinessId)
+        .eq("active", true)
+        .maybeSingle();
+      if (!membership && profile?.business_id !== requestedBuyerBusinessId) {
+        return NextResponse.json({ error: "You cannot buy for that business" }, { status: 403 });
+      }
+      buyerBusinessId = requestedBuyerBusinessId;
+    }
+
     const { data: orderId, error: checkoutError } = await db.rpc("place_ecommerce_order", {
       p_idempotency_key: idempotencyKey,
       p_buyer_user_id: authData.user.id,
-      p_buyer_business_id: profile?.business_id ?? null,
+      p_buyer_business_id: buyerBusinessId,
       p_seller_business_id: body.sellerBusinessId,
       p_cart_items: cartItems,
       p_checkout: {

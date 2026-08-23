@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { loginCustomerPortal } from "@/services/customer-portal.service";
@@ -44,8 +45,9 @@ function CustomerLoginForm() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
             <span className="text-2xl">✂️</span>
           </div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Customer portal</p>
           <CardTitle className="text-lg">Welcome back</CardTitle>
-          <p className="text-xs text-slate-500 mt-0.5">Sign in to track your orders</p>
+          <p className="text-xs text-slate-500 mt-0.5">Your purchases across every connected business</p>
         </CardHeader>
         <CardContent className="pt-2">
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -104,6 +106,23 @@ function CustomerLoginForm() {
         
 
           
+          <div className="mt-5 border-t border-slate-100 pt-4 text-center">
+            <p className="text-xs text-slate-500">
+              New customer?{" "}
+              <Link
+                href={`/auth/customer-register?redirect=${encodeURIComponent(getSafeRedirect(searchParams.get("redirect")))}`}
+                className="font-semibold text-emerald-700 hover:underline"
+              >
+                Create an account
+              </Link>
+            </p>
+            <p className="mt-3 text-xs text-slate-400">
+              Managing a business?{" "}
+              <Link href="/login" className="font-medium text-slate-600 hover:underline">
+                Business sign in
+              </Link>
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

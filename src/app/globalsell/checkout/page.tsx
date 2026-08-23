@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChevronLeft, Package, CheckCircle2, ArrowRight, Building2, LogIn, UserPlus } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { ChevronLeft, Package, CheckCircle2, ArrowRight, Building2, LogIn, UserPlus, Clock3, MessageCircle, WalletCards } from "lucide-react";
 import { useCartStore } from "@/store/cart-store";
 import { CheckoutForm } from "@/modules/globalsell/components/checkout-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import type { Customer } from "@/types/domain";
 import { shopUrl } from "@/lib/storefront-url";
 
 type OrderResult = {
+  id: string;
   orderNumber: string;
   storeName: string;
   total: number;
@@ -88,15 +90,22 @@ export default function CheckoutPage() {
   }
 
   if (done) {
+    const purchasesHref = business ? "/sell/purchases" : "/portal/orders";
+    const purchasesLabel = business ? "View business purchases" : "View my orders";
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-12 sm:py-16">
+        <div className="text-center">
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
           <CheckCircle2 className="h-9 w-9 text-emerald-600" />
         </div>
-        <h1 className="text-2xl font-bold text-slate-900">Orders Placed!</h1>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Order confirmed</p>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">
+          {placedOrders.length === 1 ? "Your order is with the seller" : `${placedOrders.length} orders are with the sellers`}
+        </h1>
         <p className="mt-2 text-slate-500">
-          Your orders have been sent to the sellers. They will contact you to confirm.
+          No payment was taken online. Each seller will confirm availability, delivery, and payment with you directly.
         </p>
+        </div>
 
         <div className="mt-6 space-y-3 text-left">
           {placedOrders.map((order) => (
@@ -115,23 +124,52 @@ export default function CheckoutPage() {
                   {formatKes(order.total)}
                 </p>
                 <Link
-                  href={`${shopUrl("track")}?order=${encodeURIComponent(order.orderNumber)}`}
-                  className="text-xs text-emerald-600 hover:underline"
+                  href={business ? purchasesHref : `/portal/orders/${order.id}`}
+                  className="text-xs font-semibold text-emerald-700 hover:underline"
                 >
-                  Track Order →
+                  View details →
                 </Link>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="mt-8 flex flex-col gap-3">
-          <Link href={shopUrl("track")}>
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-left">
+          <p className="text-sm font-bold text-slate-900">What happens next?</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            {[
+              { icon: Clock3, title: "Seller confirms", text: "The seller reviews stock and your delivery details." },
+              { icon: MessageCircle, title: "You are contacted", text: "They use the phone number supplied at checkout." },
+              { icon: WalletCards, title: "Pay the seller", text: "Payment is arranged directly with that business." },
+            ].map(({ icon: Icon, title, text }) => (
+              <div key={title} className="flex gap-3 sm:block">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="sm:mt-2">
+                  <p className="text-xs font-bold text-slate-800">{title}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 text-center">
+          <Link href={purchasesHref}>
             <button className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-500 transition">
-              Track Your Orders
+              {purchasesLabel}
               <ArrowRight className="h-4 w-4" />
             </button>
           </Link>
+          {placedOrders.length === 1 && (
+            <Link
+              href={`${shopUrl("track")}?order=${encodeURIComponent(placedOrders[0].orderNumber)}`}
+              className="text-sm font-medium text-slate-500 hover:text-emerald-700"
+            >
+              Use public order tracking instead
+            </Link>
+          )}
           <Link href={shopUrl()} className="text-sm text-slate-400 hover:text-emerald-600">
             Continue shopping
           </Link>
@@ -173,6 +211,7 @@ export default function CheckoutPage() {
         }
 
         results.push({
+          id: data.order.id,
           orderNumber: data.order.orderNumber,
           storeName: data.storeName ?? storeName,
           total: Number(data.order.total),
@@ -285,7 +324,8 @@ export default function CheckoutPage() {
 }
 
 function CheckoutAccountChoice() {
-  const redirect = encodeURIComponent("/checkout");
+  const pathname = usePathname();
+  const redirect = encodeURIComponent(pathname || "/checkout");
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">Sign in once with your FundiFlow identity to continue. New shoppers can create a customer account.</p>
@@ -298,7 +338,7 @@ function CheckoutAccountChoice() {
         <Link href={`/auth/customer-login?redirect=${redirect}`} className="rounded-xl border border-slate-200 p-4 transition hover:border-emerald-400 hover:bg-emerald-50">
           <LogIn className="mb-2 h-5 w-5 text-emerald-700" />
           <p className="font-semibold text-slate-900">I am a customer</p>
-          <p className="mt-1 text-xs text-slate-500">Sign in with the account your business created for you.</p>
+          <p className="mt-1 text-xs text-slate-500">Use one portal for marketplace and workshop orders.</p>
         </Link>
       </div>
       <Link href={`/auth/customer-register?redirect=${redirect}`} className="flex items-center justify-center gap-2 text-sm font-medium text-emerald-700 hover:underline">

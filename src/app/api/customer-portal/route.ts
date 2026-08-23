@@ -326,17 +326,23 @@ async function handleUpdateContact(admin: AdminClient, caller: { id: string }, b
     }
   }
 
-  // Phone must stay unique within the customer's own business.
+  const { data: linkedCustomers } = await admin
+    .from("customers")
+    .select("id, business_id")
+    .eq("portal_user_id", caller.id);
+
+  // Phone must stay unique in every business connected to this account.
   if (nextPhone !== currentPhone) {
-    const { data: clash } = await admin
+    const linkedIds = new Set((linkedCustomers ?? []).map((row) => row.id as string));
+    const linkedBusinessIds = [...new Set((linkedCustomers ?? []).map((row) => row.business_id as string))];
+    const { data: possibleClashes } = await admin
       .from("customers")
-      .select("id")
-      .eq("business_id", customer.business_id as string)
-      .eq("phone", nextPhone)
-      .neq("id", customerId)
-      .maybeSingle();
+      .select("id, business_id")
+      .in("business_id", linkedBusinessIds)
+      .eq("phone", nextPhone);
+    const clash = (possibleClashes ?? []).find((row) => !linkedIds.has(row.id as string));
     if (clash) {
-      return NextResponse.json({ error: "Another customer in this workshop already uses that phone number" }, { status: 409 });
+      return NextResponse.json({ error: "Another customer in a connected business already uses that phone number" }, { status: 409 });
     }
   }
 
@@ -370,7 +376,7 @@ async function handleUpdateContact(admin: AdminClient, caller: { id: string }, b
       phone: nextPhone,
       portal_login_id: nextLoginId || null,
     })
-    .eq("id", customerId);
+    .eq("portal_user_id", caller.id);
 
   await admin
     .from("profiles")
@@ -393,6 +399,81 @@ async function handleUpdateContact(admin: AdminClient, caller: { id: string }, b
     phone: nextPhone,
     loginId: nextLoginId || null,
     loginEmail: newAuthEmail,
+  });
+}
+
+async function handleUpdateIdentity(
+  admin: AdminClient,
+  caller: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
+  body: Record<string, unknown>
+) {
+  if (!isPortalUser(caller)) {
+    return NextResponse.json({ error: "This is not a customer account" }, { status: 403 });
+  }
+
+  const { fullName, email, phone } = body as { fullName?: string; email?: string; phone?: string };
+  const nextFullName = (fullName ?? "").trim();
+  const nextEmail = (email ?? "").trim().toLowerCase();
+  const nextPhone = normalizePhoneForAuth(phone ?? "");
+
+  if (!nextFullName) return NextResponse.json({ error: "Your name is required" }, { status: 400 });
+  if (!nextPhone) return NextResponse.json({ error: "Invalid phone number" }, { status: 400 });
+  if (nextEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+    return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
+  }
+
+  const { data: linkedCustomer } = await admin
+    .from("customers")
+    .select("id")
+    .eq("portal_user_id", caller.id)
+    .limit(1)
+    .maybeSingle();
+  if (linkedCustomer) {
+    return NextResponse.json({ error: "Update your connected customer profile instead" }, { status: 409 });
+  }
+
+  const currentAuthEmail = caller.email ?? "";
+  const nextAuthEmail = nextEmail || buildPortalSyntheticEmail(nextPhone);
+  if (nextAuthEmail !== currentAuthEmail) {
+    const existing = await findAuthUserByEmail(nextAuthEmail);
+    if (existing && existing.id !== caller.id) {
+      return NextResponse.json({ error: "That email or phone number is already used by another account" }, { status: 409 });
+    }
+  }
+
+  const { error: authError } = await admin.auth.admin.updateUserById(caller.id, {
+    email: nextAuthEmail,
+    email_confirm: true,
+    user_metadata: {
+      ...(caller.user_metadata ?? {}),
+      portal_type: "customer",
+      display_name: nextFullName,
+      phone: nextPhone,
+      email: nextEmail || undefined,
+    },
+  });
+  if (authError) return NextResponse.json({ error: authError.message }, { status: 400 });
+
+  await admin.from("profiles").upsert(
+    {
+      id: caller.id,
+      email: nextAuthEmail,
+      display_name: nextFullName,
+      role: "customer",
+      roles: ["customer"],
+      business_id: null,
+      active: true,
+    },
+    { onConflict: "id" }
+  );
+
+  return NextResponse.json({
+    success: true,
+    fullName: nextFullName,
+    email: nextEmail || null,
+    phone: nextPhone,
+    loginId: nextEmail || nextPhone,
+    loginEmail: nextAuthEmail,
   });
 }
 
@@ -724,6 +805,8 @@ export async function POST(request: Request) {
         return await handleCheckLogin(admin, body);
       case "update-contact":
         return await handleUpdateContact(admin, caller, body);
+      case "update-identity":
+        return await handleUpdateIdentity(admin, caller, body);
       case "mark-onboarding":
         return await handleMarkOnboarding(admin, caller, body);
       case "message-info":
