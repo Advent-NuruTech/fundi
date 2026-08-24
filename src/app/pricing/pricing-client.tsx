@@ -273,8 +273,8 @@ export function PricingClient({ freeTrialEnabled }: { freeTrialEnabled: boolean 
               Choose the plan that fits the stage you&apos;re at
             </h2>
             <p className="mx-auto max-w-xl text-slate-500">
-              Every plan includes the complete FundiFlow operating system — with capacity
-              designed around real business growth, not arbitrary restrictions.
+              Every plan includes FundiFlow&apos;s connected operating core. Capacity and advanced
+              tools increase as your team, locations and order volume grow.
             </p>
 
             {/* Billing toggle */}

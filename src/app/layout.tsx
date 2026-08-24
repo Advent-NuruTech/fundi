@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/features/auth/components/auth-context";
 import { Toaster } from "@/components/ui/sonner";
 import { PWARegister } from "@/components/pwa/pwa-register";
+import { PLAN_CONFIGS } from "@/lib/billing/constants";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,7 +24,7 @@ const SITE_URL = "https://www.fundiflow.co.ke";
 const SITE_NAME = "FundiFlow";
 const TITLE_DEFAULT = "FundiFlow – Kenya's #1 Tailoring & Fashion Business Software";
 const DESCRIPTION =
-  "Kenya's leading tailoring & fashion business OS. Orders, measurements, fabric inventory, finance & M-Pesa payments — offline-first.";
+  "Kenya's tailoring and fashion business OS for customers, orders, production, delivery, inventory, finance, customer accounts and online selling — offline-first.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -65,7 +66,7 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: "FundiFlow – The Leading Business OS for Tailors & Fashion in Kenya",
     description:
-      "Manage orders, measurements, fabric inventory, staff, finance and M-Pesa payments from one offline-first platform built for Kenyan tailors, dressmakers, uniform makers, boutiques and fashion designers.",
+      "Manage customers, orders, production, delivery, inventory, payments, finance, customer accounts and online selling from one offline-first platform built for Kenyan tailoring and fashion businesses.",
     images: [
       {
         url: "/og-image.png",
@@ -79,7 +80,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "FundiFlow – The Leading Business OS for Tailors & Fashion in Kenya",
     description:
-      "Orders, measurements, inventory, finance & M-Pesa payments — one offline-first platform for Kenyan tailors and fashion businesses.",
+      "Orders, production, delivery, inventory, finance, customer accounts and online selling — one offline-first platform for Kenyan tailoring and fashion businesses.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -149,10 +150,10 @@ const softwareApplicationJsonLd = {
   operatingSystem: "Web, Android, iOS",
   url: SITE_URL,
   description:
-    "Business management software for tailors, dressmakers, uniform makers, boutiques and fashion designers in Kenya. Track orders, measurements, fabric inventory, staff and finances, with M-Pesa payments and offline-first sync.",
+    "Business management software for tailoring and fashion businesses in Kenya. Track customers, orders, production, delivery, inventory, payments and finance, with customer accounts, online storefronts and offline-first sync.",
   offers: {
     "@type": "Offer",
-    price: "690",
+    price: String(PLAN_CONFIGS.sindano.monthlyPrice),
     priceCurrency: "KES",
     availability: "https://schema.org/InStock",
     url: `${SITE_URL}/pricing`,
@@ -169,7 +170,6 @@ function JsonLd({ data }: { data: Record<string, unknown> }) {
   return (
     <script
       type="application/ld+json"
-      // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{
         __html: JSON.stringify(data).replace(/</g, "\\u003c"),
       }}

@@ -3,18 +3,19 @@ import {
   Scissors,
   Users,
   ShoppingBag,
-  Ruler,
-  Layers,
   Boxes,
-  Wallet,
   LineChart,
   Globe,
   Bot,
-  BarChart3,
   MessageCircle,
   ArrowRight,
   WifiOff,
   Sparkles,
+  Truck,
+  ReceiptText,
+  Building2,
+  PackageCheck,
+  Bell,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
@@ -22,25 +23,25 @@ import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
 export const metadata = {
   title: "About FundiFlow",
   description:
-    "FundiFlow is the complete operating system for tailoring and fashion businesses — customers, orders, production, inventory, finance and communication in one platform.",
+    "FundiFlow connects customers, tailoring orders, production, delivery, inventory, payments, finance, customer accounts, teams and online selling in one platform.",
 };
 
 const DEMO_URL =
   "https://wa.me/254142225233?text=Hi%2C%20I'd%20like%20to%20request%20a%20demo%20of%20FundiFlow";
 
 const WHAT_IT_MANAGES = [
-  { icon: Users, title: "Customers", desc: "Profiles, history and relationships, always at your fingertips." },
-  { icon: ShoppingBag, title: "Orders", desc: "Every order tracked from first measurement to final delivery." },
-  { icon: Ruler, title: "Measurements", desc: "Accurate records that never get misremembered." },
-  { icon: Layers, title: "Production", desc: "Full visibility across every stage of your workflow." },
-  { icon: Boxes, title: "Inventory", desc: "Every fabric, accessory and material accounted for." },
-  { icon: Wallet, title: "Payments", desc: "Cash, M-Pesa and card, recorded simply and clearly." },
-  { icon: LineChart, title: "Expenses & Finance", desc: "Know your profit, not just your sales." },
-  { icon: Users, title: "Employees", desc: "Teams, roles and performance in one place." },
-  { icon: Globe, title: "Customer Portal", desc: "Your customers stay informed without calling you." },
-  { icon: Bot, title: "AI Assistant", desc: "Your business data, answering your questions." },
-  { icon: BarChart3, title: "Reports & Analytics", desc: "Numbers that guide better decisions." },
-  { icon: Globe, title: "Global Sell Marketplace", desc: "Reach buyers beyond your neighbourhood." },
+  { icon: Users, title: "Customers & Measurements", desc: "Profiles, fitting notes, preferences, groups and complete order history in one record." },
+  { icon: ShoppingBag, title: "Orders & Production", desc: "Track garments, assignments and every configurable workflow stage from intake to completion." },
+  { icon: Truck, title: "Delivery & Tracking", desc: "Manage ready and dispatched work, due dates and public customer tracking links." },
+  { icon: Boxes, title: "Inventory & Purchasing", desc: "Materials, stock movements, low-stock alerts, suppliers, purchase orders and consumption." },
+  { icon: ReceiptText, title: "Payments & Documents", desc: "Deposits, part-payments, balances, numbered invoices and printable payment receipts." },
+  { icon: LineChart, title: "Complete Finance", desc: "Revenue, expenses, withdrawals, savings, investments, transactions and reports." },
+  { icon: Building2, title: "Teams & Branches", desc: "Role permissions plus separate stock, customers, orders and finance for each branch." },
+  { icon: PackageCheck, title: "Customer Accounts", desc: "Customers see workshop and marketplace orders, payments, balances and support in one login." },
+  { icon: Globe, title: "Global Sell", desc: "Public storefronts, retail and wholesale listings, variants, checkout and order fulfilment." },
+  { icon: Bot, title: "AI & Insights", desc: "Ask questions about your orders, sales, payments and stock using your own business data." },
+  { icon: Bell, title: "Communication", desc: "SMS allowances, supported WhatsApp tools, in-app messages and team notifications." },
+  { icon: WifiOff, title: "Offline-first PWA", desc: "Install FundiFlow on your device and keep working through unreliable connectivity." },
 ];
 
 const BUILT_FOR = [
@@ -81,9 +82,10 @@ export default async function AboutPage() {
             businesses.
           </h1>
           <p className="mx-auto max-w-2xl text-lg leading-relaxed text-slate-300">
-            FundiFlow exists for one reason: We are not for every business but to give tailoring and fashion businesses the same
-            power that large enterprises take for granted — without the complexity, the cost,
-            or the need to become a software expert to use it.
+            FundiFlow exists to give tailoring and fashion businesses the connected tools that
+            larger enterprises take for granted — without the complexity or the need to become
+            a software expert. Orders, workshop operations, money and customer service move
+            together instead of living in separate notebooks and apps.
           </p>
 
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -145,7 +147,8 @@ export default async function AboutPage() {
               Everything, connected
             </h2>
             <p className="mx-auto mt-3 max-w-2xl text-slate-500">
-              FundiFlow brings every part of your business into a single, connected system.
+              From the first customer measurement to delivery, receipt and repeat order,
+              FundiFlow keeps the work and the numbers connected.
             </p>
           </div>
 
@@ -162,6 +165,14 @@ export default async function AboutPage() {
                 <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
               </div>
             ))}
+          </div>
+          <div className="mt-10 text-center">
+            <Link
+              href="/features"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-800 transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+            >
+              View the complete feature list <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </section>

@@ -6,6 +6,7 @@ import { Menu, X, Scissors, MessageCircle, Globe } from "lucide-react";
 
 const NAV_LINKS = [
   { href: "/", label: "Home" },
+  { href: "/features", label: "Features" },
   { href: "/pricing", label: "Pricing" },
   { href: "/story", label: "Our Story" },
   { href: "/about", label: "About" },
@@ -56,7 +57,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden items-center gap-6 md:flex">
+          <nav className="hidden items-center gap-4 lg:flex xl:gap-6">
             {NAV_LINKS.map((l) => (
               <Link
                 key={l.href}
@@ -83,7 +84,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           {/* Desktop CTA */}
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-3 lg:flex">
             <Link
               href="/login"
               className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-900"
@@ -100,7 +101,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
 
           {/* Mobile toggle */}
           <button
-            className="rounded-lg border border-slate-200 p-2 md:hidden"
+            className="rounded-lg border border-slate-200 p-2 lg:hidden"
             onClick={() => setOpen(!open)}
             aria-label="Toggle menu"
           >
@@ -112,7 +113,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
       {/* ── MOBILE LEFT DRAWER ── */}
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-300 md:hidden ${
+        className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-300 lg:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={close}
@@ -120,7 +121,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
       />
       {/* Drawer panel */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white shadow-2xl transition-transform duration-300 ease-in-out md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white shadow-2xl transition-transform duration-300 ease-in-out lg:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -250,12 +251,6 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
                 <li>
                   <Link href="/register" className="transition-colors hover:text-white">
                     Get Started
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/globalsell" className="flex items-center gap-1.5 text-emerald-400 transition-colors hover:text-emerald-300">
-                    <Globe className="h-3.5 w-3.5" />
-                    Global Sell Marketplace
                   </Link>
                 </li>
               </ul>

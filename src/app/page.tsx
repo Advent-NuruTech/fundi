@@ -18,7 +18,6 @@ import {
   Star,
   Zap,
   Ruler,
-  Bell,
   Globe,
   Store,
   ShoppingCart,
@@ -26,9 +25,13 @@ import {
   DollarSign,
   Bot,
   Sparkles,
+  Truck,
+  ReceiptText,
+  Building2,
+  PackageCheck,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
-import { DashboardPreview } from "@/components/marketing/dashboard-preview";
+import { PLAN_CONFIGS } from "@/lib/billing/constants";
 // TODO: re-enable the public chatbot widget when ready
 // import { PublicChatWidget } from "@/modules/ai/components/public-chat-widget";
 import { useRef } from "react";
@@ -153,41 +156,6 @@ function StaggerChild({ children, className = "" }: { children: ReactNode; class
   );
 }
 
-// ─── Animated Counter ─────────────────────────────────────────────────────────
-
-function AnimatedCounter({ value, suffix = "", prefix = "" }: { value: number; suffix?: string; prefix?: string }) {
-  const counterRef = useRef<HTMLSpanElement>(null);
-  const inView = useInView(counterRef, { once: true, margin: "-50px" });
-  const motionValue = useMotionValue(0);
-  const springValue = useSpring(motionValue, { damping: 40, stiffness: 80 });
-  const displayValue = useTransform(springValue, (v) => `${prefix}${Math.round(v).toLocaleString()}${suffix}`);
-
-  if (inView) {
-    motionValue.set(value);
-  }
-
-  return (
-    <motion.span ref={counterRef}>
-      {displayValue}
-    </motion.span>
-  );
-}
-
-// ─── Floating Badge Animation ─────────────────────────────────────────────────
-
-function FloatingBadge({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
-  return (
-    <motion.span
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.6, ease: EASE }}
-      whileHover={{ y: -3, transition: { duration: 0.2 } }}
-    >
-      {children}
-    </motion.span>
-  );
-}
-
 // ─── Magnetic Button Effect ───────────────────────────────────────────────────
 
 function MagneticButton({ children, className = "", ...props }: any) {
@@ -239,8 +207,8 @@ const FEATURES = [
   {
     icon: Package,
     color: "bg-blue-100 text-blue-700",
-    title: "Fabric Inventory",
-    desc: "Track fabrics, zippers, buttons and threads in real time. Instant low-stock alerts before you disappoint a customer.",
+    title: "Inventory & Purchasing",
+    desc: "Track fabrics, trims and accessories with stock movements, low-stock alerts, suppliers, purchase orders and material consumption.",
   },
   {
     icon: Ruler,
@@ -249,22 +217,40 @@ const FEATURES = [
     desc: "Track every order from first measurement through cutting, stitching, fitting, finishing and delivery. Every stage logged.",
   },
   {
-    icon: Bell,
+    icon: Truck,
     color: "bg-amber-100 text-amber-700",
-    title: "Smart Notifications",
-    desc: "Auto-send SMS and WhatsApp when an order is ready, delayed or needs fitting. Keep customers informed without lifting a finger.",
+    title: "Delivery & Tracking",
+    desc: "See what is ready, late, dispatched or delivered, then share a public tracking link so customers can follow progress themselves.",
+  },
+  {
+    icon: ReceiptText,
+    color: "bg-orange-100 text-orange-700",
+    title: "Payments, Invoices & Receipts",
+    desc: "Record deposits and part-payments, follow balances, and issue numbered invoices and payment receipts with your business details.",
   },
   {
     icon: BarChart3,
     color: "bg-rose-100 text-rose-700",
-    title: "Business Reports",
-    desc: "Daily, weekly, monthly and yearly earnings, expenses, profit margins and best-selling styles — at a glance.",
+    title: "Finance & Business Reports",
+    desc: "Understand revenue, expenses, withdrawals, savings, investments and profit through daily, weekly, monthly and yearly reports.",
   },
   {
     icon: Globe,
     color: "bg-teal-100 text-teal-700",
-    title: "Global Sell Marketplace",
-    desc: "List your products on the global tailoring marketplace. Sell retail or wholesale to customers and businesses worldwide.",
+    title: "Global Sell & Storefronts",
+    desc: "Publish a branded storefront, list retail or wholesale products with variants, receive online orders and manage fulfilment.",
+  },
+  {
+    icon: PackageCheck,
+    color: "bg-cyan-100 text-cyan-700",
+    title: "Customer Accounts",
+    desc: "Give customers one account for workshop and marketplace orders, payment history, balances, support and status updates.",
+  },
+  {
+    icon: Building2,
+    color: "bg-indigo-100 text-indigo-700",
+    title: "Teams, Permissions & Branches",
+    desc: "Give each employee the right access and keep branch stock, customers, orders and finance clearly separated.",
   },
 ];
 
@@ -348,6 +334,11 @@ const BADGE_TAGS = [
   "Business Insights",
   "Global Sell Marketplace",
   "POS & Payments",
+  "Invoices & Receipts",
+  "Delivery Tracking",
+  "Customer Accounts",
+  "Suppliers & Purchase Orders",
+  "Branches & Permissions",
 ];
 
 const MARKETPLACE_PRODUCTS = [
@@ -360,9 +351,9 @@ const MARKETPLACE_PRODUCTS = [
 ];
 
 const PRICING_PLANS = [
-  { name: "Sindano", swahili: "The Needle", price: "690", color: "border-slate-200", badge: null },
-  { name: "Fundi", swahili: "The Craftsman", price: "3,690", color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
-  { name: "Dhahabu", swahili: "Golden Standard", price: "9,990", color: "border-slate-200", badge: null },
+  { name: PLAN_CONFIGS.sindano.name, swahili: PLAN_CONFIGS.sindano.swahiliName, price: PLAN_CONFIGS.sindano.monthlyPrice.toLocaleString("en-KE"), color: "border-slate-200", badge: null },
+  { name: PLAN_CONFIGS.fundi.name, swahili: PLAN_CONFIGS.fundi.swahiliName, price: PLAN_CONFIGS.fundi.monthlyPrice.toLocaleString("en-KE"), color: "border-emerald-400 ring-2 ring-emerald-400/30", badge: "Most Popular" },
+  { name: PLAN_CONFIGS.dhahabu.name, swahili: PLAN_CONFIGS.dhahabu.swahiliName, price: PLAN_CONFIGS.dhahabu.monthlyPrice.toLocaleString("en-KE"), color: "border-slate-200", badge: null },
 ];
 
 // ─── Hero Dashboard with Animations ───────────────────────────────────────────
@@ -655,7 +646,7 @@ export default function HomePage() {
                 transition={{ duration: 0.7, delay: 0.15, ease: EASE }}
                 className="mb-4 text-lg leading-relaxed text-slate-300"
               >
-                Manage customers, measurements, orders, inventory, finances, staff and communications from{" "}
+                Manage customers, measurements, orders, production, delivery, inventory, finances and online sales from{" "}
                 <span className="font-semibold text-white">one connected platform.</span>{" "}
                 Built for tailors, fashion designers and garment businesses.
               </motion.p>
@@ -759,7 +750,7 @@ export default function HomePage() {
               Built for Tailors. Designed for Growth.
             </p>
             <p className="text-sm text-emerald-700">
-              Plans starting at <strong>KES 690 / month</strong> — Installation from KES 5,000
+              Plans starting at <strong>KES {PLAN_CONFIGS.sindano.monthlyPrice.toLocaleString("en-KE")} / month</strong> with an introductory launch rate
             </p>
             <Link
               href="/pricing"
@@ -772,7 +763,7 @@ export default function HomePage() {
       </section>
 
       {/* Tailoring Focus / Features */}
-      <section className="py-20 sm:py-24">
+      <section id="features" className="scroll-mt-20 py-20 sm:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-12 text-center">
             <AnimatedSection>
@@ -787,7 +778,7 @@ export default function HomePage() {
             </AnimatedSection>
             <AnimatedSection delay={0.2}>
               <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-500">
-                From measurements to delivery — FundiFlow is built specifically for the tailoring industry.
+                From measurements and production to invoices, customer tracking and online selling — every record stays connected.
               </p>
             </AnimatedSection>
           </div>
@@ -814,7 +805,7 @@ export default function HomePage() {
 
             <StaggerChild>
               <motion.div
-                className="group relative col-span-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-emerald-950 p-6 text-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md sm:col-span-2 lg:col-span-1 lg:col-start-3"
+                className="group relative col-span-full overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-emerald-950 p-6 text-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md sm:col-span-2 lg:col-span-1"
                 whileHover={{ y: -6 }}
               >
                 <motion.div
@@ -841,6 +832,16 @@ export default function HomePage() {
               </motion.div>
             </StaggerChild>
           </StaggerContainer>
+          <AnimatedSection delay={0.3}>
+            <div className="mt-10 text-center">
+              <Link
+                href="/features"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-800 transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+              >
+                Explore every FundiFlow feature <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </AnimatedSection>
         </div>
       </section>
 
@@ -975,7 +976,7 @@ export default function HomePage() {
 
               <AnimatedSection direction="left" delay={0.2}>
                 <p className="mb-6 text-lg leading-relaxed text-slate-300">
-                  <strong className="text-white">Global Sell</strong> is FundiFlow's built-in B2C and B2B marketplace — purpose-built for tailoring businesses. Set up your verified seller store, list your products, and start reaching customers and wholesale buyers across the globe.
+                  <strong className="text-white">Global Sell</strong> is FundiFlow&apos;s built-in retail and wholesale marketplace. Create a public storefront, publish products with variants, receive online orders and manage fulfilment from your seller dashboard.
                 </p>
               </AnimatedSection>
 
@@ -990,7 +991,7 @@ export default function HomePage() {
                     </div>
                     <ul className="space-y-1.5 text-sm text-slate-300">
                       {[
-                        "Verified seller profile & store page",
+                        "Branded public store page",
                         "Retail & Wholesale product listings",
                         "Variant builder (Size, Color, Material)",
                         "Automatic SMS order notifications",
@@ -1015,7 +1016,7 @@ export default function HomePage() {
                     </div>
                     <ul className="space-y-1.5 text-sm text-slate-300">
                       {[
-                        "Browse verified tailors worldwide",
+                        "Browse tailoring stores and products",
                         "Retail & Wholesale channels",
                         "Product variants (size, colour, etc.)",
                         "Secure cart & checkout",
@@ -1034,16 +1035,14 @@ export default function HomePage() {
               <AnimatedSection direction="left" delay={0.3}>
                 <div className="flex flex-wrap gap-3">
                   <MagneticButton
-                      //have disabled link to global seel for now untill thre are goods there. link href="/globalsell"
-                    href="#"
+                    href="/globalsell"
                     className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-400"
                   >
                     <Globe className="h-4 w-4" />
                     Shop the Marketplace
                   </MagneticButton>
                   <MagneticButton
-                  //href="/register"
-                    href="#"
+                    href="/register"
                     className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-6 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
                   >
                     <Store className="h-4 w-4" />

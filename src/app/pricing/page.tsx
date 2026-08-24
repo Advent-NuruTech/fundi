@@ -3,21 +3,19 @@ import Link from "next/link";
 import {
   Users,
   ShoppingBag,
-  Ruler,
-  Layers,
   Boxes,
-  Wallet,
   LineChart,
-  Globe,
   WifiOff,
-  BarChart3,
-  TrendingUp,
   Store,
   Bot,
   MessageSquare,
   MessageCircle,
   Sparkles,
   ArrowRight,
+  Truck,
+  ReceiptText,
+  Building2,
+  PackageCheck,
 } from "lucide-react";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { getFreeTrialEnabled } from "@/lib/billing/free-trial-flag";
@@ -82,21 +80,18 @@ const FAQS = [
 ];
 
 const INCLUDED_FEATURES = [
-  { icon: Users, title: "Customer Management", desc: "Profiles, measurements and complete order history, forever in one place." },
-  { icon: ShoppingBag, title: "Orders", desc: "Create, track and deliver work with confidence — from first intake to final handover." },
-  { icon: Ruler, title: "Measurements", desc: "Record every measurement accurately, so nothing is ever misremembered." },
-  { icon: Layers, title: "Production", desc: "Move work through every stage of your workflow with full visibility." },
-  { icon: Boxes, title: "Inventory", desc: "Track every fabric, accessory and material with confidence — and never run out of what sells." },
-  { icon: Wallet, title: "Payments", desc: "Record cash, M-Pesa and card payments, and always know who has paid." },
-  { icon: LineChart, title: "Finance", desc: "See your earnings, expenses and profit clearly, without waiting for month end." },
-  { icon: Globe, title: "Customer Portal", desc: "Let customers check order status and payments themselves — on every plan." },
-  { icon: WifiOff, title: "Offline Mode", desc: "Keep working when the internet doesn't. Everything syncs automatically." },
-  { icon: BarChart3, title: "Reports", desc: "Daily, weekly, monthly and yearly numbers that tell you how you're doing." },
-  { icon: TrendingUp, title: "Analytics", desc: "Spot trends, best sellers and areas to improve — before they become problems." },
-  { icon: Store, title: "Marketplace", desc: "List your work on the Global Sell marketplace and reach buyers worldwide." },
-  { icon: Bot, title: "AI Assistant", desc: "Ask your business anything and get clear, honest answers in seconds." },
-  { icon: MessageSquare, title: "SMS", desc: "Keep customers informed with automatic, professional SMS notifications." },
-  { icon: MessageCircle, title: "WhatsApp", desc: "Reach customers where they already are, automatically." },
+  { icon: Users, title: "Customers & Measurements", desc: "Profiles, fitting notes, preferences and complete order history in one place." },
+  { icon: ShoppingBag, title: "Orders & Production", desc: "Create detailed orders, assign work and move garments through your workflow." },
+  { icon: Truck, title: "Delivery & Tracking", desc: "Manage ready and dispatched work, due dates and public tracking links." },
+  { icon: Boxes, title: "Inventory & Purchasing", desc: "Track materials, movements, low stock, suppliers, purchase orders and consumption." },
+  { icon: ReceiptText, title: "Payments & Documents", desc: "Record deposits and balances, then issue numbered invoices and payment receipts." },
+  { icon: LineChart, title: "Finance", desc: "Manage revenue, expenses, withdrawals, savings, investments and financial reports." },
+  { icon: PackageCheck, title: "Customer Accounts", desc: "Customers can see workshop and marketplace orders, payments and balances in one login." },
+  { icon: Building2, title: "Teams & Branches", desc: "Use role permissions and keep each location's operations clearly separated as you scale." },
+  { icon: Store, title: "Global Sell", desc: "Create a public storefront with retail or wholesale listings, variants and online orders." },
+  { icon: Bot, title: "AI & Analytics", desc: "Ask questions about your business and unlock deeper trends on eligible plans." },
+  { icon: MessageSquare, title: "Customer Communication", desc: "Every plan includes SMS; supported plans also include WhatsApp notification tools." },
+  { icon: WifiOff, title: "Offline-first PWA", desc: "Install FundiFlow on your device and keep core records moving when connectivity drops." },
 ];
 
 const AI_CREDIT_EXAMPLES = [
@@ -188,14 +183,15 @@ export default async function PricingPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-12 text-center">
             <span className="mb-3 inline-block rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-emerald-700">
-              Everything included
+              The connected platform
             </span>
             <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
-              One platform. The entire business.
+              Current FundiFlow capabilities
             </h2>
             <p className="mx-auto mt-3 max-w-2xl text-slate-500">
-              There is no watered-down version of FundiFlow. Every customer, every order and
-              every shilling is managed in the same powerful platform — whatever plan you choose.
+              Every plan includes FundiFlow&apos;s connected core for customers, orders and day-to-day
+              work. Capacity and advanced tools such as full analytics, team management,
+              multi-location operations and API access vary by plan.
             </p>
           </div>
 
@@ -212,6 +208,14 @@ export default async function PricingPage() {
                 <p className="text-sm leading-relaxed text-slate-500">{desc}</p>
               </div>
             ))}
+          </div>
+          <div className="mt-10 text-center">
+            <Link
+              href="/features"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-800 transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+            >
+              Explore the complete feature list <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </section>
