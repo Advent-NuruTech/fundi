@@ -34,9 +34,13 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   async function handleSubmit(input: ProductFormInput) {
     if (!user?.businessId || !product) return;
-    await updateProduct(product.id, user.businessId, input);
-    toast.success("Product updated!");
-    router.push("/sell/products");
+    try {
+      await updateProduct(product.id, user.businessId, input);
+      toast.success("Product updated!");
+      router.push("/sell/products");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Product could not be updated.");
+    }
   }
 
   if (loading) {

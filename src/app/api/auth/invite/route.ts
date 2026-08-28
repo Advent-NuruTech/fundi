@@ -1,5 +1,25 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const EMPLOYEE_ROLES = [
+  "admin_manager",
+  "tailor",
+  "receptionist",
+  "inventory_manager",
+  "cashier",
+] as const;
+
+const inviteRequestSchema = z.object({
+  businessId: z.string().uuid(),
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  displayName: z.string().trim().min(1).max(120),
+  roles: z.array(z.enum(EMPLOYEE_ROLES)).min(1).max(EMPLOYEE_ROLES.length),
+  payRate: z.number().finite().min(0).optional(),
+  payPeriod: z.enum(["daily", "weekly", "monthly"]).optional(),
+  nextPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  inviterName: z.string().trim().max(120).optional(),
+});
 
 function getSupabaseUrl() {
   return (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/rest\/v1\/?$/, "");
@@ -24,7 +44,27 @@ function getCallerClient(accessToken: string) {
 }
 
 function buildTempPassword() {
-  return `Fundi#${Math.random().toString(36).slice(2, 10)}1!`;
+  const randomPart = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+  return `Fundi#${randomPart}1!`;
+}
+
+async function findAuthUserByEmail(
+  admin: ReturnType<typeof getAdminClient>,
+  email: string
+): Promise<User | null> {
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+
+    const matchingUser = data.users.find(
+      (user) => user.email?.trim().toLowerCase() === email
+    );
+    if (matchingUser) return matchingUser;
+    if (data.nextPage === null) return null;
+    page = data.nextPage;
+  }
 }
 
 export async function POST(request: Request) {
@@ -37,51 +77,72 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data: { user: caller }, error: authError } = await admin.auth.getUser(accessToken);
+    const {
+      data: { user: caller },
+      error: authError,
+    } = await admin.auth.getUser(accessToken);
     if (authError || !caller) {
       return NextResponse.json({ error: "Invalid session" }, { status: 401 });
     }
 
-    const callerClient = getCallerClient(accessToken);
-
-    const body = await request.json().catch(() => ({}));
-    const { businessId, email, displayName, roles, payRate, payPeriod, nextPayDate, inviterName } = body as {
-      businessId: string;
-      email: string;
-      displayName: string;
-      roles: string[];
-      payRate?: number;
-      payPeriod?: string;
-      nextPayDate?: string;
-      inviterName: string;
-    };
-
-    if (!businessId || !email || !displayName || !roles?.length) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    const parsed = inviteRequestSchema.safeParse(
+      await request.json().catch(() => undefined)
+    );
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? "Invalid invitation details" },
+        { status: 400 }
+      );
     }
 
-    // Verify caller is a member of this business with team management capability
-    const { data: callerMember } = await admin
+    const {
+      businessId,
+      email,
+      displayName,
+      roles,
+      payRate,
+      payPeriod,
+      nextPayDate,
+      inviterName,
+    } = parsed.data;
+
+    const { data: callerMember, error: memberLookupError } = await admin
       .from("business_members")
       .select("roles")
       .eq("business_id", businessId)
       .eq("profile_id", caller.id)
       .maybeSingle();
 
-    const callerRoles: string[] = (callerMember as any)?.roles ?? [];
+    if (memberLookupError) {
+      throw new Error(`Could not verify your team permissions: ${memberLookupError.message}`);
+    }
+
+    const callerRoles: string[] = callerMember?.roles ?? [];
     const canManageTeam = callerRoles.includes("owner") || callerRoles.includes("admin_manager");
     if (!canManageTeam) {
       return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }
 
+    const callerDisplayName =
+      typeof caller.user_metadata.display_name === "string"
+        ? caller.user_metadata.display_name.trim()
+        : "";
+    const safeInviterName = callerDisplayName || inviterName || caller.email || "Team manager";
+    const callerClient = getCallerClient(accessToken);
+    const { data: employeeNumber, error: employeeNumberError } = await callerClient.rpc(
+      "get_next_employee_number",
+      { biz_id: businessId }
+    );
+
+    if (employeeNumberError) {
+      throw new Error(`Could not generate an employee number: ${employeeNumberError.message}`);
+    }
+
     const tempPassword = buildTempPassword();
-    const token_ = crypto.randomUUID();
+    const token = crypto.randomUUID();
+    let employeeUid: string;
+    let deleteAuthUserOnFailure = false;
 
-    // Get next employee number via RPC — must use caller's authenticated client
-    // because get_next_employee_number has an is_business_member() guard
-    const { data: employeeNumber } = await callerClient.rpc("get_next_employee_number", { biz_id: businessId });
-
-    // Create the Supabase auth user for the employee
     const { data: userData, error: createError } = await admin.auth.admin.createUser({
       email,
       password: tempPassword,
@@ -94,84 +155,150 @@ export async function POST(request: Request) {
     });
 
     if (createError || !userData.user) {
-      return NextResponse.json(
-        { error: createError?.message ?? "Failed to create user account" },
-        { status: 500 }
-      );
+      // The previous implementation could leave an Auth account without a
+      // profile. Recover only accounts created by this inviter for this business.
+      const existingUser = await findAuthUserByEmail(admin, email);
+      const metadata = existingUser?.user_metadata;
+      const isRecoverableOrphan =
+        existingUser &&
+        metadata?.invited_by_uid === caller.id &&
+        metadata?.business_id === businessId;
+
+      if (!isRecoverableOrphan) {
+        return NextResponse.json(
+          {
+            error:
+              createError?.message ??
+              "An account already exists for this email address.",
+          },
+          { status: 409 }
+        );
+      }
+
+      const { data: existingProfile, error: profileLookupError } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("id", existingUser.id)
+        .maybeSingle();
+
+      if (profileLookupError) {
+        throw new Error(`Could not check the existing employee profile: ${profileLookupError.message}`);
+      }
+      if (existingProfile) {
+        return NextResponse.json(
+          { error: "This employee already has a FundiFlow account." },
+          { status: 409 }
+        );
+      }
+
+      const { error: repairError } = await admin.auth.admin.updateUserById(existingUser.id, {
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
+          ...metadata,
+          display_name: displayName,
+          invited_by_uid: caller.id,
+          business_id: businessId,
+        },
+      });
+      if (repairError) {
+        throw new Error(`Could not recover the previous invitation: ${repairError.message}`);
+      }
+
+      employeeUid = existingUser.id;
+      deleteAuthUserOnFailure = true;
+    } else {
+      employeeUid = userData.user.id;
+      deleteAuthUserOnFailure = true;
     }
 
-    const employeeUid = userData.user.id;
+    const compensation =
+      payRate === undefined
+        ? {}
+        : {
+            pay_rate: payRate,
+            pay_period: payPeriod ?? "monthly",
+            next_pay_date: nextPayDate ?? null,
+          };
 
-    // Upsert profile row for the employee (needs service role — RLS blocks owner)
-    await admin.from("profiles").upsert(
-      {
-        id: employeeUid,
-        email,
-        display_name: displayName,
-        employee_number: employeeNumber ?? undefined,
-        role: roles[0],
-        roles,
-        business_id: businessId,
-        active: false,
-        must_change_password: true,
-        invited_by_uid: caller.id,
-        invited_by_name: inviterName,
-        pay_rate: payRate ?? 0,
-        pay_period: payPeriod ?? "monthly",
-        next_pay_date: nextPayDate ?? null,
-      },
-      { onConflict: "id" }
-    );
-
-    // Upsert business_members row
-    await admin.from("business_members").upsert(
-      {
-        profile_id: employeeUid,
-        business_id: businessId,
-        employee_number: employeeNumber ?? undefined,
-        role: roles[0],
-        roles,
-        active: false,
-        invited_by_uid: caller.id,
-        invited_by_name: inviterName,
-        pay_rate: payRate ?? 0,
-        pay_period: payPeriod ?? "monthly",
-        next_pay_date: nextPayDate ?? null,
-      },
-      { onConflict: "profile_id,business_id" }
-    );
-
-    // Create invitation record (invited_uid FK is now satisfied)
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-    const { data: inviteData, error: inviteError } = await admin
-      .from("employee_invitations")
-      .insert({
-        business_id: businessId,
-        email,
-        display_name: displayName,
-        roles,
-        token: token_,
-        invited_uid: employeeUid,
-        temporary_password: tempPassword,
-        invited_by_uid: caller.id,
-        invited_by_name: inviterName,
-        status: "pending",
-        expires_at: expiresAt,
-      })
-      .select("id")
-      .single();
-
-    if (inviteError || !inviteData) {
-      return NextResponse.json(
-        { error: inviteError?.message ?? "Failed to create invitation record" },
-        { status: 500 }
+    try {
+      const { error: profileError } = await admin.from("profiles").upsert(
+        {
+          id: employeeUid,
+          email,
+          display_name: displayName,
+          employee_number: employeeNumber ?? undefined,
+          role: roles[0],
+          roles,
+          business_id: businessId,
+          active: false,
+          must_change_password: true,
+          invited_by_uid: caller.id,
+          invited_by_name: safeInviterName,
+          ...compensation,
+        },
+        { onConflict: "id" }
       );
+      if (profileError) {
+        throw new Error(`Could not create the employee profile: ${profileError.message}`);
+      }
+
+      const { error: businessMemberError } = await admin.from("business_members").upsert(
+        {
+          profile_id: employeeUid,
+          business_id: businessId,
+          employee_number: employeeNumber ?? undefined,
+          role: roles[0],
+          roles,
+          active: false,
+          invited_by_uid: caller.id,
+          invited_by_name: safeInviterName,
+          ...compensation,
+        },
+        { onConflict: "profile_id,business_id" }
+      );
+      if (businessMemberError) {
+        throw new Error(`Could not create the employee membership: ${businessMemberError.message}`);
+      }
+
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      const { data: inviteData, error: inviteError } = await admin
+        .from("employee_invitations")
+        .insert({
+          business_id: businessId,
+          email,
+          display_name: displayName,
+          roles,
+          token,
+          invited_uid: employeeUid,
+          temporary_password: tempPassword,
+          invited_by_uid: caller.id,
+          invited_by_name: safeInviterName,
+          status: "pending",
+          expires_at: expiresAt,
+        })
+        .select("id")
+        .single();
+
+      if (inviteError || !inviteData) {
+        throw new Error(
+          `Could not create the invitation record: ${inviteError?.message ?? "No invitation was returned"}`
+        );
+      }
+    } catch (setupError) {
+      if (deleteAuthUserOnFailure) {
+        const { error: cleanupError } = await admin.auth.admin.deleteUser(employeeUid);
+        if (cleanupError) {
+          console.error("[invite] Failed to clean up Auth user", employeeUid, cleanupError);
+        }
+      }
+      throw setupError;
     }
 
     return NextResponse.json({
       success: true,
       temporaryPassword: tempPassword,
-      token: token_,
+      token,
     });
   } catch (err) {
     console.error("[invite]", err);

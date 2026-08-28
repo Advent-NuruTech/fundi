@@ -74,7 +74,7 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
 
   function handleAddToCart(e: React.MouseEvent) {
     e.preventDefault();
-    if (!inStock || hasVariants) return;
+    if (!inStock || hasVariants || isWholesale) return;
     addItem({
       id: crypto.randomUUID(),
       productId: product.id,
@@ -218,7 +218,7 @@ export function ProductCard({ product, showStore = true }: ProductCardProps) {
           className="mt-2 h-8 w-full gap-1.5 text-xs"
         >
           <ShoppingCart className="h-3 w-3" />
-          {hasVariants
+          {hasVariants || isWholesale
             ? "View Options"
             : inStock
             ? "Add to Cart"

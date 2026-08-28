@@ -129,6 +129,57 @@ export async function POST(request: Request) {
       buyerBusinessId = requestedBuyerBusinessId;
     }
 
+    // Wholesale-only listings are not retail fallbacks. Enforce their minimum
+    // quantity on the trusted server path before the checkout RPC calculates
+    // prices, including when duplicate cart rows contain the same variant.
+    const groupedItems = new Map<string, { productId: string; variantId: string | null; quantity: number }>();
+    for (const item of cartItems) {
+      const key = `${item.productId}:${item.variantId ?? ""}`;
+      const existing = groupedItems.get(key);
+      groupedItems.set(key, {
+        productId: item.productId!,
+        variantId: item.variantId,
+        quantity: (existing?.quantity ?? 0) + Number(item.quantity),
+      });
+    }
+
+    const productIds = [...new Set([...groupedItems.values()].map((item) => item.productId))];
+    const { data: productRows, error: productsError } = await db
+      .from("ecommerce_products")
+      .select("id, sale_channel, wholesale_min_qty")
+      .eq("business_id", body.sellerBusinessId)
+      .in("id", productIds);
+    if (productsError) throw productsError;
+
+    const variantIds = [...groupedItems.values()]
+      .map((item) => item.variantId)
+      .filter((id): id is string => Boolean(id));
+    const { data: variantRows, error: variantsError } = variantIds.length
+      ? await db
+          .from("ecommerce_product_variants")
+          .select("id, product_id, wholesale_min_qty")
+          .in("id", variantIds)
+      : { data: [], error: null };
+    if (variantsError) throw variantsError;
+
+    const productsById = new Map((productRows ?? []).map((row) => [row.id as string, row]));
+    const variantsById = new Map((variantRows ?? []).map((row) => [row.id as string, row]));
+    for (const item of groupedItems.values()) {
+      const product = productsById.get(item.productId);
+      if (!product || product.sale_channel !== "wholesale") continue;
+      const variant = item.variantId ? variantsById.get(item.variantId) : undefined;
+      const minimum = Math.max(
+        1,
+        Number(variant?.wholesale_min_qty ?? product.wholesale_min_qty ?? 1)
+      );
+      if (item.quantity < minimum) {
+        return NextResponse.json(
+          { error: `This wholesale item requires a minimum quantity of ${minimum}` },
+          { status: 400 }
+        );
+      }
+    }
+
     const { data: orderId, error: checkoutError } = await db.rpc("place_ecommerce_order", {
       p_idempotency_key: idempotencyKey,
       p_buyer_user_id: authData.user.id,

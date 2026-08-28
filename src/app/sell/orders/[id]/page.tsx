@@ -49,7 +49,7 @@ const NEXT_STATUSES: Partial<Record<EcommerceOrderStatus, EcommerceOrderStatus>>
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { user } = useAuth();
+  const { user, business } = useAuth();
   const businessId = user?.businessId ?? "";
   const [order, setOrder] = useState<EcommerceOrder | null>(null);
   const [loading, setLoading] = useState(true);
@@ -167,6 +167,87 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="space-y-5 max-w-3xl">
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #globalsell-order-receipt, #globalsell-order-receipt * { visibility: visible !important; }
+          #globalsell-order-receipt {
+            display: block !important;
+            position: absolute !important;
+            inset: 0 auto auto 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+          }
+          @page { margin: 12mm; }
+        }
+      `}</style>
+
+      <section
+        id="globalsell-order-receipt"
+        className="hidden bg-white text-sm text-slate-900 print:block"
+        aria-label="Printable Global Sell order receipt"
+      >
+        <div className="mx-auto max-w-[520px] border border-slate-300 p-7">
+          <div className="text-center">
+            <p className="text-xl font-extrabold uppercase">{business?.name ?? "Global Sell Seller"}</p>
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+              {paidTotal > 0 ? "Payment receipt" : "Order summary"}
+            </p>
+            <p className="mt-3 font-bold">Order #{order.orderNumber}</p>
+            <p className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleString("en-KE")}</p>
+          </div>
+
+          <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-y border-slate-200 py-4">
+            <dt className="font-semibold">Customer</dt><dd className="text-right">{order.buyerName}</dd>
+            <dt className="font-semibold">Phone</dt><dd className="text-right">{order.buyerPhone}</dd>
+            {order.deliveryLocation && <><dt className="font-semibold">Delivery</dt><dd className="text-right">{order.deliveryLocation}</dd></>}
+            {business?.phone && <><dt className="font-semibold">Seller phone</dt><dd className="text-right">{business.phone}</dd></>}
+          </dl>
+
+          <table className="mt-5 w-full border-collapse text-xs">
+            <thead>
+              <tr className="border-b-2 border-slate-800 text-left">
+                <th className="py-2">Item</th>
+                <th className="py-2 text-center">Qty</th>
+                <th className="py-2 text-right">Rate</th>
+                <th className="py-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {order.items?.map((item) => (
+                <tr key={item.id} className="border-b border-slate-200">
+                  <td className="py-2 pr-2">{item.productName}{item.variantName ? ` · ${item.variantName}` : ""}</td>
+                  <td className="py-2 text-center">{item.quantity}</td>
+                  <td className="py-2 text-right">{formatKes(item.unitPrice)}</td>
+                  <td className="py-2 text-right">{formatKes(item.totalPrice)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <dl className="ml-auto mt-5 w-64 space-y-1">
+            <div className="flex justify-between font-bold"><dt>Total</dt><dd>{formatKes(order.total)}</dd></div>
+            <div className="flex justify-between text-emerald-700"><dt>Paid</dt><dd>{formatKes(paidTotal)}</dd></div>
+            <div className="flex justify-between border-t border-slate-300 pt-1 font-bold"><dt>Balance</dt><dd>{formatKes(balance)}</dd></div>
+          </dl>
+
+          {payments.length > 0 && (
+            <div className="mt-5 border-t border-slate-200 pt-3 text-xs">
+              <p className="mb-2 font-bold uppercase tracking-wide">Payments</p>
+              {payments.map((payment) => (
+                <div key={payment.id} className="flex justify-between py-0.5">
+                  <span>{new Date(payment.createdAt).toLocaleDateString("en-KE")} · {payment.method.replace("_", " ")}{payment.paymentReference ? ` · ${payment.paymentReference}` : ""}</span>
+                  <span className="font-semibold">{formatKes(payment.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="mt-7 border-t border-slate-200 pt-4 text-center text-xs text-slate-500">Thank you · Powered by FundiFlow Global Sell</p>
+        </div>
+      </section>
+
       <div className="flex items-center justify-between">
         <Link
           href="/sell/orders"
@@ -180,7 +261,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition"
         >
           <Printer className="h-4 w-4" />
-          Print
+          {paidTotal > 0 ? "Print receipt" : "Print order"}
         </button>
       </div>
 

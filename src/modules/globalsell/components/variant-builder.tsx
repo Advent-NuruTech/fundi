@@ -165,6 +165,7 @@ export function VariantBuilder({
               <button
                 type="button"
                 onClick={() => removeOptionKey(k)}
+                aria-label={`Remove ${k} option`}
                 className="ml-0.5 rounded-full hover:bg-emerald-100 p-0.5 transition"
               >
                 <X className="h-3 w-3" />
@@ -236,7 +237,8 @@ export function VariantBuilder({
 
       {/* ── Variant matrix ────────────────────────────────────────── */}
       {variants.length > 0 && (
-        <div className="space-y-1.5">
+        <div className="overflow-x-auto pb-1">
+          <div className="min-w-[720px] space-y-1.5">
           <div className="grid grid-cols-[1fr_80px_72px_72px_72px_32px] gap-2 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
             <span>Variant</span>
             <span>SKU</span>
@@ -262,6 +264,7 @@ export function VariantBuilder({
                     <button
                       type="button"
                       onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} ${v.name} variant`}
                       className="shrink-0 text-slate-400 hover:text-emerald-600"
                     >
                       {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -332,6 +335,7 @@ export function VariantBuilder({
                   <button
                     type="button"
                     onClick={() => removeVariant(v.id)}
+                    aria-label={`Remove ${v.name} variant`}
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -362,6 +366,8 @@ export function VariantBuilder({
                       <button
                         type="button"
                         onClick={() => updateVariant(v.id, { isAvailable: !v.isAvailable })}
+                        aria-label={`${v.isAvailable ? "Disable" : "Enable"} ${v.name} for sale`}
+                        aria-pressed={v.isAvailable}
                         className={cn(
                           "relative h-5 w-9 rounded-full transition",
                           v.isAvailable ? "bg-emerald-500" : "bg-slate-300"
@@ -403,6 +409,7 @@ export function VariantBuilder({
             <span className="text-emerald-600 font-medium">
               From KES {Math.min(...variants.map((v) => v.priceOverride ?? basePrice)).toLocaleString()}
             </span>
+          </div>
           </div>
         </div>
       )}

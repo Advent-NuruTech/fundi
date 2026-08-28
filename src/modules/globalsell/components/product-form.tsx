@@ -5,12 +5,12 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  Loader2, Plus, Trash2, Upload, Tag, Users,
+  Loader2, Plus, Upload, Tag, Users,
   RefreshCw, ImageIcon, Link as LinkIcon, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageUrl } from "@/lib/utils";
 import { VariantBuilder } from "./variant-builder";
 import type {
   EcommerceCategory,
@@ -82,6 +82,30 @@ const schema = z.object({
   totalStock: z.coerce.number().min(0),
   tags: z.string().optional(),
   shippingWeight: z.coerce.number().optional(),
+}).superRefine((values, ctx) => {
+  if (values.discountPrice && values.discountPrice >= values.basePrice) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["discountPrice"],
+      message: "Discount price must be lower than the base price",
+    });
+  }
+  if (values.saleChannel === "wholesale" || values.saleChannel === "both") {
+    if (!values.wholesalePrice || values.wholesalePrice <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["wholesalePrice"],
+        message: "Wholesale price is required for this sales channel",
+      });
+    }
+    if (!values.wholesaleMinQty || values.wholesaleMinQty < 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["wholesaleMinQty"],
+        message: "Enter the minimum wholesale quantity",
+      });
+    }
+  }
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -130,6 +154,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
 
   // Image input state
   const [imageUrl, setImageUrl] = useState("");
+  const [imageError, setImageError] = useState("");
   const [imgUploading, setImgUploading] = useState(false);
   const [imgTab, setImgTab] = useState<"url" | "upload">("url");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -190,8 +215,17 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
   function addImageByUrl() {
     const url = imageUrl.trim();
     if (!url) return;
+    if (!isAllowedImageUrl(url)) {
+      setImageError("Use a secure images.unsplash.com or res.cloudinary.com image URL.");
+      return;
+    }
+    if (images.some((image) => image.url === url)) {
+      setImageError("This image has already been added.");
+      return;
+    }
     setImages((prev) => [...prev, { url, altText: "", isPrimary: prev.length === 0 }]);
     setImageUrl("");
+    setImageError("");
   }
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,7 +314,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Category</label>
               <select
@@ -304,7 +338,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
           </div>
 
           {/* SKU — auto-generated, manually editable, with Regenerate */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 SKU
@@ -345,7 +379,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
       <Card>
         <CardHeader><CardTitle>Sales Channel</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {CHANNEL_OPTIONS.map((opt) => {
               const Icon = opt.icon;
               const selected = saleChannel === opt.value;
@@ -373,7 +407,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
       <Card>
         <CardHeader><CardTitle>Pricing</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Base Price (KES) *</label>
               <input
@@ -392,6 +426,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
                 placeholder="Optional sale price"
                 className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-emerald-500"
               />
+              {errors.discountPrice && <p className="mt-1 text-xs text-rose-500">{errors.discountPrice.message}</p>}
             </div>
           </div>
 
@@ -400,7 +435,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5" /> Wholesale Pricing
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">Wholesale Price (KES)</label>
                   <input
@@ -409,6 +444,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
                     placeholder="Bulk unit price"
                     className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400"
                   />
+                  {errors.wholesalePrice && <p className="mt-1 text-xs text-rose-600">{errors.wholesalePrice.message}</p>}
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-slate-700">Minimum Qty</label>
@@ -418,6 +454,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
                     placeholder="e.g. 10"
                     className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400"
                   />
+                  {errors.wholesaleMinQty && <p className="mt-1 text-xs text-rose-600">{errors.wholesaleMinQty.message}</p>}
                 </div>
               </div>
               <p className="text-xs text-blue-500">Variant-level wholesale prices override these defaults.</p>
@@ -438,7 +475,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
             <input type="checkbox" id="allowBackorder" {...register("allowBackorder")} className="h-4 w-4 rounded border-slate-300 text-emerald-600" />
             <label htmlFor="allowBackorder" className="text-sm text-slate-700">Allow orders when out of stock</label>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 {variants.length > 0 ? "Base Stock (overridden by variants)" : "Stock Quantity"}
@@ -507,16 +544,31 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
             <div className="flex gap-2">
               <input
                 type="url"
-                placeholder="Paste Cloudinary or any image URL…"
+                placeholder="Paste an Unsplash or Cloudinary image URL…"
                 value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                onChange={(e) => {
+                  setImageUrl(e.target.value);
+                  if (imageError) setImageError("");
+                }}
+                aria-invalid={Boolean(imageError)}
+                aria-describedby="product-image-url-help"
+                className={cn(
+                  "min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-sm outline-none focus:ring-2",
+                  imageError
+                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-100"
+                    : "border-slate-200 focus:border-emerald-500 focus:ring-emerald-100"
+                )}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addImageByUrl())}
               />
-              <Button type="button" size="sm" variant="outline" onClick={addImageByUrl}>
+              <Button type="button" size="sm" variant="outline" onClick={addImageByUrl} aria-label="Add image URL">
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+          )}
+          {imgTab === "url" && (
+            <p id="product-image-url-help" className={cn("text-xs", imageError ? "text-rose-600" : "text-slate-500")}>
+              {imageError || "Supported hosts: images.unsplash.com and res.cloudinary.com."}
+            </p>
           )}
 
           {/* File upload */}

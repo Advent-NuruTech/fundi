@@ -384,6 +384,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const routeAllowed = canAccessRoute(user, pathname);
 
   useEffect(() => {
     if (loading) return;
@@ -398,10 +399,10 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!canAccessRoute(user, pathname)) {
-      router.replace("/dashboard");
+    if (!routeAllowed) {
+      router.replace(user.role === "customer" ? "/portal" : "/dashboard");
     }
-  }, [loading, user, pathname, router]);
+  }, [loading, user, pathname, routeAllowed, router]);
 
   if (loading) {
     return (
@@ -414,7 +415,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) {
+  if (!user || !user.active || !routeAllowed) {
     return null;
   }
 

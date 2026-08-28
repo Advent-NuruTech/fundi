@@ -279,21 +279,21 @@ export async function getMyPortalBusinesses(
     (data ?? []).map((business) => [business.id as string, business])
   );
 
-  return businessIds
-    .map((businessId) => {
-      const customer = customers.find((record) => record.businessId === businessId);
-      const business = businessMap.get(businessId);
-      if (!business || !customer) return null;
-      return {
-        id: business.id as string,
-        name: business.name as string,
-        location: (business.location as string | null) ?? undefined,
-        customerId: customer.id,
-        customerName: customer.fullName,
-      } satisfies PortalBusinessConnection;
-    })
-    .filter((connection): connection is PortalBusinessConnection => connection !== null)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const connections: PortalBusinessConnection[] = [];
+  for (const businessId of businessIds) {
+    const customer = customers.find((record) => record.businessId === businessId);
+    const business = businessMap.get(businessId);
+    if (!business || !customer) continue;
+    connections.push({
+      id: business.id as string,
+      name: business.name as string,
+      location: (business.location as string | null) ?? undefined,
+      customerId: customer.id,
+      customerName: customer.fullName,
+    });
+  }
+
+  return connections.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ── Orders (customer-safe) ─────────────────────────────────────────────────────

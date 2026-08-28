@@ -157,6 +157,20 @@ export function canAccessRoute(profile: UserProfile | null | undefined, pathname
     return false;
   }
 
+  // Customer identities belong in the dedicated /portal experience. Keeping
+  // this deny-by-default prevents a customer session from rendering business
+  // dashboards or seller tools when auth state changes in another tab.
+  const roles = getUserRoles(profile);
+  if (roles.length === 0 || roles.every((role) => role === "customer")) {
+    return false;
+  }
+
+  // Global Sell management always operates inside a business. A valid auth
+  // session without a business context must never mutate a seller catalogue.
+  if (pathname.startsWith("/sell") && !profile.businessId) {
+    return false;
+  }
+
   if (pathname.startsWith("/inventory")) {
     return hasCapability(profile, "inventory.read");
   }

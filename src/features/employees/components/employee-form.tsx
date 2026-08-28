@@ -61,6 +61,7 @@ export function EmployeeForm() {
 
     setSaving(true);
     try {
+      const normalizedPayRate = payRate.trim() === "" ? undefined : Number(payRate);
       const result = await inviteEmployeeToWorkshop({
         businessId,
         inviterUid: user.uid,
@@ -68,9 +69,9 @@ export function EmployeeForm() {
         email,
         displayName: name,
         roles: selectedRoles,
-        payRate: Number(payRate) || 0,
-        payPeriod,
-        nextPayDate,
+        payRate: normalizedPayRate,
+        payPeriod: normalizedPayRate === undefined ? undefined : payPeriod,
+        nextPayDate: normalizedPayRate === undefined ? undefined : nextPayDate || undefined,
       });
       setInviteLink(result.invitationLink);
       setTempPassword(result.temporaryPassword);
@@ -83,11 +84,22 @@ export function EmployeeForm() {
   };
 
   const copyDetails = () => {
+    const hasSalary = payRate.trim() !== "";
+    const compensationDetails = hasSalary
+      ? [
+          `Salary / Pay: KES ${Number(payRate).toLocaleString("en-KE")}`,
+          `Pay Period: ${payPeriod.charAt(0).toUpperCase()}${payPeriod.slice(1)}`,
+          ...(nextPayDate
+            ? [`Next Pay Date: ${new Date(`${nextPayDate}T00:00:00`).toLocaleDateString("en-KE")}`]
+            : []),
+        ]
+      : [];
     const details = [
       `Congratulations! You have been invited to join ${business?.name || user?.displayName + "'s Workshop"}!`,
       ``,
       `Business: ${business?.name || user?.displayName + "'s Workshop"}`,
       `Role: ${selectedRoles.map((r) => r.replace("_", " ")).join(", ")}`,
+      ...compensationDetails,
       `Email: ${email}`,
       `Temporary Password: ${tempPassword}`,
       ``,
@@ -249,14 +261,14 @@ export function EmployeeForm() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Salary / Pay (KES)</label>
+                <label className="text-sm font-medium">Salary / Pay (KES) <span className="font-normal text-slate-400">(Optional)</span></label>
                 <Input
                   type="number"
                   min="0"
                   step="1"
                   value={payRate}
                   onChange={(e) => setPayRate(e.target.value)}
-                  placeholder="25000"
+                  placeholder="Leave blank"
                 />
               </div>
               <div className="space-y-2">
@@ -264,7 +276,8 @@ export function EmployeeForm() {
                 <select
                   value={payPeriod}
                   onChange={(e) => setPayPeriod(e.target.value as "daily" | "weekly" | "monthly")}
-                  className="flex h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  disabled={!payRate.trim()}
+                  className="flex h-10 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
@@ -277,6 +290,7 @@ export function EmployeeForm() {
                   type="date"
                   value={nextPayDate}
                   onChange={(e) => setNextPayDate(e.target.value)}
+                  disabled={!payRate.trim()}
                 />
               </div>
             </div>

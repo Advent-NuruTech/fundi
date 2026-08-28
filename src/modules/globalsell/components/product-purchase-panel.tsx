@@ -11,14 +11,25 @@ import { cn, formatKes } from "@/lib/utils";
 import { shopUrl } from "@/lib/storefront-url";
 import type { CartItem, EcommerceProduct, EcommerceProductVariant } from "@/types/ecommerce";
 
+function defaultVariantFor(product: EcommerceProduct) {
+  return product.variants?.find((variant) =>
+    variant.isAvailable &&
+    (!product.trackInventory || product.allowBackorder || variant.stockQuantity > 0)
+  ) ?? product.variants?.find((variant) => variant.isAvailable) ?? product.variants?.[0] ?? null;
+}
+
+function minimumQuantityFor(
+  product: EcommerceProduct,
+  variant: EcommerceProductVariant | null
+) {
+  if (product.saleChannel !== "wholesale") return 1;
+  return Math.max(1, variant?.wholesaleMinQty ?? product.wholesaleMinQty ?? 1);
+}
+
 export function ProductPurchasePanel({ product }: { product: EcommerceProduct }) {
-  const [selectedVariant, setSelectedVariant] = useState<EcommerceProductVariant | null>(() =>
-    product.variants?.find((variant) =>
-      variant.isAvailable &&
-      (!product.trackInventory || product.allowBackorder || variant.stockQuantity > 0)
-    ) ?? product.variants?.find((variant) => variant.isAvailable) ?? product.variants?.[0] ?? null
-  );
-  const [quantity, setQuantity] = useState(1);
+  const initialVariant = defaultVariantFor(product);
+  const [selectedVariant, setSelectedVariant] = useState<EcommerceProductVariant | null>(initialVariant);
+  const [quantity, setQuantity] = useState(() => minimumQuantityFor(product, initialVariant));
   const [added, setAdded] = useState(false);
   const addItem = useCartStore((state) => state.addItem);
   const router = useRouter();
@@ -36,6 +47,7 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
 
   const variantWholesaleMinimum = selectedVariant?.wholesaleMinQty ?? product.wholesaleMinQty ?? 1;
   const productWholesaleMinimum = product.wholesaleMinQty ?? 1;
+  const minimumQuantity = minimumQuantityFor(product, selectedVariant);
   const displayPrice = selectedVariant?.wholesalePrice !== undefined &&
     selectedVariant.wholesalePrice !== null && quantity >= variantWholesaleMinimum
     ? selectedVariant.wholesalePrice
@@ -43,7 +55,7 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
         product.wholesalePrice !== null && quantity >= productWholesaleMinimum
       ? product.wholesalePrice
       : selectedVariant?.priceOverride ?? product.discountPrice ?? product.basePrice;
-  const inStock =
+  const hasBaseStock =
     !product.trackInventory ||
     product.allowBackorder ||
     (selectedVariant
@@ -52,7 +64,8 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
   const inventoryLimit = product.trackInventory && !product.allowBackorder
     ? selectedVariant?.stockQuantity ?? product.totalStock
     : undefined;
-  const maxQuantity = Math.max(1, Math.min(1000, inventoryLimit ?? 1000));
+  const inStock = hasBaseStock && (inventoryLimit === undefined || inventoryLimit >= minimumQuantity);
+  const maxQuantity = Math.max(minimumQuantity, Math.min(1000, inventoryLimit ?? 1000));
 
   function selectOption(key: string, value: string) {
     const match = product.variants?.find((variant) =>
@@ -63,8 +76,11 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
     );
     if (match) {
       setSelectedVariant(match);
+      const nextMinimum = minimumQuantityFor(product, match);
       if (product.trackInventory && !product.allowBackorder) {
-        setQuantity((current) => Math.max(1, Math.min(current, match.stockQuantity)));
+        setQuantity((current) => Math.max(nextMinimum, Math.min(current, match.stockQuantity)));
+      } else {
+        setQuantity((current) => Math.max(nextMinimum, current));
       }
     }
   }
@@ -133,12 +149,18 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
 
       <div className="flex items-center gap-2 text-sm text-slate-600">
         <span className={cn("h-2 w-2 rounded-full", inStock ? "bg-emerald-500" : "bg-slate-300")} />
-        {inStock ? "In stock" : "Out of stock"}
+        {inStock
+          ? product.saleChannel === "wholesale"
+            ? `In stock · minimum order ${minimumQuantity}`
+            : "In stock"
+          : product.saleChannel === "wholesale" && hasBaseStock
+            ? `Not enough stock for the minimum order of ${minimumQuantity}`
+            : "Out of stock"}
       </div>
 
       <div className="flex flex-wrap gap-3">
         <div className="flex items-center rounded-xl border border-slate-200 bg-white">
-          <button type="button" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="h-11 w-10" aria-label="Decrease quantity">−</button>
+          <button type="button" onClick={() => setQuantity(Math.max(minimumQuantity, quantity - 1))} disabled={quantity <= minimumQuantity} className="h-11 w-10 disabled:cursor-not-allowed disabled:text-slate-300" aria-label="Decrease quantity">−</button>
           <span className="w-10 text-center text-sm font-semibold">{quantity}</span>
           <button type="button" onClick={() => setQuantity(Math.min(maxQuantity, quantity + 1))} disabled={quantity >= maxQuantity} className="h-11 w-10 disabled:cursor-not-allowed disabled:text-slate-300" aria-label="Increase quantity">+</button>
         </div>
