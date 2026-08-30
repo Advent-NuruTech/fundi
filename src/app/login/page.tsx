@@ -11,8 +11,6 @@ import Image from "next/image";
 
 import { useAuth } from "@/features/auth/components/auth-context";
 import { loginSchema, type LoginValues } from "@/schemas/auth.schema";
-import { acceptInvitationByToken } from "@/services/firestore.service";
-import { supabase } from "@/lib/supabase";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,14 +50,7 @@ function LoginForm() {
       await login(values.email, values.password);
 
       setStep("setting_up");
-
-      if (inviteToken) {
-        const { data } = await supabase.auth.getUser();
-        if (data.user) {
-          await acceptInvitationByToken(inviteToken, data.user.id);
-          await refreshProfile();
-        }
-      }
+      await refreshProfile();
 
       setStep("redirecting");
       toast.success(inviteToken ? "Invitation accepted! Welcome aboard." : "Welcome back");

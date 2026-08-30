@@ -95,7 +95,7 @@ function OfflineBanner() {
 
   if (variant === "reconnected") {
     return (
-      <div className="fixed top-0 inset-x-0 z-[9999] flex items-center gap-2 bg-emerald-600 px-4 py-2 text-sm text-white shadow-md">
+      <div className="relative z-50 flex shrink-0 items-center gap-2 bg-emerald-600 px-4 py-2 text-sm text-white shadow-md">
         <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isSyncing ? "animate-spin" : ""}`} />
         <span className="flex-1">
           {isSyncing
@@ -111,7 +111,7 @@ function OfflineBanner() {
 
   if (variant === "pending") {
     return (
-      <div className="fixed top-0 inset-x-0 z-[9999] flex items-center justify-between gap-2 bg-blue-600 px-4 py-2 text-sm text-white shadow-md">
+      <div className="relative z-50 flex shrink-0 items-center justify-between gap-2 bg-blue-600 px-4 py-2 text-sm text-white shadow-md">
         <span className="flex flex-1 items-center gap-2">
           <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isSyncing ? "animate-spin" : ""}`} />
           {isSyncing
@@ -133,7 +133,7 @@ function OfflineBanner() {
 
   // Offline — amber banner across the top
   return (
-    <div className="fixed top-0 inset-x-0 z-[9999] flex items-center gap-3 bg-amber-500 px-4 py-2.5 text-sm font-medium text-white shadow-md">
+    <div className="relative z-50 flex shrink-0 items-center gap-3 bg-amber-500 px-4 py-2.5 text-sm font-medium text-white shadow-md">
       <WifiOff className="h-4 w-4 shrink-0" />
       <span className="flex-1">
         You&apos;re offline — viewing saved data.{" "}
@@ -148,18 +148,22 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
       <SubscriptionGuard>
-        <OfflineBanner />
-        <PortalProvisioner />
-        <ExpiryReminder />
-        <TrialBanner />
-        <Sidebar>
-          {children}
-        </Sidebar>
-        {/* Desktop sync dot — still useful for sync state at a glance */}
-        <div className="fixed bottom-20 right-4 z-40 hidden lg:block">
-          <SyncIndicator />
+        <div className="flex h-[calc(100dvh-var(--safe-area-top)-var(--safe-area-bottom))] min-h-0 flex-col overflow-hidden">
+          <OfflineBanner />
+          <PortalProvisioner />
+          <ExpiryReminder />
+          <TrialBanner />
+          <div className="min-h-0 flex-1">
+            <Sidebar>
+              {children}
+            </Sidebar>
+          </div>
+          {/* Desktop sync dot — still useful for sync state at a glance */}
+          <div className="fixed bottom-20 right-4 z-40 hidden lg:block">
+            <SyncIndicator />
+          </div>
+          <InstallPrompt />
         </div>
-        <InstallPrompt />
       </SubscriptionGuard>
     </AuthGuard>
   );

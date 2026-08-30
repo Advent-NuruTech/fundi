@@ -71,7 +71,7 @@ export function TrialBanner() {
 
   return (
     <div
-      className={`fixed top-0 inset-x-0 z-[9998] flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-white shadow-md ${bg}`}
+      className={`relative z-50 flex shrink-0 items-center justify-between gap-3 px-4 py-2.5 text-sm text-white shadow-md ${bg}`}
     >
       <div className="flex min-w-0 items-center gap-2">
         <Icon className="h-4 w-4 shrink-0" />

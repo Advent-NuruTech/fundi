@@ -77,15 +77,16 @@ export function BusinessSwitcher() {
       <DropdownMenu
         align="start"
         className="min-w-[240px]"
+        wrapperClassName="block w-full min-w-0"
         trigger={
           <button
             type="button"
-            className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left transition hover:bg-slate-50"
+            className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-xl border border-slate-200 px-3 py-2 text-left transition hover:bg-slate-50"
           >
             <span className="flex min-w-0 items-center gap-2">
               <span className="text-base leading-none">{activeConfig.emoji}</span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-emerald-700">{activeName}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-emerald-700" title={activeName}>{activeName}</span>
                 <span className="block truncate text-[11px] text-slate-500">{activeConfig.tagline}</span>
               </span>
             </span>

@@ -8,9 +8,16 @@ interface DropdownMenuProps {
   children: ReactNode;
   align?: "start" | "end";
   className?: string;
+  wrapperClassName?: string;
 }
 
-export function DropdownMenu({ trigger, children, align = "end", className }: DropdownMenuProps) {
+export function DropdownMenu({
+  trigger,
+  children,
+  align = "end",
+  className,
+  wrapperClassName,
+}: DropdownMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -27,7 +34,7 @@ export function DropdownMenu({ trigger, children, align = "end", className }: Dr
   }, [open]);
 
   return (
-    <div ref={ref} className="relative inline-block">
+    <div ref={ref} className={cn("relative inline-block", wrapperClassName)}>
       <div onClick={() => setOpen((prev) => !prev)}>{trigger}</div>
       {open && (
         <div

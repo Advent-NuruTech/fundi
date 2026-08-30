@@ -31,6 +31,116 @@ function getDb() {
   });
 }
 
+type InvitationActivationResult =
+  | { accepted: true }
+  | { accepted: false; error?: string };
+
+async function activatePendingEmployeeInvitation(
+  db: ReturnType<typeof getDb>,
+  accessToken: string
+): Promise<InvitationActivationResult> {
+  const {
+    data: { user },
+    error: userError,
+  } = await db.auth.getUser(accessToken);
+  if (userError || !user) {
+    throw new Error(userError?.message ?? "Could not verify the signed-in employee.");
+  }
+
+  const { data: invitation, error: invitationError } = await db
+    .from("employee_invitations")
+    .select("id, business_id, expires_at")
+    .eq("invited_uid", user.id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (invitationError) throw invitationError;
+
+  if (!invitation) {
+    const { data: profile, error: profileError } = await db
+      .from("profiles")
+      .select("active")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileError) throw profileError;
+
+    return profile?.active === false
+      ? {
+          accepted: false,
+          error: "This employee account is inactive. Ask the business owner to send a new invitation.",
+        }
+      : { accepted: false };
+  }
+
+  if (new Date(invitation.expires_at).getTime() <= Date.now()) {
+    return {
+      accepted: false,
+      error: "This invitation has expired. Ask the business owner to send a new invitation.",
+    };
+  }
+
+  const [profileResult, memberResult] = await Promise.all([
+    db.from("profiles").select("active").eq("id", user.id).maybeSingle(),
+    db
+      .from("business_members")
+      .select("id, active")
+      .eq("profile_id", user.id)
+      .eq("business_id", invitation.business_id)
+      .maybeSingle(),
+  ]);
+
+  if (profileResult.error) throw profileResult.error;
+  if (memberResult.error) throw memberResult.error;
+  if (!profileResult.data || !memberResult.data) {
+    throw new Error("The employee invitation is missing its profile or business membership.");
+  }
+
+  const previousProfileActive = profileResult.data.active;
+  const previousMemberActive = memberResult.data.active;
+  const acceptedAt = new Date().toISOString();
+
+  const { error: memberActivationError } = await db
+    .from("business_members")
+    .update({ active: true })
+    .eq("id", memberResult.data.id);
+  if (memberActivationError) throw memberActivationError;
+
+  const { error: profileActivationError } = await db
+    .from("profiles")
+    .update({ active: true })
+    .eq("id", user.id);
+  if (profileActivationError) {
+    await db
+      .from("business_members")
+      .update({ active: previousMemberActive })
+      .eq("id", memberResult.data.id);
+    throw profileActivationError;
+  }
+
+  const { data: acceptedInvitation, error: acceptanceError } = await db
+    .from("employee_invitations")
+    .update({ status: "accepted", accepted_at: acceptedAt })
+    .eq("id", invitation.id)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (acceptanceError || !acceptedInvitation) {
+    await Promise.all([
+      db.from("profiles").update({ active: previousProfileActive }).eq("id", user.id),
+      db
+        .from("business_members")
+        .update({ active: previousMemberActive })
+        .eq("id", memberResult.data.id),
+    ]);
+    throw acceptanceError ?? new Error("The invitation could not be accepted.");
+  }
+
+  return { accepted: true };
+}
+
 /**
  * Login endpoint (staff + customer portal).
  *
@@ -109,8 +219,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 500 });
   }
 
-  // 3. Success -> reset the lockout state.
+  // 3. Correct credentials -> reset lockout state, then activate a matching
+  // pending employee invitation before the browser receives the session. This
+  // prevents the inactive-profile guard from immediately signing the user out.
   await clearLoginAttempts(db, identifier).catch(() => {});
 
-  return NextResponse.json({ session });
+  let invitationResult: InvitationActivationResult;
+  try {
+    invitationResult = await activatePendingEmployeeInvitation(db, session.access_token);
+  } catch (error) {
+    console.error("[login] Could not activate employee invitation", error);
+    return NextResponse.json(
+      { error: "Your credentials are correct, but FundiFlow could not activate your invitation. Please try again." },
+      { status: 500 }
+    );
+  }
+
+  if (!invitationResult.accepted && invitationResult.error) {
+    return NextResponse.json({ error: invitationResult.error }, { status: 403 });
+  }
+
+  return NextResponse.json({ session, invitationAccepted: invitationResult.accepted });
 }

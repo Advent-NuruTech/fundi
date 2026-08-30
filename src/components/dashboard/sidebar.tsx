@@ -204,10 +204,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-50">
       {/* Mobile header with notification/message bells */}
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
-        <div className="flex items-center gap-3">
+      <header className="z-40 flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <button
             type="button"
             className="rounded-lg border border-slate-300 p-2"
@@ -215,17 +215,22 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <div className="text-base font-semibold text-emerald-700">{business?.name || "FundiFlow"}</div>
+          <div
+            className="min-w-0 flex-1 truncate text-base font-semibold text-emerald-700"
+            title={business?.name || "FundiFlow"}
+          >
+            {business?.name || "FundiFlow"}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <MessageBell />
           <NotificationBell />
         </div>
       </header>
 
-      <div className="mx-auto flex h-full max-w-[1500px]">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1500px] flex-1">
         {/* Desktop sidebar - no notification icons here */}
-        <aside className="hidden h-screen w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
+        <aside className="hidden h-full min-h-0 w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
           <div className="flex h-full flex-col">
             <div className="border-b border-slate-200 px-4 py-4">
               <BusinessSwitcher />
@@ -311,21 +316,21 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Mobile sidebar overlay */}
-        {open && <aside className="fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-200 bg-white lg:hidden">{Drawer}</aside>}
+        {open && <aside className="fixed bottom-[var(--safe-area-bottom)] left-[var(--safe-area-left)] top-[var(--safe-area-top)] z-50 w-72 max-w-[calc(100vw-var(--safe-area-left)-var(--safe-area-right))] border-r border-slate-200 bg-white lg:hidden">{Drawer}</aside>}
         {open && <button className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={() => setOpen(false)} aria-label="Close menu" />}
 
         {/* Main content area with desktop notification/message bar */}
-        <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* Desktop notification/message bar - only visible on lg+ */}
           <div className="hidden border-b border-slate-200 bg-white lg:flex items-center justify-end gap-2 px-6 py-2">
-            <span className="text-xs text-slate-400 mr-auto">
+            <span className="mr-auto min-w-0 truncate text-xs text-slate-400" title={business?.name || "FundiFlow"}>
               {business?.name || "FundiFlow"}
             </span>
             <SyncIndicator />
             <MessageBell />
             <NotificationBell />
           </div>
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-6 sm:p-6 sm:pb-8">{children}</div>
         </main>
       </div>
     </div>
