@@ -129,24 +129,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   // Resolve memberships + decide which business is active, then load it.
-  // Active business = last chosen (if still a member) → primary profile
-  // business → first membership. Synthesizes a membership from the profile
-  // when business_members is empty, so single-business accounts keep working.
+  // Active business = last chosen (if still a member) → the primary profile
+  // business (when it has a matching membership) → first membership. A raw
+  // profiles.business_id is never treated as permission to access a business.
   const resolveActiveContext = useCallback(
     async (uid: string, resolved: UserProfile) => {
       let rows: BusinessMembership[] = [];
       if (!isOffline()) {
         rows = await fetchUserMemberships(uid).catch(() => []);
-      }
-      if (!rows.length && resolved.businessId) {
-        rows = [
-          {
-            businessId: resolved.businessId,
-            businessName: "My Business",
-            role: resolved.role,
-            roles: resolved.roles?.length ? resolved.roles : resolved.role ? [resolved.role] : [],
-          },
-        ];
       }
       setMemberships(rows);
 
@@ -156,7 +146,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (stored && ids.has(stored) && stored) ||
         (resolved.businessId && ids.has(resolved.businessId) && resolved.businessId) ||
         rows[0]?.businessId ||
-        resolved.businessId ||
         null;
 
       setActiveBusinessId(active);
@@ -381,7 +370,7 @@ export function useAuth() {
 }
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, memberships } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const routeAllowed = canAccessRoute(user, pathname);
@@ -399,10 +388,18 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       return;
     }
 
+    // A business dashboard is meaningful only while an active membership
+    // exists. This also prevents a removed employee from being reconstructed
+    // from the legacy profiles.business_id field after a reload.
+    if (user.role !== "customer" && memberships.length === 0) {
+      logoutUser().finally(() => router.replace("/login"));
+      return;
+    }
+
     if (!routeAllowed) {
       router.replace(user.role === "customer" ? "/portal" : "/dashboard");
     }
-  }, [loading, user, pathname, routeAllowed, router]);
+  }, [loading, memberships.length, user, pathname, routeAllowed, router]);
 
   if (loading) {
     return (
@@ -415,7 +412,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user || !user.active || !routeAllowed) {
+  if (!user || !user.active || (user.role !== "customer" && memberships.length === 0) || !routeAllowed) {
     return null;
   }
 

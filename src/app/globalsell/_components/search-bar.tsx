@@ -2,13 +2,14 @@
 
 import { Search } from "lucide-react";
 import { useMarketplaceSearchStore } from "@/store/marketplace-search-store";
+import { cn } from "@/lib/utils";
 
-export function MarketplaceSearchBar() {
+export function MarketplaceSearchBar({ className }: { className?: string }) {
   const search = useMarketplaceSearchStore((s) => s.search);
   const setSearch = useMarketplaceSearchStore((s) => s.setSearch);
 
   return (
-    <div className="relative w-full">
+    <div className={cn("relative w-full", className)}>
       <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
       <input
         type="search"

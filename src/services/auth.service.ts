@@ -4,7 +4,76 @@ import {
   fetchUserProfileByEmail,
   fetchUserProfile,
 } from "@/services/firestore.service";
-import type { UserRole } from "@/types/domain";
+import type { UserProfile, UserRole } from "@/types/domain";
+
+export interface TeamInvitation {
+  id: string;
+  email: string;
+  displayName: string;
+  roles: UserRole[];
+  invitedUid?: string;
+  status: "pending" | "accepted" | "revoked";
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt?: string;
+}
+
+export interface OrphanedEmployeeAccount {
+  uid: string;
+  email: string;
+  displayName: string;
+  createdAt: string;
+}
+
+export interface TeamDirectory {
+  members: UserProfile[];
+  invitations: TeamInvitation[];
+  orphanedAccounts: OrphanedEmployeeAccount[];
+}
+
+export type TeamManagementAction =
+  | "set_membership_active"
+  | "delete_membership"
+  | "revoke_invitation"
+  | "complete_orphan"
+  | "delete_orphan";
+
+async function callTeamManagementAPI<T>(
+  method: "GET" | "PATCH",
+  businessId: string,
+  body?: Record<string, unknown>
+): Promise<T> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) throw new Error("Not authenticated");
+
+  const url = method === "GET" ? `/api/employees?businessId=${encodeURIComponent(businessId)}` : "/api/employees";
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify({ businessId, ...body }) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "Could not update the team directory.");
+  return data as T;
+}
+
+export function fetchTeamDirectory(businessId: string) {
+  return callTeamManagementAPI<TeamDirectory>("GET", businessId);
+}
+
+export function manageTeamRecord(
+  businessId: string,
+  action: TeamManagementAction,
+  payload: Record<string, unknown> = {}
+) {
+  return callTeamManagementAPI<{ success: true; temporaryPassword?: string; token?: string }>("PATCH", businessId, {
+    action,
+    ...payload,
+  });
+}
 
 async function callOnboardAPI(accessToken: string, body: Record<string, unknown> = {}) {
   const res = await fetch("/api/auth/onboard", {

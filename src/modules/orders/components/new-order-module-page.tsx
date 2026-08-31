@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Ruler, Users, Truck, Layers, Banknote } from "lucide-react";
 import { formatKes } from "@/lib/utils";
+import { isNetworkError, isOffline } from "@/lib/offline-write";
 
 const ITEM_TYPE_LABELS: Record<OrderItemType, string> = {
   tailored: "Tailored",
@@ -546,7 +547,11 @@ export function NewOrderModulePage() {
         })
       );
     } catch (error) {
-      toast.error(error instanceof Error ? `Could not upload item reference: ${error.message}` : "Could not upload an item reference");
+      toast.error(
+        isOffline() || isNetworkError(error)
+          ? "Your item reference image was not uploaded. Please connect to a stable internet connection and try again."
+          : "Your item reference image was not uploaded. Please try again."
+      );
       return;
     }
     const orderItems = buildItemsPayload(referenceImageUrls).map((item, index) => {
@@ -620,7 +625,11 @@ export function NewOrderModulePage() {
           });
           await appendOrderImageId(businessId, orderId, meta.id);
         } catch (error) {
-          toast.error(error instanceof Error ? `Order created but image upload failed: ${error.message}` : "Order created but image upload failed");
+          toast.error(
+            isOffline() || isNetworkError(error)
+              ? "Order created, but the image was not uploaded. Please connect to a stable internet connection and try again."
+              : "Order created, but the image was not uploaded. Please try again."
+          );
         }
       }
       await notifyNewOrder(businessId, orderNumber, customer.fullName, orderId, user.uid);
@@ -663,8 +672,12 @@ export function NewOrderModulePage() {
 
       toast.success(isGroup ? "Group order created" : "Order created");
       router.push(`/orders/${orderId}`);
-    } catch {
-      toast.error("Could not create order");
+    } catch (error) {
+      toast.error(
+        isOffline() || isNetworkError(error)
+          ? "Network connection problem. Please connect to a stable internet connection and try again."
+          : "The order was not created. Please try again."
+      );
     }
   };
 

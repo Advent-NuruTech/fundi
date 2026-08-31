@@ -10,7 +10,7 @@ import { ProductShareButton } from "@/modules/globalsell/components/product-shar
 import { fetchStorefrontProduct, fetchStorefrontProducts, resolveStorefront } from "@/services/storefront.service";
 import { truncateShareDescription } from "@/lib/product-share";
 import { isAllowedImageUrl } from "@/lib/utils";
-import { productUrl, shopUrl, storeUrl } from "@/lib/storefront-url";
+import { productUrl, SHOP_ORIGIN, shopUrl, storeUrl } from "@/lib/storefront-url";
 import type { EcommerceProduct } from "@/types/ecommerce";
 
 type Props = { params: Promise<{ handle: string; productSlug: string }> };
@@ -50,10 +50,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const description = truncateShareDescription(product.description) || `Buy ${product.name} from ${resolution.store.storeName} on FundiFlow.`;
   const images = shareableProductImages(product).map((image) => ({ url: image.url, alt: image.altText ?? product.name }));
   return {
-    title: `${product.name} — ${resolution.store.storeName}`,
+    metadataBase: new URL(SHOP_ORIGIN),
+    title: { absolute: `${product.name} — ${resolution.store.storeName}` },
     description,
     alternates: { canonical },
-    openGraph: { type: "website", url: canonical, siteName: "FundiFlow Marketplace", title: product.name, description, images },
+    openGraph: { type: "website", locale: "en_KE", url: canonical, siteName: resolution.store.storeName, title: product.name, description, images },
     twitter: { card: "summary_large_image", title: product.name, description, images: images?.map((image) => image.url) },
     robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large" } },
   };
@@ -127,7 +128,7 @@ export default async function StorefrontProductPage({ params }: Props) {
         <div className="space-y-5">
           <Link href={storeUrl(store.publicHandle)} className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:underline"><Store className="h-4 w-4" /> {store.storeName}</Link>
           <div className="flex items-start justify-between gap-4">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">{product.name}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{product.name}</h1>
             <ProductShareButton
               name={product.name}
               description={product.description}

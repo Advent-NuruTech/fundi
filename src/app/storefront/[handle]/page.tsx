@@ -6,7 +6,7 @@ import { StoreHeader } from "@/modules/globalsell/components/store-header";
 import { ProductCard } from "@/modules/globalsell/components/product-card";
 import { fetchStorefrontProducts, resolveStorefront } from "@/services/storefront.service";
 import { isAllowedImageUrl } from "@/lib/utils";
-import { storeUrl } from "@/lib/storefront-url";
+import { SHOP_ORIGIN, storeUrl } from "@/lib/storefront-url";
 
 type Props = { params: Promise<{ handle: string }> };
 
@@ -31,13 +31,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       : undefined;
 
   return {
-    title: `${store.storeName}${store.location ? ` — ${store.location}` : ""}`,
+    metadataBase: new URL(SHOP_ORIGIN),
+    title: { absolute: `${store.storeName}${store.location ? ` — ${store.location}` : ""}` },
     description,
+    applicationName: store.storeName,
     alternates: { canonical },
     openGraph: {
       type: "website",
+      locale: "en_KE",
       url: canonical,
-      siteName: "FundiFlow Marketplace",
+      siteName: store.storeName,
       title: store.storeName,
       description,
       images,
@@ -96,4 +99,3 @@ export default async function StorefrontPage({ params }: Props) {
     </main>
   );
 }
-

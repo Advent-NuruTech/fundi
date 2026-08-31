@@ -2,6 +2,8 @@ import Image from "next/image";
 import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";
 import { isAllowedImageUrl } from "@/lib/utils";
+import { storeUrl } from "@/lib/storefront-url";
+import { StoreShareButton } from "@/modules/globalsell/components/store-share-button";
 
 interface StoreHeaderProps {
   store: EcommerceStore;
@@ -45,7 +47,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
             )}
           </div>
 
-            <div className="pb-1">
+            <div className="min-w-0 flex-1 pb-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <h1 className="text-xl font-bold text-slate-900">{store.storeName}</h1>
                 {store.isVerified && (
@@ -60,6 +62,12 @@ export function StoreHeader({ store }: StoreHeaderProps) {
               <span className="text-xs text-slate-500 ml-1">New Store</span>
             </div>
           </div>
+          <StoreShareButton
+            storeName={store.storeName}
+            storeUrl={storeUrl(store.publicHandle)}
+            description={store.description}
+            className="mb-1 shrink-0 gap-1.5 px-2.5 text-xs sm:px-3 sm:text-sm"
+          />
         </div>
 
         {store.description && (

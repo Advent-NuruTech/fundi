@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Package, ChevronLeft, ChevronRight, Loader2, SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Package, ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { ProductCard } from "@/modules/globalsell/components/product-card";
 import { MarketplaceFilters } from "@/modules/globalsell/components/marketplace-filters";
 import { useMarketplace } from "@/modules/globalsell/hooks/use-marketplace";
@@ -9,6 +9,7 @@ import { useMarketplaceSearchStore } from "@/store/marketplace-search-store";
 import { DiscoverMarquee } from "./discover-marquee";
 import { Button } from "@/components/ui/button";
 import type { EcommerceSaleChannel } from "@/types/ecommerce";
+import { useMarketplaceFilterStore } from "@/store/marketplace-filter-store";
 
 interface BrowsePageProps {
   channel?: EcommerceSaleChannel;
@@ -27,13 +28,18 @@ export function BrowsePage({
 
   const search = useMarketplaceSearchStore((s) => s.search);
   const setSearch = useMarketplaceSearchStore((s) => s.setSearch);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarOpen = useMarketplaceFilterStore((s) => s.mobileFiltersOpen);
+  const setSidebarOpen = useMarketplaceFilterStore((s) => s.setMobileFiltersOpen);
 
   const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     updateFilters({ search: search || undefined });
   }, [search, updateFilters]);
+
+  useEffect(() => {
+    return () => setSidebarOpen(false);
+  }, [setSidebarOpen]);
 
   function handlePageChange(page: number) {
     goToPage(page);
@@ -164,19 +170,6 @@ export function BrowsePage({
           </div>
         </div>
       </div>
-
-      {/* Thumb-friendly mobile filter action */}
-      {!sidebarOpen && (
-        <Button
-          type="button"
-          onClick={() => setSidebarOpen(true)}
-          className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 z-30 h-12 -translate-x-1/2 gap-2 rounded-full border border-emerald-400/30 bg-slate-950 px-6 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(15,23,42,0.3)] hover:bg-slate-800 lg:hidden"
-          aria-label="Open filters and sorting"
-        >
-          <SlidersHorizontal className="h-4 w-4 text-emerald-400" />
-          Filter &amp; Sort
-        </Button>
-      )}
 
       {/* Mobile filters drawer */}
       {sidebarOpen && (

@@ -1097,20 +1097,16 @@ export function listenMembers(businessId: string, callback: (rows: UserProfile[]
 export async function deactivateMember(businessId: string, memberUid: string, active: boolean) {
   const payload = transformKeysToSnake({ active, lastActiveAt: new Date().toISOString() } as Record<string, unknown>);
   await supabase.from('business_members').update(payload).eq('business_id', businessId).eq('profile_id', memberUid);
-  await supabase.from('profiles').update(payload).eq('id', memberUid);
 }
 
 export async function removeMemberFromBusiness(businessId: string, memberUid: string) {
   await supabase.from('business_members').delete().eq('business_id', businessId).eq('profile_id', memberUid);
-  const payload = transformKeysToSnake({ active: false, lastActiveAt: new Date().toISOString() } as Record<string, unknown>);
-  await supabase.from('profiles').update(payload).eq('id', memberUid);
 }
 
 export async function updateMemberRoles(businessId: string, memberUid: string, roles: UserRole[]) {
   const cleanRoles = normalizedRoles(roles);
   const payload = transformKeysToSnake({ roles: cleanRoles, role: roleFromRoles(cleanRoles) } as Record<string, unknown>);
   await supabase.from('business_members').update(payload).eq('business_id', businessId).eq('profile_id', memberUid);
-  await supabase.from('profiles').update(payload).eq('id', memberUid);
 }
 
 export async function updateMemberCompensation(
@@ -1124,7 +1120,6 @@ export async function updateMemberCompensation(
 ) {
   const snakePayload = transformKeysToSnake(payload as Record<string, unknown>);
   await supabase.from('business_members').update(snakePayload).eq('business_id', businessId).eq('profile_id', memberUid);
-  await supabase.from('profiles').update(snakePayload).eq('id', memberUid);
 }
 
 // â”€â”€â”€ INVITATIONS â”€â”€â”€
@@ -1219,25 +1214,11 @@ export function listenInvitations(businessId: string, callback: (rows: EmployeeI
       return;
     }
 
-    const now = Date.now();
     const invitations = transformArrayToCamel<EmployeeInvitation>(data as Record<string, unknown>[]);
-    const expiredPending = invitations.filter((invite) => {
-      const expiresAt = toDate(invite.expiresAt as unknown as string);
-      return invite.status === "pending" && expiresAt && expiresAt.getTime() <= now;
-    });
-
-    await Promise.all(
-      expiredPending.map((invite) =>
-        supabase.from('employee_invitations').delete().eq('id', invite.id)
-      )
-    );
-
-    const active = invitations.filter((invite) => {
-      const expiresAt = toDate(invite.expiresAt as unknown as string);
-      return invite.status !== "pending" || !expiresAt || expiresAt.getTime() > now;
-    });
-    callback(active);
-    cacheCollection('invitations', businessId, active as unknown as Array<Record<string, unknown>>).catch(() => {});
+    // Invitation attempts are business records. Keep expired and revoked rows
+    // so an owner can audit them or finish an interrupted setup later.
+    callback(invitations);
+    cacheCollection('invitations', businessId, invitations as unknown as Array<Record<string, unknown>>).catch(() => {});
   };
   fetchAndCallback();
   const offReconnect = refetchOnReconnect(fetchAndCallback);

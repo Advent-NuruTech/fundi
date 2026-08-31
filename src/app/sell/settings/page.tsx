@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import type { EcommerceStore } from "@/types/ecommerce";
 import { normalizeHandle, storeUrl } from "@/lib/storefront-url";
+import { StoreShareButton } from "@/modules/globalsell/components/store-share-button";
 
 const schema = z.object({
   storeName: z.string().min(2, "Store name is required"),
@@ -169,13 +170,21 @@ export default function StoreSettingsPage() {
           </p>
         </div>
         {store && (
-          <Link href={storeUrl(store.publicHandle)} target="_blank">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Globe className="h-4 w-4" />
-              View Store
-              <ExternalLink className="h-3 w-3" />
-            </Button>
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <StoreShareButton
+              storeName={store.storeName}
+              storeUrl={storeUrl(store.publicHandle)}
+              description={store.description}
+              className="gap-1.5 px-2.5 text-xs sm:px-3 sm:text-sm"
+            />
+            <Link href={storeUrl(store.publicHandle)} target="_blank">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">View Store</span>
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </Link>
+          </div>
         )}
       </div>
 

@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
+import { SlidersHorizontal } from "lucide-react";
 import { CartNavButton } from "./cart-nav-button";
 import { MarketplaceSearchBar } from "./search-bar";
 import { ProfileButton } from "./profile-button";
 import { GlobalSellChannelDropdown } from "./channel-dropdown";
 import { shopUrl } from "@/lib/storefront-url";
+import { Button } from "@/components/ui/button";
+import { useMarketplaceFilterStore } from "@/store/marketplace-filter-store";
 
 export function GlobalSellHeader() {
+  const pathname = usePathname();
+  const setMobileFiltersOpen = useMarketplaceFilterStore((s) => s.setMobileFiltersOpen);
+  const showMobileFilter = ["/", "/globalsell", "/retail", "/globalsell/retail", "/wholesale", "/globalsell/wholesale", "/both", "/globalsell/both"].includes(pathname);
+
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -45,8 +53,21 @@ export function GlobalSellHeader() {
         </div>
 
         {/* Search — mobile */}
-        <div className="pb-2.5 md:hidden">
-          <MarketplaceSearchBar />
+        <div className="flex items-center gap-2 pb-2.5 md:hidden">
+          <MarketplaceSearchBar className="min-w-0 flex-1" />
+          {showMobileFilter && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10 shrink-0 gap-1.5 rounded-full px-3 text-xs"
+              onClick={() => setMobileFiltersOpen(true)}
+              aria-label="Open filters and sorting"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Filter
+            </Button>
+          )}
         </div>
       </div>
     </header>

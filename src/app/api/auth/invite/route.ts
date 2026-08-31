@@ -141,7 +141,32 @@ export async function POST(request: Request) {
     const tempPassword = buildTempPassword();
     const token = crypto.randomUUID();
     let employeeUid: string;
-    let deleteAuthUserOnFailure = false;
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+    // Record the invitation attempt before provisioning the Auth user. If a
+    // later step fails, the owner can see and complete the incomplete setup
+    // from Team instead of losing the employee's details.
+    const { data: invitationAttempt, error: invitationAttemptError } = await admin
+      .from("employee_invitations")
+      .insert({
+        business_id: businessId,
+        email,
+        display_name: displayName,
+        roles,
+        token,
+        temporary_password: tempPassword,
+        invited_by_uid: caller.id,
+        invited_by_name: safeInviterName,
+        status: "pending",
+        expires_at: expiresAt,
+      })
+      .select("id")
+      .single();
+    if (invitationAttemptError || !invitationAttempt) {
+      throw new Error(
+        `Could not record the invitation: ${invitationAttemptError?.message ?? "No invitation was returned"}`
+      );
+    }
 
     const { data: userData, error: createError } = await admin.auth.admin.createUser({
       email,
@@ -165,6 +190,7 @@ export async function POST(request: Request) {
         metadata?.business_id === businessId;
 
       if (!isRecoverableOrphan) {
+        await admin.from("employee_invitations").update({ status: "revoked" }).eq("id", invitationAttempt.id);
         return NextResponse.json(
           {
             error:
@@ -185,6 +211,7 @@ export async function POST(request: Request) {
         throw new Error(`Could not check the existing employee profile: ${profileLookupError.message}`);
       }
       if (existingProfile) {
+        await admin.from("employee_invitations").update({ status: "revoked" }).eq("id", invitationAttempt.id);
         return NextResponse.json(
           { error: "This employee already has a FundiFlow account." },
           { status: 409 }
@@ -206,10 +233,16 @@ export async function POST(request: Request) {
       }
 
       employeeUid = existingUser.id;
-      deleteAuthUserOnFailure = true;
     } else {
       employeeUid = userData.user.id;
-      deleteAuthUserOnFailure = true;
+    }
+
+    const { error: invitationLinkError } = await admin
+      .from("employee_invitations")
+      .update({ invited_uid: employeeUid })
+      .eq("id", invitationAttempt.id);
+    if (invitationLinkError) {
+      throw new Error(`Could not link the invitation to the employee account: ${invitationLinkError.message}`);
     }
 
     const compensation =
@@ -261,37 +294,9 @@ export async function POST(request: Request) {
         throw new Error(`Could not create the employee membership: ${businessMemberError.message}`);
       }
 
-      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      const { data: inviteData, error: inviteError } = await admin
-        .from("employee_invitations")
-        .insert({
-          business_id: businessId,
-          email,
-          display_name: displayName,
-          roles,
-          token,
-          invited_uid: employeeUid,
-          temporary_password: tempPassword,
-          invited_by_uid: caller.id,
-          invited_by_name: safeInviterName,
-          status: "pending",
-          expires_at: expiresAt,
-        })
-        .select("id")
-        .single();
-
-      if (inviteError || !inviteData) {
-        throw new Error(
-          `Could not create the invitation record: ${inviteError?.message ?? "No invitation was returned"}`
-        );
-      }
     } catch (setupError) {
-      if (deleteAuthUserOnFailure) {
-        const { error: cleanupError } = await admin.auth.admin.deleteUser(employeeUid);
-        if (cleanupError) {
-          console.error("[invite] Failed to clean up Auth user", employeeUid, cleanupError);
-        }
-      }
+      // Do not delete the Auth user or the invitation attempt here. Keeping
+      // both gives the business owner a recoverable, editable orphan record.
       throw setupError;
     }
 
