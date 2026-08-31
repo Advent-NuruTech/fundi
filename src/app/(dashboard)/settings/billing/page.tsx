@@ -132,7 +132,10 @@ export default function BillingDashboardPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiFetch("/api/billing/portal", { cache: "no-store" });
+      const res = await apiFetch("/api/billing/portal", {
+        cache: "no-store",
+        headers: user?.businessId ? { "X-Business-ID": user.businessId } : {},
+      });
       if (!res.ok) {
         const j = await res.json();
         throw new Error(j.error ?? "Failed to load billing data");
@@ -143,7 +146,7 @@ export default function BillingDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.businessId]);
 
   useEffect(() => {
     if (user?.role === "owner") {
@@ -162,7 +165,10 @@ export default function BillingDashboardPage() {
     paymentPollRef.current = setInterval(async () => {
       paymentPollCountRef.current += 1;
       try {
-        const res = await apiFetch("/api/billing/portal", { cache: "no-store" });
+        const res = await apiFetch("/api/billing/portal", {
+          cache: "no-store",
+          headers: user?.businessId ? { "X-Business-ID": user.businessId } : {},
+        });
         if (res.ok) {
           const fresh = await res.json() as BillingPortalData;
           setData(fresh);
@@ -346,7 +352,15 @@ export default function BillingDashboardPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <PlanBadge planSlug={subscription.planSlug} />
+                  {plan.isBusinessSpecific && (
+                    <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                      Custom for your business
+                    </span>
+                  )}
                 </div>
+                {plan.isBusinessSpecific && (
+                  <p className="mt-2 text-sm font-bold text-slate-800">{plan.name}</p>
+                )}
                 <p className="mt-3 text-2xl font-black text-slate-900">
                   {formatKes(plan.monthlyPrice)}
                   <span className="text-sm font-normal text-slate-400">/month</span>
@@ -444,6 +458,73 @@ export default function BillingDashboardPage() {
           </div>
 
           {/* ── Plan actions ──────────────────────────────────────────────── */}
+          <Card className={plan.isBusinessSpecific ? "border-violet-200 bg-violet-50/30" : ""}>
+            <CardContent className="p-5">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Your plan capabilities</h2>
+                  <p className="text-sm text-slate-500">
+                    These are the limits and features currently active for your business.
+                  </p>
+                </div>
+                {plan.isBusinessSpecific && (
+                  <span className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 sm:mt-0">
+                    <Sparkles className="h-3.5 w-3.5" /> Business-specific plan
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                {[
+                  ["Users", plan.limits.maxUsers],
+                  ["Customers", plan.limits.maxCustomers],
+                  ["Orders / month", plan.limits.maxOrdersPerMonth],
+                  ["Inventory items", plan.limits.maxInventoryItems],
+                  ["SMS / month", plan.limits.smsPerMonth],
+                  ["Branches", plan.limits.maxBranches],
+                  ["AI credits / month", plan.limits.aiCreditsPerMonth],
+                  ["Storage", plan.limits.storageGb == null ? null : `${plan.limits.storageGb} GB`],
+                  ["Global Sell listings", plan.limits.globalSellListings],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
+                    <p className="mt-1 text-base font-black text-slate-900">
+                      {value == null
+                        ? "Unlimited"
+                        : typeof value === "number"
+                          ? value.toLocaleString("en-KE")
+                          : value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["Analytics", plan.features.analytics],
+                  ["Full finance dashboard", plan.features.financeFullDashboard],
+                  ["Team management", plan.features.teamManagement],
+                  ["WhatsApp notifications", plan.features.whatsappNotifications],
+                  ["Multi-location", plan.features.multiLocation],
+                  ["API access", plan.features.apiAccess],
+                  ["Custom SMS Sender ID", plan.features.customSmsSenderId],
+                  ["AI Assistant", plan.features.aiAssistant !== "none", plan.features.aiAssistant],
+                ].map(([label, enabled, detail]) => (
+                  <div key={String(label)} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2.5 text-sm">
+                    {enabled ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <XCircle className="h-4 w-4 shrink-0 text-slate-300" />
+                    )}
+                    <span className={enabled ? "font-medium text-slate-700" : "text-slate-400"}>
+                      {label}{detail ? ` (${detail})` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           {subscription.status === "active" && (
             <div>
               <h2 className="mb-3 text-lg font-bold text-slate-900">Manage subscription</h2>

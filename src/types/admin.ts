@@ -163,6 +163,8 @@ export interface AdminBusinessDetail extends AdminBusinessSummary {
     senderIdEnabled: boolean;
     senderIdStatus: string;
   };
+  effectivePlan: import("@/types/billing").PlanConfig | null;
+  planOverride: import("@/types/billing").BusinessPlanOverride | null;
   subscription: {
     id: string;
     planSlug: string;
@@ -222,24 +224,41 @@ export interface AdminMemberRecord {
 // ── SMS analytics ─────────────────────────────────────────────────────────────
 
 export interface SmsAnalytics {
-  totalSent: number;
-  totalDelivered: number;
-  totalFailed: number;
+  inventory: SmsInventorySummary;
+  thisMonth: number;
   byBusiness: SmsBusinessStat[];
   trend: SmsDataPoint[];
+}
+
+export interface SmsInventorySummary {
+  available: number;
+  totalAdded: number;
+  totalUsed: number;
+  updatedAt: string | null;
 }
 
 export interface SmsBusinessStat {
   businessId: string;
   businessName: string;
   sent: number;
-  delivered: number;
-  failed: number;
 }
 
 export interface SmsDataPoint {
   date: string;
   sent: number;
+}
+
+export interface SmsLedgerEntry {
+  id: string;
+  businessId: string | null;
+  businessName: string;
+  units: number;
+  entryType: "stock_addition" | "usage" | "refund" | "adjustment";
+  reference: string;
+  balanceAfter: number;
+  note: string | null;
+  recipient: string | null;
+  createdAt: string;
 }
 
 // ── System health ─────────────────────────────────────────────────────────────

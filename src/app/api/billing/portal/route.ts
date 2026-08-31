@@ -6,7 +6,7 @@ import {
   mapDbToAuditLog,
 } from "@/lib/billing/subscription-service";
 import { getPlanConfig as getDefaultPlanConfig } from "@/lib/billing/constants";
-import { getEffectivePlanConfig } from "@/lib/billing/dynamic-config";
+import { getEffectiveBusinessPlanConfig } from "@/lib/billing/dynamic-config";
 import type { PlanSlug } from "@/types/billing";
 
 export async function GET(request: Request) {
@@ -34,12 +34,28 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No workspace" }, { status: 404 });
     }
 
-    // Only owner can view billing portal
-    if (profile.role !== "owner") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const requestedWorkspaceId = request.headers.get("X-Business-ID");
+    const workspaceId = requestedWorkspaceId || (profile.business_id as string);
 
-    const workspaceId = profile.business_id as string;
+    // The active workspace may differ from the profile's original business for
+    // multi-business owners. Verify ownership before honoring the header.
+    if (workspaceId === profile.business_id) {
+      if (profile.role !== "owner") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    } else {
+      const { data: ownerMembership } = await admin
+        .from("business_members")
+        .select("id")
+        .eq("business_id", workspaceId)
+        .eq("profile_id", user.id)
+        .eq("role", "owner")
+        .eq("active", true)
+        .maybeSingle();
+      if (!ownerMembership) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
 
     // ── Fetch subscription ─────────────────────────────────────────────────
     const { data: subRow, error: subErr } = await admin
@@ -122,7 +138,11 @@ export async function GET(request: Request) {
     const payments = (paymentRows ?? []).map(mapDbToBillingPayment);
     const auditLogs = (auditRows ?? []).map(mapDbToAuditLog);
     const plan = subscription
-      ? (await getEffectivePlanConfig(subscription.planSlug as PlanSlug, admin)) ??
+      ? (await getEffectiveBusinessPlanConfig(
+          workspaceId,
+          subscription.planSlug as PlanSlug,
+          admin
+        )) ??
         getDefaultPlanConfig(subscription.planSlug as PlanSlug)
       : null;
 

@@ -1,4 +1,4 @@
-import type { Business, Order, TaxMode } from "@/types/domain";
+import type { Business, Order, OrderItemPart, TaxMode } from "@/types/domain";
 
 /** The business fields that are safe and required on a customer-facing document. */
 export type ReceiptBusiness = Pick<
@@ -21,6 +21,7 @@ export type ReceiptBusiness = Pick<
 export interface ReceiptLineItem {
   name: string;
   notes?: string;
+  includedParts?: OrderItemPart[];
   quantity: number;
   rate: number;
   amount: number;
@@ -108,6 +109,7 @@ export function buildReceiptData(order: Order, business: ReceiptBusiness): Recei
         ]
           .filter(Boolean)
           .join(" · ") || undefined,
+        includedParts: item.includedParts,
         quantity: item.quantity,
         rate: item.unitPrice ?? 0,
         // `totalAmount` is the price snapshot committed at sale time. Prefer it

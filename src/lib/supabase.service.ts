@@ -1411,6 +1411,13 @@ export interface OrderItemInput {
   costPrice?: number;
   discount?: number;
   totalAmount?: number;
+  /** Non-billable pieces included in this priced package/set. */
+  includedParts?: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    notes?: string;
+  }>;
   measurements?: Record<string, unknown>;
   styleNotes?: string;
   assignedTailorId?: string;
@@ -1895,6 +1902,7 @@ function buildOrderItemRow(orderId: string, item: OrderItemInput, sortOrder: num
     cost_price: Number(item.costPrice) || 0,
     discount,
     total_amount: totalAmount,
+    included_parts: item.includedParts ?? [],
     measurements: item.measurements ?? {},
     style_notes: item.styleNotes ?? null,
     assigned_tailor_id: item.assignedTailorId ?? null,
@@ -2414,7 +2422,7 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
     const runOrdersQuery = () => {
       let ordersQuery = supabase
         .from('orders')
-        .select('*, order_garments(name, quantity, agreed_price, sort_order), order_items(id, item_type, inventory_item_id, inventory_item_name, sku, quantity, unit, unit_price, cost_price, discount, total_amount, size, color, brand, member_customer_id, member_name, assigned_tailor_name, stage, delivery_status, status, sort_order)')
+        .select('*, order_garments(name, quantity, agreed_price, sort_order), order_items(id, item_type, inventory_item_id, inventory_item_name, sku, quantity, unit, unit_price, cost_price, discount, total_amount, included_parts, size, color, brand, member_customer_id, member_name, assigned_tailor_name, stage, delivery_status, status, sort_order)')
         .eq('business_id', businessId);
       if (isBranchScoped('orders')) {
         ordersQuery = ordersQuery.eq('branch_id', activeBranchId as string);
@@ -2483,6 +2491,9 @@ export function listenOrders(businessId: string, callback: (rows: Order[]) => vo
               costPrice: i.cost_price == null ? undefined : Number(i.cost_price),
               discount: Number(i.discount) || 0,
               totalAmount: Number(i.total_amount),
+              includedParts: Array.isArray(i.included_parts)
+                ? (i.included_parts as OrderItem["includedParts"])
+                : [],
               assignedTailorName: i.assigned_tailor_name as string | undefined,
               stage: i.stage as ProductionStage | undefined,
               deliveryStatus: i.delivery_status as DeliveryStatus,
@@ -2626,6 +2637,9 @@ async function assembleOrder(orderId: string): Promise<Order | null> {
         costPrice: row.cost_price == null ? undefined : Number(row.cost_price),
         discount: Number(row.discount) || 0,
         totalAmount: Number(row.total_amount),
+        includedParts: Array.isArray(row.included_parts)
+          ? (row.included_parts as OrderItem["includedParts"])
+          : [],
         measurements: (row.measurements as unknown as MeasurementSet) ?? undefined,
         styleNotes: row.style_notes as string | undefined,
         assignedTailorId: row.assigned_tailor_id as string | undefined,
@@ -2866,7 +2880,7 @@ export async function updateOrderItem(
       'itemType' | 'inventoryItemId' | 'inventoryItemName' | 'sku' | 'categoryName' |
       'size' | 'color' | 'brand' | 'memberCustomerId' | 'memberName' |
       'referenceImageUrl' | 'unit' | 'unitPrice' | 'costPrice' | 'discount' |
-      'quantity' | 'measurements' | 'styleNotes' | 'notes' | 'status' |
+      'quantity' | 'includedParts' | 'measurements' | 'styleNotes' | 'notes' | 'status' |
       'assignedTailorId' | 'assignedTailorName' | 'readyDate'
     >
   >

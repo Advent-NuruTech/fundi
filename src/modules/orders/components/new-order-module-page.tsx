@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Ruler, Users, Truck } from "lucide-react";
+import { Plus, Trash2, Ruler, Users, Truck, Layers, Banknote } from "lucide-react";
 import { formatKes } from "@/lib/utils";
 
 const ITEM_TYPE_LABELS: Record<OrderItemType, string> = {
@@ -68,6 +68,13 @@ interface MeasurementRow {
   value: string;
 }
 
+interface DraftIncludedPart {
+  id: string;
+  name: string;
+  quantity: number;
+  notes: string;
+}
+
 interface DraftOrderItem {
   key: string;
   itemType: OrderItemType;
@@ -79,6 +86,7 @@ interface DraftOrderItem {
   unitPrice: number;
   costPrice: number;
   discount: number;
+  includedParts: DraftIncludedPart[];
   sku?: string;
   categoryName?: string;
   size?: string;
@@ -113,6 +121,7 @@ function newDraftItem(key: string, itemType: OrderItemType): DraftOrderItem {
     unitPrice: 0,
     costPrice: 0,
     discount: 0,
+    includedParts: [],
     styleNotes: "",
     assignedTailorId: "",
     captureMeasurements: false,
@@ -263,12 +272,40 @@ export function NewOrderModulePage() {
     setItems((prev) => [...prev, item]);
   };
 
+  const addPackage = () => {
+    const item = newDraftItem(newKey(), "tailored");
+    item.unit = "set";
+    item.captureMeasurements = true;
+    item.assignedTailorId = orderTailorId ?? "";
+    item.measurements = STANDARD_MEASUREMENTS.map((name) => ({ name, value: "" }));
+    item.includedParts = [{ id: newKey("part"), name: "", quantity: 1, notes: "" }];
+    setItems((prev) => [...prev, item]);
+  };
+
   const removeItem = (key: string) => {
     setItems((prev) => prev.filter((i) => i.key !== key));
   };
 
   const updateItem = (key: string, patch: Partial<DraftOrderItem>) => {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
+  };
+
+  const addIncludedPart = (key: string) => {
+    setItems((prev) => prev.map((item) => item.key === key
+      ? { ...item, includedParts: [...item.includedParts, { id: newKey("part"), name: "", quantity: 1, notes: "" }] }
+      : item));
+  };
+
+  const updateIncludedPart = (key: string, partId: string, patch: Partial<DraftIncludedPart>) => {
+    setItems((prev) => prev.map((item) => item.key === key
+      ? { ...item, includedParts: item.includedParts.map((part) => part.id === partId ? { ...part, ...patch } : part) }
+      : item));
+  };
+
+  const removeIncludedPart = (key: string, partId: string) => {
+    setItems((prev) => prev.map((item) => item.key === key
+      ? { ...item, includedParts: item.includedParts.filter((part) => part.id !== partId) }
+      : item));
   };
 
   const selectInventoryItem = (key: string, materialId: string) => {
@@ -327,6 +364,9 @@ export function NewOrderModulePage() {
       ),
     [items]
   );
+  const initialPaymentAmount = Math.max(0, Number(watch("depositAmount")) || 0);
+  const orderTotal = itemSubtotal + (deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0);
+  const balanceAfterInitialPayment = Math.max(0, orderTotal - initialPaymentAmount);
 
   const memberSubtotal = useMemo(
     () =>
@@ -350,6 +390,10 @@ export function NewOrderModulePage() {
       }
       if (!Number(item.quantity) || Number(item.quantity) < 1) {
         toast.error(`"${item.name}" needs a quantity of at least 1`);
+        return false;
+      }
+      if (item.includedParts.some((part) => !part.name.trim())) {
+        toast.error(`Every piece included in "${item.name || "this package"}" needs a name`);
         return false;
       }
       if ((item.itemType === "ready_made" || item.itemType === "material") && item.inventoryItemId) {
@@ -378,6 +422,12 @@ export function NewOrderModulePage() {
       unitPrice: Number(item.unitPrice) || 0,
       costPrice: Number(item.costPrice) || 0,
       discount: Number(item.discount) || 0,
+      includedParts: item.includedParts.map((part) => ({
+        id: part.id,
+        name: part.name.trim(),
+        quantity: Math.max(1, Number(part.quantity) || 1),
+        notes: part.notes.trim() || undefined,
+      })),
       measurements: item.captureMeasurements ? buildMeasurements(item.measurements) : undefined,
       styleNotes: item.styleNotes.trim() || undefined,
       assignedTailorId: item.assignedTailorId || undefined,
@@ -452,6 +502,13 @@ export function NewOrderModulePage() {
 
     if (isGroup && items.some((item) => !item.memberCustomerId)) {
       toast.error("Choose the member receiving each group-order item");
+      return;
+    }
+
+    const initialPayment = Number(values.depositAmount) || 0;
+    const currentTotal = itemSubtotal + (deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0);
+    if (initialPayment > currentTotal) {
+      toast.error("Initial payment cannot be more than the order total");
       return;
     }
 
@@ -589,7 +646,12 @@ export function NewOrderModulePage() {
           onboardingIncluded = true;
         }
 
-        const smsResult = await sendSms(communicationContact.phone, message);
+        const smsResult = await sendSms(
+          communicationContact.phone,
+          message,
+          undefined,
+          businessId
+        );
         if (smsResult.success) {
           if (onboardingIncluded) {
             await markPortalOnboardingSent(businessId, communicationContact.id).catch(() => {});
@@ -651,8 +713,11 @@ export function NewOrderModulePage() {
               <Input type="date" {...register("dueDate")} />
             </div>
             <div>
-              <Label>Deposit</Label>
+              <Label>Initial payment (KES)</Label>
               <Input type="number" min={0} step="any" {...register("depositAmount")} />
+              <p className="mt-1.5 text-xs text-slate-500">
+                The amount received now. It becomes the first payment and is included in Total paid.
+              </p>
             </div>
             <div className="md:col-span-2">
               <Label>Design / style notes</Label>
@@ -705,9 +770,13 @@ export function NewOrderModulePage() {
       {true && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2">
-              {isGroupOrder ? "Assign items to members" : "Order Items"}
+            <CardTitle className="flex flex-col items-start justify-between gap-3 lg:flex-row lg:items-center">
+              <span>{isGroupOrder ? "Assign items to members" : "Order items"}</span>
               <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" onClick={addPackage}>
+                  <Layers className="mr-1 h-3.5 w-3.5" />
+                  Package / set
+                </Button>
                 {(Object.keys(ITEM_TYPE_LABELS) as OrderItemType[]).map((type) => (
                   <Button
                     key={type}
@@ -725,10 +794,10 @@ export function NewOrderModulePage() {
           </CardHeader>
           <CardContent className="grid gap-4">
             {items.length === 0 && (
-              <p className="text-sm text-slate-500">
-                Add line items — you can mix a tailored suit, ready-made t-shirts,
-                fabric by the meter and accessories in one order.
-              </p>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                <p className="font-medium text-slate-800">Add a single item or a package.</p>
+                <p className="mt-1">A package such as “Suit” has one price and can include non-priced pieces such as a shirt, trouser and half coat.</p>
+              </div>
             )}
 
             {items.map((item) => (
@@ -738,6 +807,11 @@ export function NewOrderModulePage() {
                     <Badge variant={item.itemType === "tailored" || item.itemType === "alteration" ? "warning" : "success"}>
                       {ITEM_TYPE_LABELS[item.itemType]}
                     </Badge>
+                    {item.includedParts.length > 0 && (
+                      <Badge variant="default" className="normal-case">
+                        <Layers className="mr-1 h-3 w-3" /> Package
+                      </Badge>
+                    )}
                     {item.inventoryItemId && (
                       <Badge variant="default">{item.sku || "Stock item"}</Badge>
                     )}
@@ -768,10 +842,10 @@ export function NewOrderModulePage() {
                   )}
                   {item.itemType !== "ready_made" && item.itemType !== "material" ? (
                     <div>
-                      <Label>{item.itemType === "service" ? "Service name" : "Item / garment name"}</Label>
+                      <Label>{item.includedParts.length > 0 ? "Package / set name" : item.itemType === "service" ? "Service name" : "Item / garment name"}</Label>
                       <Input
                         value={item.name}
-                        placeholder={item.itemType === "service" ? "e.g. Embroidery, Printing" : "e.g. Suit, Trouser"}
+                        placeholder={item.includedParts.length > 0 ? "e.g. Suit, School uniform set" : item.itemType === "service" ? "e.g. Embroidery, Printing" : "e.g. Suit, Trouser"}
                         onChange={(e) => updateItem(item.key, { name: e.target.value })}
                       />
                     </div>
@@ -796,7 +870,7 @@ export function NewOrderModulePage() {
                   )}
 
                   <div>
-                    <Label>Quantity</Label>
+                    <Label>{item.includedParts.length > 0 ? "Number of sets" : "Quantity"}</Label>
                     <Input
                       type="number"
                       min={1}
@@ -806,7 +880,7 @@ export function NewOrderModulePage() {
                     />
                   </div>
                   <div>
-                    <Label>Unit price (KES)</Label>
+                    <Label>{item.includedParts.length > 0 ? "Package price (KES)" : "Unit price (KES)"}</Label>
                     <Input
                       type="number"
                       min={0}
@@ -838,6 +912,39 @@ export function NewOrderModulePage() {
                           <option key={tailor.uid} value={tailor.uid}>{tailor.displayName}</option>
                         ))}
                       </Select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                        <Layers className="h-4 w-4 text-emerald-700" /> Included pieces
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        These sit inside the parent item and have no individual price.
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => addIncludedPart(item.key)}>
+                      <Plus className="mr-1 h-3.5 w-3.5" /> Add piece
+                    </Button>
+                  </div>
+                  {item.includedParts.length === 0 ? (
+                    <p className="mt-3 text-xs text-slate-500">Leave empty for a normal single item, or add pieces to turn it into a package.</p>
+                  ) : (
+                    <div className="mt-3 grid gap-2">
+                      {item.includedParts.map((part) => (
+                        <div key={part.id} className="grid gap-2 rounded-lg border border-emerald-100 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_90px_minmax(0,1fr)_40px] sm:items-center">
+                          <Input value={part.name} placeholder="Piece name, e.g. Trouser" onChange={(e) => updateIncludedPart(item.key, part.id, { name: e.target.value })} />
+                          <Input type="number" min={1} step={1} value={part.quantity} aria-label="Quantity per set" onChange={(e) => updateIncludedPart(item.key, part.id, { quantity: Number(e.target.value) })} />
+                          <Input value={part.notes} placeholder="Details (optional)" onChange={(e) => updateIncludedPart(item.key, part.id, { notes: e.target.value })} />
+                          <Button type="button" variant="outline" size="icon" aria-label={`Remove ${part.name || "piece"}`} onClick={() => removeIncludedPart(item.key, part.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                          </Button>
+                        </div>
+                      ))}
+                      <p className="text-[11px] text-slate-500">Quantity is per package/set.</p>
                     </div>
                   )}
                 </div>
@@ -1117,10 +1224,41 @@ export function NewOrderModulePage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Banknote className="h-5 w-5" /> Payment summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-xs font-medium text-slate-500">Order total</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{formatKes(orderTotal)}</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <p className="text-xs font-medium text-emerald-700">Total paid</p>
+              <p className="mt-1 text-lg font-semibold text-emerald-700">{formatKes(initialPaymentAmount)}</p>
+              <p className="mt-0.5 text-[11px] text-emerald-700/80">Starts with the initial payment above</p>
+            </div>
+            <div className="rounded-xl bg-rose-50 p-3">
+              <p className="text-xs font-medium text-rose-700">Balance due</p>
+              <p className="mt-1 text-lg font-semibold text-rose-700">{formatKes(balanceAfterInitialPayment)}</p>
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`${orderTotal > 0 ? Math.min(100, Math.round((initialPaymentAmount / orderTotal) * 100)) : 0}% paid`}>
+            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${orderTotal > 0 ? Math.min(100, (initialPaymentAmount / orderTotal) * 100) : 0}%` }} />
+          </div>
+          {initialPaymentAmount > orderTotal && (
+            <p className="mt-2 text-sm font-medium text-rose-600">Initial payment cannot exceed the order total.</p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6">
         <div className="min-w-0 text-left sm:text-right">
           <p className="text-lg font-semibold text-slate-900">
-            Total: {formatKes(itemSubtotal + (deliveryMethod === "delivery" ? Number(deliveryFee) || 0 : 0))}
+            Total: {formatKes(orderTotal)}
           </p>
           {deliveryMethod === "delivery" && Number(deliveryFee) > 0 && (
             <p className="text-xs text-slate-500">

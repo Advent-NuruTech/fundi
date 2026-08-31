@@ -1,14 +1,44 @@
 import { NextResponse } from "next/server";
 import { validateAdminRequest, writeAuditLog } from "@/lib/admin/validate";
 import type { AdminBusinessDetail } from "@/types/admin";
+import type { PlanFeatures, PlanLimits, PlanSlug } from "@/types/billing";
+import {
+  getBusinessPlanOverride,
+  getEffectiveBusinessPlanConfig,
+  getEffectivePlanConfig,
+} from "@/lib/billing/dynamic-config";
+import { ensureAllUsageMeters } from "@/lib/billing/usage-metering";
 import { z } from "zod";
+
+const standardPlanSchema = z.enum(["sindano", "fundi", "dhahabu"]);
+const limitsSchema = z.object({
+  maxUsers: z.number().int().min(0),
+  maxCustomers: z.number().int().min(0),
+  maxOrdersPerMonth: z.number().int().min(0),
+  maxInventoryItems: z.number().int().min(0),
+  smsPerMonth: z.number().int().min(0),
+  maxBranches: z.number().int().min(1),
+  aiCreditsPerMonth: z.number().int().min(0),
+  storageGb: z.number().min(0),
+  globalSellListings: z.number().int().min(0),
+});
+const featuresSchema = z.object({
+  analytics: z.boolean(),
+  financeFullDashboard: z.boolean(),
+  teamManagement: z.boolean(),
+  whatsappNotifications: z.boolean(),
+  multiLocation: z.boolean(),
+  apiAccess: z.boolean(),
+  aiAssistant: z.enum(["none", "limited", "full"]),
+  customSmsSenderId: z.boolean(),
+});
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("suspend") }),
   z.object({ action: z.literal("reactivate") }),
   z.object({
     action: z.literal("change_plan"),
-    planSlug: z.enum(["sindano", "fundi", "dhahabu", "custom"]),
+    planSlug: standardPlanSchema,
     reason: z.string().optional(),
   }),
   z.object({
@@ -26,7 +56,25 @@ const actionSchema = z.discriminatedUnion("action", [
     durationDays: z.number().int().min(1).max(730),
     reason: z.string().optional(),
   }),
+  z.object({
+    action: z.literal("set_plan_override"),
+    planSlug: standardPlanSchema,
+    customName: z.string().trim().min(1).max(80).nullable().optional(),
+    limits: limitsSchema,
+    features: featuresSchema,
+    reason: z.string().trim().max(500).optional(),
+  }),
+  z.object({
+    action: z.literal("reset_plan_override"),
+    reason: z.string().trim().max(500).optional(),
+  }),
 ]);
+
+function sparseDifferences<T extends object>(values: T, defaults: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([key, value]) => value !== defaults[key as keyof T])
+  ) as Partial<T>;
+}
 
 export async function GET(
   request: Request,
@@ -86,6 +134,14 @@ export async function GET(
       ? (profileRes.value.data as Record<string, unknown> | null)
       : null;
 
+  const planSlug = sub?.plan_slug as PlanSlug | undefined;
+  const [planOverride, effectivePlan] = planSlug
+    ? await Promise.all([
+        getBusinessPlanOverride(id, db),
+        getEffectiveBusinessPlanConfig(id, planSlug, db),
+      ])
+    : [null, null];
+
   const [empCount, custCount, branchCount] = await Promise.all([
     db.from("business_members").select("id", { count: "exact", head: true }).eq("business_id", id).eq("active", true),
     db.from("customers").select("id", { count: "exact", head: true }).eq("business_id", id),
@@ -123,6 +179,8 @@ export async function GET(
       senderIdEnabled: (sub?.sms_sender_id_enabled as boolean) ?? false,
       senderIdStatus: (sub?.sms_sender_id_status as string) ?? "none",
     },
+    effectivePlan,
+    planOverride,
     subscription: sub
       ? {
           id: sub.id as string,
@@ -247,6 +305,7 @@ export async function POST(
       const { planSlug, reason } = action;
       const { data: sub } = await db.from("subscriptions").select("plan_slug").eq("workspace_id", id).maybeSingle();
       await db.from("subscriptions").update({ plan_slug: planSlug, updated_at: new Date().toISOString() }).eq("workspace_id", id);
+      await db.from("business_plan_overrides").delete().eq("workspace_id", id);
       await db.from("billing_audit_logs").insert({
         workspace_id: id, user_id: uid,
         action: "admin_plan_change",
@@ -308,11 +367,133 @@ export async function POST(
         current_period_end: end.toISOString(),
         metadata: { manual: true, reason, admin_uid: uid },
       }, { onConflict: "workspace_id" });
+      await db.from("business_plan_overrides").delete().eq("workspace_id", id);
       await writeAuditLog(db, {
         adminUid: uid, adminEmail: email, action: "add_manual_subscription",
         resourceType: "subscription", resourceId: id, resourceName: biz.name,
         newState: { plan: planSlug, durationDays }, metadata: { reason },
         ipAddress, userAgent, severity: "warning",
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    case "set_plan_override": {
+      const { planSlug, customName, limits, features, reason } = action;
+      const { data: currentSub } = await db
+        .from("subscriptions")
+        .select("plan_slug")
+        .eq("workspace_id", id)
+        .maybeSingle();
+      if (!currentSub) {
+        return NextResponse.json(
+          { error: "Add a subscription before customising this business's plan" },
+          { status: 409 }
+        );
+      }
+
+      const [previousOverride, basePlan] = await Promise.all([
+        getBusinessPlanOverride(id, db),
+        getEffectivePlanConfig(planSlug, db),
+      ]);
+      if (!basePlan) {
+        return NextResponse.json({ error: "Invalid base plan" }, { status: 400 });
+      }
+
+      const limitOverrides = sparseDifferences<PlanLimits>(limits, basePlan.limits);
+      const featureOverrides = sparseDifferences<PlanFeatures>(features, basePlan.features);
+      const normalizedName = customName?.trim() || null;
+      const hasAdjustments =
+        normalizedName !== null ||
+        Object.keys(limitOverrides).length > 0 ||
+        Object.keys(featureOverrides).length > 0;
+
+      const { error: subError } = await db
+        .from("subscriptions")
+        .update({ plan_slug: planSlug, updated_at: new Date().toISOString() })
+        .eq("workspace_id", id);
+      if (subError) throw new Error(subError.message);
+
+      if (hasAdjustments) {
+        const { error: overrideError } = await db.from("business_plan_overrides").upsert(
+          {
+            workspace_id: id,
+            base_plan_slug: planSlug,
+            custom_name: normalizedName,
+            limits: limitOverrides,
+            features: featureOverrides,
+            updated_at: new Date().toISOString(),
+            updated_by: uid,
+          },
+          { onConflict: "workspace_id" }
+        );
+        if (overrideError) throw new Error(overrideError.message);
+      } else {
+        await db.from("business_plan_overrides").delete().eq("workspace_id", id);
+      }
+
+      await ensureAllUsageMeters(db, id).catch((error) => {
+        console.error("[business-plan-override] Could not refresh usage meters", error);
+      });
+      await db.from("billing_audit_logs").insert({
+        workspace_id: id,
+        user_id: uid,
+        action: "admin_business_plan_customized",
+        previous_state: previousOverride,
+        new_state: hasAdjustments
+          ? { base_plan_slug: planSlug, custom_name: normalizedName, limits: limitOverrides, features: featureOverrides }
+          : null,
+        metadata: { reason, admin_uid: uid },
+        performed_by_role: "system_owner",
+      });
+      await writeAuditLog(db, {
+        adminUid: uid,
+        adminEmail: email,
+        action: "customize_business_plan",
+        resourceType: "business_plan_override",
+        resourceId: id,
+        resourceName: biz.name,
+        previousState: previousOverride
+          ? (previousOverride as unknown as Record<string, unknown>)
+          : undefined,
+        newState: {
+          basePlan: planSlug,
+          customName: normalizedName,
+          limits: limitOverrides,
+          features: featureOverrides,
+        },
+        metadata: { reason },
+        ipAddress,
+        userAgent,
+        severity: "warning",
+      });
+      return NextResponse.json({ success: true, customized: hasAdjustments });
+    }
+
+    case "reset_plan_override": {
+      const previousOverride = await getBusinessPlanOverride(id, db);
+      const { error: deleteError } = await db
+        .from("business_plan_overrides")
+        .delete()
+        .eq("workspace_id", id);
+      if (deleteError) throw new Error(deleteError.message);
+
+      await ensureAllUsageMeters(db, id).catch((error) => {
+        console.error("[business-plan-override] Could not refresh usage meters", error);
+      });
+      await writeAuditLog(db, {
+        adminUid: uid,
+        adminEmail: email,
+        action: "reset_business_plan",
+        resourceType: "business_plan_override",
+        resourceId: id,
+        resourceName: biz.name,
+        previousState: previousOverride
+          ? (previousOverride as unknown as Record<string, unknown>)
+          : undefined,
+        metadata: { reason: action.reason },
+        ipAddress,
+        userAgent,
+        severity: "warning",
       });
       return NextResponse.json({ success: true });
     }

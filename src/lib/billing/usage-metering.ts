@@ -9,7 +9,7 @@ import type {
   UsageSummary,
   UsageTopup,
 } from "@/types/billing";
-import { getEffectivePlanConfig } from "./dynamic-config";
+import { getEffectiveBusinessPlanConfig } from "./dynamic-config";
 import { getWorkspaceSubscription } from "./subscription-service";
 import { koboToKes } from "./fees";
 import { GB } from "./topup-packages";
@@ -72,7 +72,7 @@ export async function ensureUsageMeter(
   if (!plan) {
     const sub = await getWorkspaceSubscription(admin, workspaceId);
     if (sub?.planSlug) {
-      plan = await getEffectivePlanConfig(sub.planSlug, admin);
+      plan = await getEffectiveBusinessPlanConfig(workspaceId, sub.planSlug, admin);
       cycleStart = sub.currentPeriodStart ?? null;
       cycleEnd = sub.currentPeriodEnd ?? null;
     }
@@ -130,7 +130,7 @@ export async function ensureAllUsageMeters(
   let cycleStart: string | null = null;
   let cycleEnd: string | null = null;
   if (sub?.planSlug) {
-    plan = await getEffectivePlanConfig(sub.planSlug, admin);
+    plan = await getEffectiveBusinessPlanConfig(workspaceId, sub.planSlug, admin);
     cycleStart = sub.currentPeriodStart ?? null;
     cycleEnd = sub.currentPeriodEnd ?? null;
   }

@@ -177,9 +177,17 @@ function TailoringOrderDetail({
           </CardHeader>
           <CardContent className="px-5 pb-5 space-y-2">
             {order.items.map((g, i) => (
-              <div key={i} className="flex items-center justify-between text-sm">
-                <span className="text-slate-700">{g.name}</span>
-                <span className="text-slate-500 text-xs">×{g.quantity}</span>
+              <div key={i} className="rounded-xl border border-slate-100 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-700">{g.name}</span>
+                  <span className="text-slate-500 text-xs">×{g.quantity}</span>
+                </div>
+                {(g.includedParts?.length ?? 0) > 0 && (
+                  <div className="mt-2 rounded-lg bg-emerald-50 px-2.5 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Included in this price</p>
+                    <p className="mt-1 text-xs text-slate-700">{g.includedParts?.map((part) => `${part.quantity}× ${part.name}`).join(" · ")}</p>
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>
@@ -197,7 +205,7 @@ function TailoringOrderDetail({
             <span className="text-sm font-semibold">{formatKes(order.totalAmount)}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-600">Paid</span>
+            <span className="text-sm text-slate-600">Total paid</span>
             <span className="text-sm font-semibold text-emerald-700">{formatKes(order.amountPaid)}</span>
           </div>
           {order.balanceAmount > 0 && (

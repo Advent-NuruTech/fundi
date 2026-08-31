@@ -162,6 +162,20 @@ export interface PlanConfig {
   features: PlanFeatures;
   color: string;
   accentColor: string;
+  /** True when capabilities were adjusted for one business by a platform admin. */
+  isBusinessSpecific?: boolean;
+  /** Optional label shown to that business instead of the base plan name. */
+  customName?: string | null;
+}
+
+export interface BusinessPlanOverride {
+  workspaceId: string;
+  basePlanSlug: Exclude<PlanSlug, "custom">;
+  customName: string | null;
+  limits: Partial<PlanLimits>;
+  features: Partial<PlanFeatures>;
+  updatedAt: string;
+  updatedBy: string | null;
 }
 
 export interface Subscription {

@@ -162,7 +162,7 @@ export function OrdersModulePage() {
     const active = filteredSummaryOrders.filter((order) => order.stage !== "delivered" && !order.isCancelled);
     const delivered = filteredSummaryOrders.filter((order) => order.stage === "delivered" && !order.isCancelled);
     const totalValue = filteredSummaryOrders.reduce((sum, order) => sum + order.subtotalAmount, 0);
-    const paidValue = filteredSummaryOrders.reduce((sum, order) => sum + (order.subtotalAmount - order.balanceAmount), 0);
+    const paidValue = filteredSummaryOrders.reduce((sum, order) => sum + order.amountPaid, 0);
     
     return {
       total: filteredSummaryOrders.length,
@@ -193,6 +193,7 @@ export function OrdersModulePage() {
         ) 
       },
       { header: "Due", cell: ({ row }) => row.original.dueDate },
+      { header: "Total paid", cell: ({ row }) => <span className="font-medium text-emerald-700">{formatKes(row.original.amountPaid)}</span> },
       { header: "Balance", cell: ({ row }) => formatKes(row.original.balanceAmount) },
     ],
     []
@@ -322,7 +323,7 @@ export function OrdersModulePage() {
             href="/finance"
           />
           <SummaryCard
-            label="Paid Amount"
+            label="Total Paid"
             value={formatKes(summaryData.paidValue)}
             tone="emerald"
             href="/payments"

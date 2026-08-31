@@ -8,11 +8,17 @@ export interface SendSmsResult {
   recipient?: string;
 }
 
-export async function sendSms(recipient: string, message: string, sender?: string): Promise<SendSmsResult> {
+export async function sendSms(
+  recipient: string,
+  message: string,
+  sender?: string,
+  businessId?: string
+): Promise<SendSmsResult> {
   const payload = {
     recipient,
     message,
     ...(sender?.trim() ? { sender: sender.trim() } : {}),
+    ...(businessId ? { businessId } : {}),
   };
 
   console.log("Sending SMS:", payload);

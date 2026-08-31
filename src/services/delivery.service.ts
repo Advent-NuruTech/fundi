@@ -141,7 +141,7 @@ export async function advanceOrderDelivery(
             order,
             baseMessage
           );
-            const result = await sendSms(order.customerPhone, message);
+            const result = await sendSms(order.customerPhone, message, undefined, businessId);
             if (result.success) {
               await logSmsEntry(businessId, {
                 orderId: order.id,

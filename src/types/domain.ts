@@ -578,6 +578,15 @@ export interface OrderItemMaterialUsage {
   recordedAt: string;
 }
 
+/** A non-billable piece included inside a priced order item/package. */
+export interface OrderItemPart {
+  id: string;
+  name: string;
+  /** Quantity included in each parent item / set. */
+  quantity: number;
+  notes?: string;
+}
+
 /**
  * One line on an order. Stores price/cost snapshots taken at sale time so
  * profit stays accurate even if the inventory item's prices change later.
@@ -607,6 +616,8 @@ export interface OrderItem {
   costPrice?: number;
   discount?: number;
   totalAmount: number;
+  /** Non-priced pieces contained in this package/set. */
+  includedParts?: OrderItemPart[];
   measurements?: MeasurementSet;
   styleNotes?: string;
   assignedTailorId?: string;

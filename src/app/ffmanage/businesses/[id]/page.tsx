@@ -7,12 +7,13 @@ import { useRouter, useParams } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { DeleteBusinessDialog } from "@/components/admin/delete-business-dialog";
 import { BusinessActionDialog } from "@/components/admin/business-action-dialog";
+import { BusinessPlanEditor } from "@/components/admin/business-plan-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatKes, formatDateLabel, cn } from "@/lib/utils";
 import {
-  ArrowLeft, Building2, Users, CreditCard, MessageSquare,
-  AlertTriangle, CheckCircle2, Settings2, Trash2, RefreshCw,
+  ArrowLeft, Building2, Users, CreditCard,
+  CheckCircle2, Settings2, Trash2,
   ChevronDown,
 } from "lucide-react";
 import type { AdminBusinessDetail } from "@/types/admin";
@@ -166,7 +167,13 @@ export default function AdminBusinessDetailPage() {
           {[
             { label: "Employees", value: business.employeeCount, icon: Users },
             { label: "Branches", value: business.branchCount, icon: Building2 },
-            { label: "Plan", value: business.plan?.toUpperCase() ?? "—", icon: CreditCard },
+            {
+              label: "Plan",
+              value: business.effectivePlan?.isBusinessSpecific
+                ? business.effectivePlan.name
+                : business.plan?.toUpperCase() ?? "—",
+              icon: CreditCard,
+            },
             { label: "Subscription", value: business.subscriptionStatus ?? "None", icon: CheckCircle2 },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
@@ -200,13 +207,19 @@ export default function AdminBusinessDetailPage() {
         {/* Tab content */}
         {activeTab === "overview" && (
           <div className="grid gap-4 lg:grid-cols-2">
+            <BusinessPlanEditor business={business} onSaved={fetchBusiness} />
             {/* Subscription details */}
             <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
               <h3 className="font-semibold text-slate-200 mb-4">Subscription</h3>
               {business.subscription ? (
                 <dl className="space-y-2.5">
                   {[
-                    ["Plan", business.subscription.planSlug?.toUpperCase()],
+                    [
+                      "Plan",
+                      business.effectivePlan?.isBusinessSpecific
+                        ? `${business.effectivePlan.name} (${business.subscription.planSlug.toUpperCase()} base)`
+                        : business.subscription.planSlug?.toUpperCase(),
+                    ],
                     ["Status", business.subscription.status],
                     ["Period start", business.subscription.currentPeriodStart ? formatDateLabel(business.subscription.currentPeriodStart) : "—"],
                     ["Period end", business.subscription.currentPeriodEnd ? formatDateLabel(business.subscription.currentPeriodEnd) : "—"],

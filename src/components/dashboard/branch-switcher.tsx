@@ -7,6 +7,7 @@ import { Store, Check, Plus, ChevronDown, Loader2, Lock, ArrowUpRight } from "lu
 import { useAuth } from "@/features/auth/components/auth-context";
 import { useSubscription } from "@/hooks/useSubscription";
 import { usePlanConfigs } from "@/hooks/usePlanConfigs";
+import { useBusinessPlan } from "@/hooks/useBusinessPlan";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export function BranchSwitcher() {
   const { branches, activeBranchId, switchBranch, addBranch } = useAuth();
   const { subscription } = useSubscription();
   const { data: planConfigs } = usePlanConfigs();
+  const { plan: businessPlan } = useBusinessPlan();
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -39,8 +41,9 @@ export function BranchSwitcher() {
 
   // Branches allowed by the active plan (includes the main branch).
   const planSlug = subscription?.planSlug;
-  const limit =
-    planSlug === "custom"
+  const limit = businessPlan
+    ? businessPlan.limits.maxBranches ?? Number.POSITIVE_INFINITY
+    : planSlug === "custom"
       ? Number.POSITIVE_INFINITY
       : planConfigs.branchLimits[planSlug as Exclude<PlanSlug, "custom">] ??
         planConfigs.branchLimits.sindano;

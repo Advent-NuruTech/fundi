@@ -372,6 +372,10 @@ export function OrderDetailModulePage() {
       toast.error("Quantity must be at least 1");
       return;
     }
+    if (itemDraft.includedParts?.some((part) => !part.name.trim())) {
+      toast.error("Every included piece needs a name");
+      return;
+    }
     setSavingItem(true);
     try {
       let referenceImageUrl = itemDraft.referenceImageUrl;
@@ -404,6 +408,12 @@ export function OrderDetailModulePage() {
         unitPrice: Number(itemDraft.unitPrice) || 0,
         costPrice: Number(itemDraft.costPrice) || 0,
         discount: Number(itemDraft.discount) || 0,
+        includedParts: (itemDraft.includedParts ?? []).map((part) => ({
+          ...part,
+          name: part.name.trim(),
+          quantity: Math.max(1, Number(part.quantity) || 1),
+          notes: part.notes?.trim() || undefined,
+        })),
         measurements: itemDraft.measurements ?? undefined,
         styleNotes: itemDraft.styleNotes?.trim() || undefined,
         notes: itemDraft.notes?.trim() || undefined,
@@ -499,7 +509,7 @@ export function OrderDetailModulePage() {
     const baseMessage = `${timeGreeting()} ${order.customerName || "Customer"},\n\nYour order "${orderLabel(order)}" has been delayed.\n${reasonLine}\nNew expected completion date:\n${formattedDate}\n\nWe apologize for the inconvenience.\n\nThank you for choosing ${business?.name ?? "us"}.`;
     try {
       const { message, onboardingIncluded, customerId } = await prepareMessageWithOnboarding(businessId, order, baseMessage);
-      const result = await sendSms(order.customerPhone, message);
+      const result = await sendSms(order.customerPhone, message, undefined, businessId);
       if (result.success) {
         await updateOrderSmsFields(businessId, orderId, {
           expectedReadyDate: new Date(expectedReadyDate).toISOString(),
@@ -836,6 +846,43 @@ export function OrderDetailModulePage() {
                 <Input value={itemDraft.status ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, status: e.target.value }))} placeholder="e.g. active" />
               </div>
             </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                    <Layers className="h-4 w-4 text-emerald-700" /> Included pieces
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-600">Non-priced pieces inside this package/set.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setItemDraft((draft) => ({
+                    ...draft,
+                    includedParts: [...(draft.includedParts ?? []), { id: crypto.randomUUID(), name: "", quantity: 1 }],
+                  }))}
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Add piece
+                </Button>
+              </div>
+              {(itemDraft.includedParts?.length ?? 0) === 0 ? (
+                <p className="mt-3 text-xs text-slate-500">No included pieces. This is a normal single item.</p>
+              ) : (
+                <div className="mt-3 grid gap-2">
+                  {itemDraft.includedParts?.map((part) => (
+                    <div key={part.id} className="grid gap-2 rounded-lg border border-emerald-100 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_80px_minmax(0,1fr)_40px] sm:items-center">
+                      <Input value={part.name} placeholder="Piece name" onChange={(e) => setItemDraft((draft) => ({ ...draft, includedParts: draft.includedParts?.map((entry) => entry.id === part.id ? { ...entry, name: e.target.value } : entry) }))} />
+                      <Input type="number" min={1} value={part.quantity} aria-label="Quantity per set" onChange={(e) => setItemDraft((draft) => ({ ...draft, includedParts: draft.includedParts?.map((entry) => entry.id === part.id ? { ...entry, quantity: Number(e.target.value) } : entry) }))} />
+                      <Input value={part.notes ?? ""} placeholder="Details (optional)" onChange={(e) => setItemDraft((draft) => ({ ...draft, includedParts: draft.includedParts?.map((entry) => entry.id === part.id ? { ...entry, notes: e.target.value } : entry) }))} />
+                      <Button type="button" variant="outline" size="icon" aria-label={`Remove ${part.name || "piece"}`} onClick={() => setItemDraft((draft) => ({ ...draft, includedParts: draft.includedParts?.filter((entry) => entry.id !== part.id) }))}>
+                        <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div><label className="mb-1 block text-xs font-medium text-slate-600">Measurements (cm — one "key: value" per line)</label><Textarea rows={3} value={Object.entries(itemDraft.measurements ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join("\n")} onChange={(e) => { const parsed: Record<string, number> = {}; for (const line of e.target.value.split("\n")) { const [k, v] = line.split(":"); if (k?.trim() && v !== undefined) { const num = Number(v.trim()); if (!Number.isNaN(num)) parsed[k.trim()] = num; } } setItemDraft((draft) => ({ ...draft, measurements: Object.keys(parsed).length > 0 ? parsed : undefined })); }} /></div>
             <div><label className="mb-1 block text-xs font-medium text-slate-600">Style details</label><Textarea rows={3} value={itemDraft.styleNotes ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, styleNotes: e.target.value }))} /></div>
             <div><label className="mb-1 block text-xs font-medium text-slate-600">Internal notes</label><Textarea rows={2} value={itemDraft.notes ?? ""} onChange={(e) => setItemDraft((draft) => ({ ...draft, notes: e.target.value }))} /></div>
@@ -1146,9 +1193,9 @@ export function OrderDetailModulePage() {
                       <p className="text-lg font-bold text-slate-900">{formatKes(order.subtotalAmount)}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Payment</p>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Payment progress</p>
                       <p className="text-sm text-slate-700">
-                        Paid: <span className="font-semibold text-emerald-600">{formatKes(order.amountPaid)}</span>
+                        Total paid: <span className="font-semibold text-emerald-600">{formatKes(order.amountPaid)}</span>
                         {order.balanceAmount > 0 && (
                           <> · Balance: <span className="font-semibold text-rose-600">{formatKes(order.balanceAmount)}</span></>
                         )}
@@ -1208,6 +1255,20 @@ export function OrderDetailModulePage() {
                                 <p className="text-[11px] text-slate-500 mt-0.5">
                                   {[item.size && `Size: ${item.size}`, item.color && `Color: ${item.color}`, item.brand && `Brand: ${item.brand}`].filter(Boolean).join(" · ")}
                                 </p>
+                              )}
+                              {(item.includedParts?.length ?? 0) > 0 && (
+                                <div className="mt-2 rounded-lg border border-emerald-100 bg-white px-2.5 py-2">
+                                  <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                                    <Layers className="h-3 w-3" /> Included in this price
+                                  </p>
+                                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {item.includedParts?.map((part) => (
+                                      <span key={part.id} className="rounded-md bg-emerald-50 px-2 py-1 text-xs text-slate-700" title={part.notes}>
+                                        {part.quantity}× {part.name}{part.notes ? ` · ${part.notes}` : ""}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                               {item.measurements && Object.keys(item.measurements).length > 0 && (
                                 <p className="text-xs text-slate-500 mt-0.5">

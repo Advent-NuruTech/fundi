@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBillingAdminClient } from "@/lib/billing/admin-client";
 import { getWorkspaceSubscription } from "@/lib/billing/subscription-service";
-import { getEffectivePlanConfig } from "@/lib/billing/dynamic-config";
+import { getEffectiveBusinessPlanConfig } from "@/lib/billing/dynamic-config";
 import { DEFAULT_BUSINESS_PERSONA_ID, getBusinessPersona, isPersonaId } from "@/lib/ai/personas";
 import { buildBusinessPersonaPrompt } from "@/lib/ai/prompts";
 import { buildBusinessContext } from "@/lib/ai/context";
@@ -89,7 +89,11 @@ async function planAllowsAi(admin: SupabaseClient, businessId: string): Promise<
   try {
     const sub = await getWorkspaceSubscription(admin, businessId);
     if (!sub?.planSlug) return true; // no plan → default open (usage is still metered)
-    const plan = await getEffectivePlanConfig(sub.planSlug, admin);
+    const plan = await getEffectiveBusinessPlanConfig(
+      businessId,
+      sub.planSlug,
+      admin
+    );
     return plan?.features.aiAssistant !== "none";
   } catch {
     return true; // fail open on config errors; credits remain the hard gate

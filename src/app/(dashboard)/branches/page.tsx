@@ -7,6 +7,7 @@ import { Store, Check, Plus, Loader2, Lock, ArrowUpRight, MapPin } from "lucide-
 import { useAuth } from "@/features/auth/components/auth-context";
 import { useSubscription } from "@/hooks/useSubscription";
 import { usePlanConfigs } from "@/hooks/usePlanConfigs";
+import { useBusinessPlan } from "@/hooks/useBusinessPlan";
 import { getBusinessTypeConfig } from "@/lib/business-types";
 import { cn } from "@/lib/utils";
 import type { PlanSlug } from "@/types/billing";
@@ -24,6 +25,7 @@ export default function BranchesPage() {
   const { branches, activeBranchId, switchBranch, addBranch, business, isOwner } = useAuth();
   const { subscription } = useSubscription();
   const { data: planConfigs } = usePlanConfigs();
+  const { plan: businessPlan } = useBusinessPlan();
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -32,8 +34,9 @@ export default function BranchesPage() {
 
   const cfg = getBusinessTypeConfig(business?.businessType);
   const planSlug = subscription?.planSlug;
-  const limit =
-    planSlug === "custom"
+  const limit = businessPlan
+    ? businessPlan.limits.maxBranches ?? Number.POSITIVE_INFINITY
+    : planSlug === "custom"
       ? Number.POSITIVE_INFINITY
       : planConfigs.branchLimits[planSlug as Exclude<PlanSlug, "custom">] ??
         planConfigs.branchLimits.sindano;

@@ -16,3 +16,10 @@ export const smsPacksPutSchema = z.object({
 });
 
 export type SmsPacksInput = z.infer<typeof smsPacksPutSchema>;
+
+export const smsStockAdditionSchema = z.object({
+  units: z.number().int().positive().max(100_000_000),
+  note: z.string().trim().max(240).optional().default(""),
+});
+
+export type SmsStockAdditionInput = z.infer<typeof smsStockAdditionSchema>;

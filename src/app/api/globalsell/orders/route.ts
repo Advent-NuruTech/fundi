@@ -33,6 +33,7 @@ function safeCheckoutError(message?: string) {
 }
 
 async function sendOrderSms(input: {
+  businessId: string;
   notificationPhone: string;
   storeName: string;
   orderNumber: string;
@@ -50,11 +51,22 @@ async function sendOrderSms(input: {
     `Order #${input.orderNumber}. Login to FundiFlow to confirm.`;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-  await fetch(`${baseUrl}/api/send-sms`, {
+  const response = await fetch(`${baseUrl}/api/send-sms`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ recipient: formattedPhone, message }),
+    headers: {
+      "Content-Type": "application/json",
+      "x-fundiflow-internal-key": process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+    },
+    body: JSON.stringify({
+      businessId: input.businessId,
+      recipient: formattedPhone,
+      message,
+    }),
   });
+  const result = (await response.json().catch(() => null)) as { success?: boolean; error?: string } | null;
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.error ?? "Order SMS was not accepted");
+  }
 }
 export async function POST(request: Request) {
   try {
@@ -221,6 +233,7 @@ export async function POST(request: Request) {
     if (store?.notification_phone && !order.smsSent) {
       try {
         await sendOrderSms({
+          businessId: order.sellerBusinessId,
           notificationPhone: store.notification_phone,
           storeName: store.store_name,
           orderNumber: order.orderNumber,

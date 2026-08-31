@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { transformKeysToCamel, transformArrayToCamel } from "@/lib/case-utils";
-import type { Customer, Order, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
+import type { Customer, Order, OrderItemPart, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
 import type { EcommerceOrder, EcommerceOrderItem, EcommerceStore } from "@/types/ecommerce";
 import type { ReceiptBusiness } from "@/lib/receipt";
 import { shopUrl } from "@/lib/storefront-url";
@@ -45,7 +45,7 @@ export interface CustomerSafeOrder {
   subtotalAmount: number;
   amountPaid: number;
   balanceAmount: number;
-  garments: Array<{ name: string; quantity: number; agreedPrice: number }>;
+  garments: Array<{ name: string; quantity: number; agreedPrice: number; includedParts?: OrderItemPart[] }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -327,6 +327,11 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
     .select("order_id, name, quantity, agreed_price")
     .in("order_id", orderIds);
 
+  const { data: orderItems } = await supabase
+    .from("order_items")
+    .select("order_id, inventory_item_name, quantity, unit_price, included_parts")
+    .in("order_id", orderIds);
+
   const garmentMap: Record<string, Array<{ name: string; quantity: number; agreedPrice: number }>> = {};
   for (const g of garments ?? []) {
     const key = g.order_id as string;
@@ -335,6 +340,20 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
       name: g.name as string,
       quantity: g.quantity as number,
       agreedPrice: Number(g.agreed_price ?? 0),
+    });
+  }
+
+  const itemMap: Record<string, Array<{ name: string; quantity: number; agreedPrice: number; includedParts?: OrderItemPart[] }>> = {};
+  for (const item of orderItems ?? []) {
+    const key = item.order_id as string;
+    if (!itemMap[key]) itemMap[key] = [];
+    itemMap[key].push({
+      name: (item.inventory_item_name as string) || "Item",
+      quantity: Number(item.quantity),
+      agreedPrice: Number(item.unit_price ?? 0),
+      includedParts: Array.isArray(item.included_parts)
+        ? transformArrayToCamel<OrderItemPart>(item.included_parts as Record<string, unknown>[])
+        : [],
     });
   }
 
@@ -352,7 +371,7 @@ export async function getMyOrders(customerIds: string[]): Promise<CustomerSafeOr
     subtotalAmount: Number(o.subtotal_amount),
     amountPaid: Number(o.amount_paid),
     balanceAmount: Number(o.balance_amount),
-    garments: garmentMap[o.id as string] ?? [],
+    garments: itemMap[o.id as string]?.length ? itemMap[o.id as string] : garmentMap[o.id as string] ?? [],
     createdAt: o.created_at as string,
     updatedAt: o.updated_at as string,
   }));
@@ -393,6 +412,21 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     .select("name, quantity, agreed_price")
     .eq("order_id", orderId);
 
+  const { data: orderItems } = await supabase
+    .from("order_items")
+    .select("inventory_item_name, quantity, unit_price, included_parts")
+    .eq("order_id", orderId)
+    .order("sort_order", { ascending: true });
+
+  const safeItems = (orderItems ?? []).map((item) => ({
+    name: (item.inventory_item_name as string) || "Item",
+    quantity: Number(item.quantity),
+    agreedPrice: Number(item.unit_price ?? 0),
+    includedParts: Array.isArray(item.included_parts)
+      ? transformArrayToCamel<OrderItemPart>(item.included_parts as Record<string, unknown>[])
+      : [],
+  }));
+
   return {
     id: order.id as string,
     trackingToken: (order.tracking_token as string) ?? "",
@@ -407,11 +441,11 @@ export async function getMyOrderById(orderId: string): Promise<CustomerSafeOrder
     subtotalAmount: Number(order.subtotal_amount),
     amountPaid: Number(order.amount_paid),
     balanceAmount: Number(order.balance_amount),
-    garments: (garments ?? []).map((g) => ({
-      name: g.name as string,
-      quantity: g.quantity as number,
-      agreedPrice: Number(g.agreed_price ?? 0),
-    })),
+    garments: safeItems.length > 0 ? safeItems : (garments ?? []).map((g) => ({
+        name: g.name as string,
+        quantity: g.quantity as number,
+        agreedPrice: Number(g.agreed_price ?? 0),
+      })),
     createdAt: order.created_at as string,
     updatedAt: order.updated_at as string,
   };
@@ -428,6 +462,7 @@ export interface PortalOrderItem {
   name: string;
   quantity: number;
   unitPrice: number;
+  includedParts?: OrderItemPart[];
 }
 
 export interface PortalOrder {
@@ -549,6 +584,7 @@ function toPortalOrder(order: CustomerSafeOrder): PortalOrder {
       name: g.name,
       quantity: g.quantity,
       unitPrice: g.agreedPrice,
+      includedParts: g.includedParts,
     })),
     tailoring: order,
   };

@@ -20,7 +20,13 @@ import {
   PLAN_CONFIGS,
   SMS_SENDER_ID_PRICE as DEFAULT_SMS_SENDER_ID_PRICE,
 } from "@/lib/billing/constants";
-import type { PlanConfig, PlanSlug } from "@/types/billing";
+import type {
+  BusinessPlanOverride,
+  PlanConfig,
+  PlanFeatures,
+  PlanLimits,
+  PlanSlug,
+} from "@/types/billing";
 
 /** The editable slice of a plan an admin can override. */
 export interface PlanPricingOverride {
@@ -42,6 +48,16 @@ export interface PlanPricingOverride {
 
 export type StandardPlanSlug = Exclude<PlanSlug, "custom">;
 export type PlanConfigsMap = Record<StandardPlanSlug, PlanConfig>;
+
+interface BusinessPlanOverrideRow {
+  workspace_id: string;
+  base_plan_slug: StandardPlanSlug;
+  custom_name: string | null;
+  limits: Partial<PlanLimits> | null;
+  features: Partial<PlanFeatures> | null;
+  updated_at: string;
+  updated_by: string | null;
+}
 
 export const SMS_SENDER_ID_PRICE_KEY = "sms_sender_id_price";
 
@@ -124,6 +140,62 @@ export async function getEffectivePlanConfig(
   if (slug === "custom" || !PLAN_CONFIGS[slug as StandardPlanSlug]) return null;
   const configs = await getEffectivePlanConfigs(db);
   return configs[slug as StandardPlanSlug] ?? null;
+}
+
+/** Read the capability adjustment for one business, if it has one. */
+export async function getBusinessPlanOverride(
+  workspaceId: string,
+  db?: SupabaseClient
+): Promise<BusinessPlanOverride | null> {
+  const client = resolveDb(db);
+  const { data, error } = await client
+    .from("business_plan_overrides")
+    .select("workspace_id, base_plan_slug, custom_name, limits, features, updated_at, updated_by")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[dynamic-config] Failed to read business plan override", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  const row = data as BusinessPlanOverrideRow;
+  return {
+    workspaceId: row.workspace_id,
+    basePlanSlug: row.base_plan_slug,
+    customName: row.custom_name,
+    limits: row.limits ?? {},
+    features: row.features ?? {},
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+  };
+}
+
+/**
+ * Resolve a business's plan from its live standard-plan defaults plus its own
+ * sparse capability adjustment. A stale override for a different base plan is
+ * ignored, so normal upgrades/downgrades always fall back safely.
+ */
+export async function getEffectiveBusinessPlanConfig(
+  workspaceId: string,
+  planSlug: PlanSlug,
+  db?: SupabaseClient
+): Promise<PlanConfig | null> {
+  const base = await getEffectivePlanConfig(planSlug, db);
+  if (!base) return null;
+
+  const override = await getBusinessPlanOverride(workspaceId, db);
+  if (!override || override.basePlanSlug !== planSlug) return base;
+
+  return {
+    ...base,
+    name: override.customName || base.name,
+    limits: { ...base.limits, ...override.limits },
+    features: { ...base.features, ...override.features },
+    isBusinessSpecific: true,
+    customName: override.customName,
+  };
 }
 
 /** The platform-wide Custom SMS Sender ID fee (KES). Defaults to 30,500. */

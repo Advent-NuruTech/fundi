@@ -183,6 +183,11 @@ export function OrderReceipt({ order, business, onClose }: OrderReceiptProps) {
                   <td className="border border-slate-300 px-2 py-2 align-top">
                     {item.name}
                     {item.notes && <span className="block text-xs text-slate-500">{item.notes}</span>}
+                    {(item.includedParts?.length ?? 0) > 0 && (
+                      <span className="mt-1 block text-xs text-emerald-700">
+                        Includes: {item.includedParts?.map((part) => `${part.quantity}× ${part.name}`).join(", ")}
+                      </span>
+                    )}
                   </td>
                   <td className="border border-slate-300 px-2 py-2 text-center tabular-nums align-top">{item.quantity}</td>
                   <td className="border border-slate-300 px-2 py-2 text-right tabular-nums align-top">

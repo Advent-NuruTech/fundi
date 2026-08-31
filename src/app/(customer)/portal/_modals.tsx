@@ -48,6 +48,14 @@ export function OrderDetailsDialog({
                     <p className="text-sm font-semibold text-slate-900">{g.name}</p>
                     <span className="text-xs text-slate-400 shrink-0">×{g.quantity}</span>
                   </div>
+                  {(g.includedParts?.length ?? 0) > 0 && (
+                    <div className="mt-2 rounded-lg bg-emerald-50 px-2.5 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Included in this price</p>
+                      <p className="mt-1 text-xs text-slate-700">
+                        {g.includedParts?.map((part) => `${part.quantity}× ${part.name}`).join(" · ")}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-xs text-slate-500">
                       {formatKes(g.unitPrice)} each
@@ -69,7 +77,7 @@ export function OrderDetailsDialog({
             <span className="font-semibold text-slate-800">{formatKes(order.totalAmount)}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-600">Paid</span>
+            <span className="text-slate-600">Total paid</span>
             <span className="font-semibold text-emerald-700">{formatKes(order.amountPaid)}</span>
           </div>
           {order.balanceAmount > 0 && (
