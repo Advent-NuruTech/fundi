@@ -7,6 +7,14 @@ INSERT INTO business_members (profile_id, business_id, role, roles, active)
 SELECT p.id, p.business_id, p.role, p.roles, p.active
 FROM profiles p
 WHERE p.business_id IS NOT NULL
+  -- Platform administrators are intentionally isolated from tenant data;
+  -- their legacy profile rows must not be turned into memberships.
+  AND NOT EXISTS (
+    SELECT 1
+    FROM platform_admins pa
+    WHERE pa.user_id = p.id
+      AND pa.is_active = true
+  )
 ON CONFLICT (business_id, profile_id) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION get_business_ids()
