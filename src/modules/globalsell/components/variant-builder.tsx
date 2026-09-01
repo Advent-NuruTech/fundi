@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { Plus, Trash2, X, ChevronDown, ChevronUp, Image as ImageIcon } from "lucide-react";
+import { useState, useMemo, useCallback, useRef } from "react";
+import { Plus, Trash2, X, ChevronDown, ChevronUp, Image as ImageIcon, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageUrl } from "@/lib/utils";
 import type { VariantFormInput, VariantImage } from "@/types/ecommerce";
 
 interface VariantBuilderProps {
@@ -11,7 +11,10 @@ interface VariantBuilderProps {
   basePrice: number;
   productName?: string;
   onChange: (variants: VariantFormInput[]) => void;
+  onUploadImages: (variantId: string, files: File[]) => Promise<void>;
 }
+
+const MAX_VARIANT_IMAGES = 3;
 
 const PRESET_OPTION_KEYS = ["Size", "Color", "Material", "Style", "Weight", "Unit"];
 
@@ -54,6 +57,7 @@ export function VariantBuilder({
   basePrice,
   productName = "product",
   onChange,
+  onUploadImages,
 }: VariantBuilderProps) {
   const [optionKey, setOptionKey] = useState("Size");
   const [customKey, setCustomKey] = useState("");
@@ -130,7 +134,7 @@ export function VariantBuilder({
 
   function addVariantImage(id: string, url: string) {
     const v = variants.find((x) => x.id === id);
-    if (!v || !url.trim()) return;
+    if (!v || !url.trim() || v.images.length >= MAX_VARIANT_IMAGES) return;
     const img: VariantImage = { url: url.trim(), altText: "", isPrimary: v.images.length === 0 };
     updateVariant(id, { images: [...v.images, img] });
   }
@@ -177,9 +181,12 @@ export function VariantBuilder({
 
       {/* ── Option builder ────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Add Option Axis
-        </p>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Variants (optional)</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Use variants only for the same product with choices, for example Size: S, M, L. Do not add a different product here.
+          </p>
+        </div>
 
         <div className="flex flex-wrap gap-1.5">
           {PRESET_OPTION_KEYS.map((k) => (
@@ -384,13 +391,14 @@ export function VariantBuilder({
 
                     {/* Variant images */}
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-slate-600">Variant Images</p>
+                      <p className="text-xs font-medium text-slate-600">Pictures for this choice</p>
                       <VariantImageInput
                         variantId={v.id}
                         images={v.images}
                         onAdd={addVariantImage}
                         onRemove={removeVariantImage}
                         onSetPrimary={setPrimaryImage}
+                        onUpload={onUploadImages}
                       />
                     </div>
                   </div>
@@ -425,23 +433,65 @@ function VariantImageInput({
   onAdd,
   onRemove,
   onSetPrimary,
+  onUpload,
 }: {
   variantId: string;
   images: VariantImage[];
   onAdd: (variantId: string, url: string) => void;
   onRemove: (variantId: string, idx: number) => void;
   onSetPrimary: (variantId: string, idx: number) => void;
+  onUpload: (variantId: string, files: File[]) => Promise<void>;
 }) {
   const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const slotsLeft = MAX_VARIANT_IMAGES - images.length;
 
   function handleAdd() {
-    if (!url.trim()) return;
-    onAdd(variantId, url);
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return;
+    if (slotsLeft <= 0) {
+      setError("This variant already has its maximum of 3 images.");
+      return;
+    }
+    if (!isAllowedImageUrl(cleanUrl)) {
+      setError("Use a secure Cloudinary or Unsplash image link.");
+      return;
+    }
+    if (images.some((image) => image.url === cleanUrl)) {
+      setError("This image has already been added.");
+      return;
+    }
+    onAdd(variantId, cleanUrl);
     setUrl("");
+    setError("");
+  }
+
+  async function handleFiles(files: File[]) {
+    if (slotsLeft <= 0) {
+      setError("This variant already has its maximum of 3 images.");
+      return;
+    }
+    if (!files.length) return;
+    setUploading(true);
+    setError(files.length > slotsLeft ? `Only ${slotsLeft} more image${slotsLeft === 1 ? "" : "s"} can be added to this variant.` : "");
+    try {
+      await onUpload(variantId, files.slice(0, slotsLeft));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The images could not be uploaded. Please try again.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
     <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] text-slate-500">Add up to 3 images. The one marked <span className="font-semibold text-emerald-700">Main</span> is shown when this choice is selected.</p>
+        <span className="shrink-0 text-[11px] font-semibold text-slate-500">{images.length}/3</span>
+      </div>
       <div className="flex gap-2">
         <input
           type="url"
@@ -459,6 +509,15 @@ function VariantImageInput({
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      <div>
+        <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => void handleFiles(Array.from(event.target.files ?? []))} />
+        <button type="button" disabled={uploading || slotsLeft <= 0} onClick={() => fileInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2.5 text-xs font-medium text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {uploading ? "Uploading images…" : "Or upload image files (max 10 MB each)"}
+        </button>
+      </div>
+      {error ? <p className="text-[11px] text-rose-600">{error}</p> : <p className="text-[11px] text-slate-400">Paste a secure Cloudinary or Unsplash link, or upload your own image.</p>}
 
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">

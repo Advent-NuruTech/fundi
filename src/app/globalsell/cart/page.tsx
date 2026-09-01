@@ -32,7 +32,7 @@ export default function CartPage() {
   const total = subtotal();
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 pb-24 sm:px-6 lg:pb-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Shopping Cart</h1>
         <button
@@ -169,7 +169,7 @@ export default function CartPage() {
                 Payment will be arranged with each seller
               </p>
 
-              <Link href={shopUrl("checkout")}>
+              <Link href={shopUrl("checkout")} className="hidden lg:block">
                 <Button className="w-full gap-2" size="lg">
                   Proceed to Checkout
                   <ArrowRight className="h-4 w-4" />
@@ -182,6 +182,15 @@ export default function CartPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
+        <Link href={shopUrl("checkout")}>
+          <Button className="h-11 w-full gap-2" size="lg">
+            Checkout · {formatKes(total)}
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </Link>
       </div>
     </div>
   );

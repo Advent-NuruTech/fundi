@@ -458,11 +458,15 @@ export async function createProduct(
   }
 
   const { images, variants, ...rest } = input;
+  const effectiveTotalStock = variants.length > 0
+    ? variants.reduce((total, variant) => total + variant.stockQuantity, 0)
+    : input.totalStock;
   const productPayload = {
     ...transformKeysToSnake(rest as Record<string, unknown>, false),
     business_id: businessId,
     store_id: storeId,
     slug,
+    total_stock: effectiveTotalStock,
   };
 
   const { data: productData, error: productError } = await supabase
@@ -505,8 +509,8 @@ export async function createProduct(
       wholesale_price: v.wholesalePrice ?? null,
       wholesale_min_qty: v.wholesaleMinQty ?? null,
       stock_quantity: v.stockQuantity,
-      image_url: v.images.find((img) => img.isPrimary)?.url ?? v.images[0]?.url ?? null,
-      variant_images: v.images ?? [],
+      image_url: v.images.slice(0, 3).find((img) => img.isPrimary)?.url ?? v.images[0]?.url ?? null,
+      variant_images: v.images.slice(0, 3),
       is_available: v.isAvailable,
       sort_order: i,
     }));
@@ -538,7 +542,10 @@ export async function updateProduct(
   const { images, variants, ...rest } = input;
 
   if (Object.keys(rest).length > 0) {
-    const payload = transformKeysToSnake(rest as Record<string, unknown>, false);
+    const productValues = variants && variants.length > 0
+      ? { ...rest, totalStock: variants.reduce((total, variant) => total + variant.stockQuantity, 0) }
+      : rest;
+    const payload = transformKeysToSnake(productValues as Record<string, unknown>, false);
     const { error } = await supabase
       .from("ecommerce_products")
       .update(payload)
@@ -582,8 +589,8 @@ export async function updateProduct(
         wholesale_price: v.wholesalePrice ?? null,
         wholesale_min_qty: v.wholesaleMinQty ?? null,
         stock_quantity: v.stockQuantity,
-        image_url: v.images.find((img) => img.isPrimary)?.url ?? v.images[0]?.url ?? null,
-        variant_images: v.images ?? [],
+        image_url: v.images.slice(0, 3).find((img) => img.isPrimary)?.url ?? v.images[0]?.url ?? null,
+        variant_images: v.images.slice(0, 3),
         is_available: v.isAvailable,
         sort_order: i,
       }));

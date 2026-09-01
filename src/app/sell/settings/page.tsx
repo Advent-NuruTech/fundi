@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CheckCircle2, Loader2, Globe, MessageSquare, Save, Store, ExternalLink, XCircle } from "lucide-react";
+import { CheckCircle2, ImageIcon, Loader2, Globe, MessageSquare, Save, Store, ExternalLink, Upload, XCircle } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import {
   fetchStoreByBusinessId,
@@ -18,6 +18,7 @@ import Link from "next/link";
 import type { EcommerceStore } from "@/types/ecommerce";
 import { normalizeHandle, storeUrl } from "@/lib/storefront-url";
 import { StoreShareButton } from "@/modules/globalsell/components/store-share-button";
+import { uploadImage } from "@/services/cloudinary/upload.service";
 
 const schema = z.object({
   storeName: z.string().min(2, "Store name is required"),
@@ -43,6 +44,7 @@ export default function StoreSettingsPage() {
   const [store, setStore] = useState<EcommerceStore | null>(null);
   const [loadingStore, setLoadingStore] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState<"logoUrl" | "bannerUrl" | null>(null);
   const [handleAvailable, setHandleAvailable] = useState<boolean | null>(null);
   const [checkingHandle, setCheckingHandle] = useState(false);
 
@@ -82,6 +84,8 @@ export default function StoreSettingsPage() {
   }, [user?.businessId, business?.name, reset]);
 
   const publicHandle = useWatch({ control, name: "publicHandle" }) ?? "";
+  const logoUrl = useWatch({ control, name: "logoUrl" }) ?? "";
+  const bannerUrl = useWatch({ control, name: "bannerUrl" }) ?? "";
 
   useEffect(() => {
     if (!publicHandle || publicHandle.length < 3 || errors.publicHandle) {
@@ -115,6 +119,25 @@ export default function StoreSettingsPage() {
       controller.abort();
     };
   }, [errors.publicHandle, publicHandle, store?.id, store?.publicHandle]);
+
+  async function handleImageUpload(field: "logoUrl" | "bannerUrl", file?: File) {
+    if (!file || !user?.businessId) return;
+
+    setUploadingImage(field);
+    try {
+      const uploaded = await uploadImage({
+        file,
+        businessId: user.businessId,
+        uploadedByUid: user.uid,
+      });
+      setValue(field, uploaded.url, { shouldDirty: true, shouldValidate: true });
+      toast.success(`${field === "logoUrl" ? "Profile image" : "Banner image"} uploaded — remember to save`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Image upload failed");
+    } finally {
+      setUploadingImage(null);
+    }
+  }
 
   async function onSubmit(values: FormValues) {
     if (!user?.businessId) return;
@@ -291,31 +314,84 @@ export default function StoreSettingsPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-5 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Logo URL
+                  Profile Image
                 </label>
+                <div className="mb-2 flex h-20 items-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-2">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-emerald-50">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Store profile preview" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-emerald-600">
+                        <ImageIcon className="h-5 w-5" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">Upload a photo or paste a direct image link.</p>
+                </div>
                 <input
                   {...register("logoUrl")}
                   placeholder="https://…"
                   type="url"
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-emerald-500"
                 />
+                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                  {uploadingImage === "logoUrl" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {uploadingImage === "logoUrl" ? "Uploading…" : "Upload image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    disabled={uploadingImage !== null}
+                    onChange={(event) => {
+                      void handleImageUpload("logoUrl", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
                 {errors.logoUrl && (
                   <p className="mt-1 text-xs text-rose-500">{errors.logoUrl.message}</p>
                 )}
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Banner URL
+                  Banner Image
                 </label>
+                <div className="mb-2 h-20 overflow-hidden rounded-xl border border-dashed border-slate-200 bg-slate-50">
+                  {bannerUrl ? (
+                    <img src={bannerUrl} alt="Store banner preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center gap-2 text-xs text-slate-500">
+                      <ImageIcon className="h-4 w-4 text-emerald-600" />
+                      No banner selected
+                    </div>
+                  )}
+                </div>
                 <input
                   {...register("bannerUrl")}
                   placeholder="https://…"
                   type="url"
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-emerald-500"
                 />
+                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                  {uploadingImage === "bannerUrl" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {uploadingImage === "bannerUrl" ? "Uploading…" : "Upload image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    disabled={uploadingImage !== null}
+                    onChange={(event) => {
+                      void handleImageUpload("bannerUrl", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+                {errors.bannerUrl && (
+                  <p className="mt-1 text-xs text-rose-500">{errors.bannerUrl.message}</p>
+                )}
               </div>
             </div>
           </CardContent>

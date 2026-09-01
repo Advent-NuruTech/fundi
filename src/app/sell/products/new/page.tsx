@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, ChevronLeft, Loader2 } from "lucide-react";
+import { AlertCircle, BookOpen, ChevronLeft, Loader2 } from "lucide-react";
 import { useAuth } from "@/features/auth/components/auth-context";
 import { ProductForm } from "@/modules/globalsell/components/product-form";
 import {
@@ -90,7 +90,13 @@ export default function NewProductPage() {
           <ChevronLeft className="h-4 w-4" />
           My Products
         </Link>
-        <h1 className="text-xl font-bold text-slate-900">Add New Product</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-bold text-slate-900">Add New Product</h1>
+          <Link href="/sell/manual" className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline">
+            <BookOpen className="h-4 w-4" /> Open FundiFlow Manual
+          </Link>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Start with the product details. Variants are only for choices such as size or colour.</p>
       </div>
 
       <ProductForm

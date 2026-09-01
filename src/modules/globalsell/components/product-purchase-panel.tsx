@@ -9,14 +9,8 @@ import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/store/cart-store";
 import { cn, formatKes } from "@/lib/utils";
 import { shopUrl } from "@/lib/storefront-url";
+import { useProductVariantSelection } from "./product-variant-context";
 import type { CartItem, EcommerceProduct, EcommerceProductVariant } from "@/types/ecommerce";
-
-function defaultVariantFor(product: EcommerceProduct) {
-  return product.variants?.find((variant) =>
-    variant.isAvailable &&
-    (!product.trackInventory || product.allowBackorder || variant.stockQuantity > 0)
-  ) ?? product.variants?.find((variant) => variant.isAvailable) ?? product.variants?.[0] ?? null;
-}
 
 function minimumQuantityFor(
   product: EcommerceProduct,
@@ -27,8 +21,8 @@ function minimumQuantityFor(
 }
 
 export function ProductPurchasePanel({ product }: { product: EcommerceProduct }) {
-  const initialVariant = defaultVariantFor(product);
-  const [selectedVariant, setSelectedVariant] = useState<EcommerceProductVariant | null>(initialVariant);
+  const { selectedVariant, setSelectedVariant } = useProductVariantSelection();
+  const initialVariant = selectedVariant;
   const [quantity, setQuantity] = useState(() => minimumQuantityFor(product, initialVariant));
   const [added, setAdded] = useState(false);
   const addItem = useCartStore((state) => state.addItem);
@@ -118,7 +112,7 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-3">
-        <span className="text-3xl font-bold text-slate-900">{formatKes(displayPrice)}</span>
+        <span className="text-2xl font-bold text-slate-900 sm:text-3xl">{formatKes(displayPrice)}</span>
         {displayPrice < product.basePrice && (
           <><span className="text-lg text-slate-400 line-through">{formatKes(product.basePrice)}</span><Badge variant="danger">Sale</Badge></>
         )}
@@ -164,13 +158,27 @@ export function ProductPurchasePanel({ product }: { product: EcommerceProduct })
           <span className="w-10 text-center text-sm font-semibold">{quantity}</span>
           <button type="button" onClick={() => setQuantity(Math.min(maxQuantity, quantity + 1))} disabled={quantity >= maxQuantity} className="h-11 w-10 disabled:cursor-not-allowed disabled:text-slate-300" aria-label="Increase quantity">+</button>
         </div>
-        <Button type="button" size="lg" disabled={!inStock} onClick={() => addToCart(false)} className="min-w-40 flex-1 gap-2">
-          {added ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
-          {added ? "Added" : "Add to cart"}
-        </Button>
-        <Button type="button" size="lg" variant="outline" disabled={!inStock} onClick={() => addToCart(true)} className="min-w-32 flex-1 border-emerald-600 text-emerald-700">
-          Buy now
-        </Button>
+        <div className="hidden min-w-0 flex-1 gap-3 sm:flex">
+          <Button type="button" size="lg" disabled={!inStock} onClick={() => addToCart(false)} className="min-w-40 flex-1 gap-2">
+            {added ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+            {added ? "Added" : "Add to cart"}
+          </Button>
+          <Button type="button" size="lg" variant="outline" disabled={!inStock} onClick={() => addToCart(true)} className="min-w-32 flex-1 border-emerald-600 text-emerald-700">
+            Buy now
+          </Button>
+        </div>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur sm:hidden">
+        <div className="mx-auto flex max-w-7xl gap-2">
+          <Button type="button" disabled={!inStock} onClick={() => addToCart(false)} className="h-11 flex-1 gap-1.5 px-3 text-xs">
+            {added ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+            {added ? "Added" : "Add to cart"}
+          </Button>
+          <Button type="button" variant="outline" disabled={!inStock} onClick={() => addToCart(true)} className="h-11 flex-1 border-emerald-600 px-3 text-xs text-emerald-700">
+            Buy now
+          </Button>
+        </div>
       </div>
     </div>
   );

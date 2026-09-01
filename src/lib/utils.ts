@@ -17,6 +17,19 @@ export function isAllowedImageUrl(url: string | null | undefined): url is string
   }
 }
 
+/**
+ * Store branding is rendered directly in the browser, so it can safely support
+ * a secure image URL from any host without widening Next Image's optimizer.
+ */
+export function isSecureImageUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function formatKes(value: number) {
   return new Intl.NumberFormat("en-KE", {
     style: "currency",

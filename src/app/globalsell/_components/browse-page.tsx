@@ -13,8 +13,8 @@ import { useMarketplaceFilterStore } from "@/store/marketplace-filter-store";
 
 interface BrowsePageProps {
   channel?: EcommerceSaleChannel;
-  heroTitle: string;
-  heroSubtitle: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
   heroBadges?: string[];
 }
 
@@ -56,11 +56,12 @@ export function BrowsePage({
       <DiscoverMarquee />
 
       <div ref={topRef} className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
-        {/* Page title */}
-        <div className="mb-5">
-          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{heroTitle}</h1>
-          <p className="mt-0.5 text-sm text-slate-500">{heroSubtitle}</p>
-        </div>
+        {(heroTitle || heroSubtitle) && (
+          <div className="mb-5">
+            {heroTitle && <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{heroTitle}</h1>}
+            {heroSubtitle && <p className="mt-0.5 text-sm text-slate-500">{heroSubtitle}</p>}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_1fr]">
           {/* Sidebar — desktop */}

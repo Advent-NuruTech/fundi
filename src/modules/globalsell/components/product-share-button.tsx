@@ -13,6 +13,7 @@ interface ProductShareButtonProps {
   description?: string;
   productUrl: string;
   imageUrl?: string;
+  iconOnly?: boolean;
 }
 
 function shareFileName(name: string, mimeType: string): string {
@@ -31,6 +32,7 @@ export function ProductShareButton({
   description,
   productUrl,
   imageUrl,
+  iconOnly = false,
 }: ProductShareButtonProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -133,13 +135,13 @@ export function ProductShareButton({
       <Button
         type="button"
         variant="outline"
-        size="sm"
+        size={iconOnly ? "icon" : "sm"}
         className="shrink-0 gap-2"
         onClick={() => setOpen(true)}
         aria-label={`Share ${name}`}
       >
         <Share2 className="h-4 w-4" />
-        Share
+        {!iconOnly && "Share"}
       </Button>
 
       <Dialog open={open} onClose={() => setOpen(false)} title="Share product">

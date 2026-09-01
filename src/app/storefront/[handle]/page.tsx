@@ -5,7 +5,7 @@ import { JsonLd } from "@/components/shared/json-ld";
 import { StoreHeader } from "@/modules/globalsell/components/store-header";
 import { ProductCard } from "@/modules/globalsell/components/product-card";
 import { fetchStorefrontProducts, resolveStorefront } from "@/services/storefront.service";
-import { isAllowedImageUrl } from "@/lib/utils";
+import { isSecureImageUrl } from "@/lib/utils";
 import { SHOP_ORIGIN, storeUrl } from "@/lib/storefront-url";
 
 type Props = { params: Promise<{ handle: string }> };
@@ -24,9 +24,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { store } = resolution;
   const canonical = storeUrl(store.publicHandle);
   const description = descriptionFor(store.storeName, store.description, store.location);
-  const images = isAllowedImageUrl(store.bannerUrl)
+  const images = isSecureImageUrl(store.bannerUrl)
     ? [{ url: store.bannerUrl, alt: `${store.storeName} storefront` }]
-    : isAllowedImageUrl(store.logoUrl)
+    : isSecureImageUrl(store.logoUrl)
       ? [{ url: store.logoUrl, alt: store.storeName }]
       : undefined;
 
@@ -66,8 +66,8 @@ export default async function StorefrontPage({ params }: Props) {
     name: store.storeName,
     url: canonical,
     description: store.description,
-    image: isAllowedImageUrl(store.bannerUrl) ? store.bannerUrl : undefined,
-    logo: isAllowedImageUrl(store.logoUrl) ? store.logoUrl : undefined,
+    image: isSecureImageUrl(store.bannerUrl) ? store.bannerUrl : undefined,
+    logo: isSecureImageUrl(store.logoUrl) ? store.logoUrl : undefined,
     telephone: store.contactPhone || undefined,
     email: store.contactEmail || undefined,
     address: store.location

@@ -1,7 +1,6 @@
-import Image from "next/image";
 import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";
-import { isAllowedImageUrl } from "@/lib/utils";
+import { isSecureImageUrl } from "@/lib/utils";
 import { storeUrl } from "@/lib/storefront-url";
 import { StoreShareButton } from "@/modules/globalsell/components/store-share-button";
 
@@ -14,13 +13,11 @@ export function StoreHeader({ store }: StoreHeaderProps) {
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Banner */}
       <div className="relative h-40 bg-gradient-to-r from-emerald-600 to-emerald-400 sm:h-52">
-        {isAllowedImageUrl(store.bannerUrl) && (
-          <Image
+        {isSecureImageUrl(store.bannerUrl) && (
+          <img
             src={store.bannerUrl}
             alt={`${store.storeName} banner`}
-            fill
-            className="object-cover"
-            priority
+            className="absolute inset-0 h-full w-full object-cover"
           />
         )}
         <div className="absolute inset-0 bg-black/20" />
@@ -31,12 +28,11 @@ export function StoreHeader({ store }: StoreHeaderProps) {
         {/* Logo + name row */}
         <div className="relative z-10 flex items-end gap-4 -mt-2.5 mb-3">
           <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-md">
-            {isAllowedImageUrl(store.logoUrl) ? (
-              <Image
+            {isSecureImageUrl(store.logoUrl) ? (
+              <img
                 src={store.logoUrl}
                 alt={store.storeName}
-                fill
-                className="object-cover"
+                className="h-full w-full object-cover"
               />
             ) : (
               <div className="flex h-full items-center justify-center bg-emerald-50">

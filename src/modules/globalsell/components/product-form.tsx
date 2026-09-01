@@ -246,6 +246,24 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
     }
   }, []);
 
+  const uploadVariantImages = useCallback(async (variantId: string, files: File[]) => {
+    const variant = variants.find((item) => item.id === variantId);
+    if (!variant) throw new Error("This variant is no longer available. Please try again.");
+
+    const remainingSlots = Math.max(0, 3 - variant.images.length);
+    if (remainingSlots === 0) throw new Error("Each variant can have a maximum of 3 images.");
+
+    const urls = await Promise.all(files.slice(0, remainingSlots).map(uploadToCloudinary));
+    setVariants((current) => current.map((item) => {
+      if (item.id !== variantId) return item;
+      const existingUrls = new Set(item.images.map((image) => image.url));
+      const additions = urls
+        .filter((url) => !existingUrls.has(url))
+        .map((url) => ({ url, altText: "", isPrimary: item.images.length === 0 }));
+      return { ...item, images: [...item.images, ...additions].slice(0, 3) };
+    }));
+  }, [variants]);
+
   function setPrimary(idx: number) {
     setImages((prev) => prev.map((im, i) => ({ ...im, isPrimary: i === idx })));
   }
@@ -655,6 +673,7 @@ export function ProductForm({ initial, categories, onSubmit, submitLabel = "Save
             basePrice={basePrice ?? 0}
             productName={nameVal}
             onChange={setVariants}
+            onUploadImages={uploadVariantImages}
           />
         </CardContent>
       </Card>
