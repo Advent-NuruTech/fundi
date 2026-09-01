@@ -237,14 +237,6 @@ export async function POST(request: Request) {
       employeeUid = userData.user.id;
     }
 
-    const { error: invitationLinkError } = await admin
-      .from("employee_invitations")
-      .update({ invited_uid: employeeUid })
-      .eq("id", invitationAttempt.id);
-    if (invitationLinkError) {
-      throw new Error(`Could not link the invitation to the employee account: ${invitationLinkError.message}`);
-    }
-
     const compensation =
       payRate === undefined
         ? {}
@@ -292,6 +284,17 @@ export async function POST(request: Request) {
       );
       if (businessMemberError) {
         throw new Error(`Could not create the employee membership: ${businessMemberError.message}`);
+      }
+
+      // Link only after the profile is present. Older databases constrained
+      // employee_invitations.invited_uid to profiles(id), so linking the Auth
+      // user first caused the foreign-key failure reported by the Team screen.
+      const { error: invitationLinkError } = await admin
+        .from("employee_invitations")
+        .update({ invited_uid: employeeUid })
+        .eq("id", invitationAttempt.id);
+      if (invitationLinkError) {
+        throw new Error(`Could not link the invitation to the employee account: ${invitationLinkError.message}`);
       }
 
     } catch (setupError) {
