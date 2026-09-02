@@ -157,13 +157,13 @@ export function FinancePieChart({ data, height = 300 }: PieChartProps) {
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <PieChart>
+      <PieChart margin={{ top: 12, right: 32, bottom: 12, left: 32 }}>
         <Pie
           data={data}
           cx="50%"
           cy="50%"
           innerRadius={60}
-          outerRadius={100}
+          outerRadius="72%"
           paddingAngle={4}
           dataKey="value"
           label={({ name, percent }: PieLabelRenderProps) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}

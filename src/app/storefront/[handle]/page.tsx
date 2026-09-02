@@ -77,7 +77,7 @@ export default async function StorefrontPage({ params }: Props) {
   };
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-7xl space-y-8 px-3 py-5 sm:px-6 sm:py-8">
       <JsonLd data={localBusiness} />
       <StoreHeader store={store} />
       <section aria-labelledby="store-products">
@@ -91,7 +91,7 @@ export default async function StorefrontPage({ params }: Props) {
             <p className="mt-1 text-xs text-slate-400">Check back soon for new products</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
             {products.map((product) => <ProductCard key={product.id} product={product} showStore={false} />)}
           </div>
         )}

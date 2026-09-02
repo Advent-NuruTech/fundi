@@ -244,7 +244,7 @@ export function VariantBuilder({
 
       {/* ── Variant matrix ────────────────────────────────────────── */}
       {variants.length > 0 && (
-        <div className="overflow-x-auto pb-1">
+        <div className="overflow-x-auto overscroll-x-contain pb-2" aria-label="Variant fields. Swipe horizontally to view every column.">
           <div className="min-w-[720px] space-y-1.5">
           <div className="grid grid-cols-[1fr_80px_72px_72px_72px_32px] gap-2 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
             <span>Variant</span>

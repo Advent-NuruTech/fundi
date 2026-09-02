@@ -92,7 +92,7 @@ export function DashboardModulePage() {
           <FontAwesomeIcon icon={faScissors} className="text-emerald-600" />
           Tailor Dashboard
         </h1>
-        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
           <Metric 
             label="Assigned orders" 
             value={myOrders.length.toString()} 
@@ -136,7 +136,7 @@ export function DashboardModulePage() {
           <FontAwesomeIcon icon={faWarehouse} className="text-amber-600" />
           {biz.terms.inventory} Dashboard
         </h1>
-        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
           <Metric 
             label="Low stock alerts" 
             value={lowStock.length.toString()} 
@@ -182,7 +182,7 @@ export function DashboardModulePage() {
           <FontAwesomeIcon icon={faMoneyBillWave} className="text-emerald-600" />
           Cashier Dashboard
         </h1>
-        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           <Metric 
             label="Pending balances" 
             value={formatKes(pendingBalances)} 
@@ -227,7 +227,7 @@ export function DashboardModulePage() {
         </p>
       </div>
       
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-4">
         <Metric 
           label="Needs attention today" 
           value={overdue.length.toString()} 
@@ -256,7 +256,7 @@ export function DashboardModulePage() {
 
       {permissions.canReadFinance && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
               <FontAwesomeIcon icon={faMoneyBillWave} className="text-emerald-600" />
               Financial Summary
@@ -267,7 +267,7 @@ export function DashboardModulePage() {
               </Button>
             </Link>
           </div>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:grid-cols-4">
             <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm text-center">
               <p className="text-xs text-slate-500">Today</p>
               <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsToday))}</p>
@@ -466,10 +466,10 @@ function Metric({
 }) {
   const content = (
     <Card className="h-full transition hover:shadow-md">
-      <CardContent className="pt-5 text-center">
-        <p className="text-xs text-slate-500 truncate">{label}</p>
+      <CardContent className="p-4 text-center sm:pt-5">
+        <p className="text-xs leading-tight text-slate-500">{label}</p>
         <p className={`
-          text-2xl font-semibold mt-1
+          mt-1 break-words text-xl font-semibold leading-tight tabular-nums sm:text-2xl
           ${tone === "success" ? "text-emerald-700" : 
             tone === "danger" ? "text-rose-700" : 
             tone === "warning" ? "text-amber-700" : 

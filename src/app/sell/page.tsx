@@ -75,14 +75,14 @@ export default function SellOverviewPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-4">
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
                 <Package className="h-5 w-5 text-emerald-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-slate-500">Published</p>
                 <p className="text-xl font-bold text-slate-900">{publishedCount}</p>
               </div>
@@ -92,11 +92,11 @@ export default function SellOverviewPage() {
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
                 <ShoppingCart className="h-5 w-5 text-amber-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-slate-500">Pending Orders</p>
                 <p className="text-xl font-bold text-slate-900">{pendingOrders}</p>
               </div>
@@ -106,11 +106,11 @@ export default function SellOverviewPage() {
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
                 <TrendingUp className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-slate-500">Total Orders</p>
                 <p className="text-xl font-bold text-slate-900">{orders.length}</p>
               </div>
@@ -120,13 +120,13 @@ export default function SellOverviewPage() {
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100">
                 <TrendingUp className="h-5 w-5 text-purple-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-slate-500">Revenue</p>
-                <p className="text-sm font-bold text-slate-900">{formatKes(totalRevenue)}</p>
+                <p className="break-words text-sm font-bold leading-tight text-slate-900 tabular-nums">{formatKes(totalRevenue)}</p>
               </div>
             </div>
           </CardContent>

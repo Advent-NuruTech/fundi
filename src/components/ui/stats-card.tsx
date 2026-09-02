@@ -42,15 +42,15 @@ export function StatsCard({ title, value, trend, trendLabel, icon, variant = "de
 
   return (
     <Card className={cn("relative overflow-hidden transition hover:shadow-md", styles.bg, className)}>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{title}</p>
-          {icon && <div className={cn("rounded-lg p-2", styles.icon)}>{icon}</div>}
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 text-xs font-medium uppercase leading-tight tracking-wider text-slate-500">{title}</p>
+          {icon && <div className={cn("shrink-0 rounded-lg p-1.5 sm:p-2", styles.icon)}>{icon}</div>}
         </div>
-        <p className={cn("mt-2 text-2xl font-bold tracking-tight", styles.text)}>{value}</p>
-        {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
+        <p className={cn("mt-2 break-words text-lg font-bold leading-tight tracking-tight tabular-nums sm:text-2xl", styles.text)}>{value}</p>
+        {subtitle && <p className="mt-0.5 break-words text-xs text-slate-400">{subtitle}</p>}
         {trend !== undefined && (
-          <div className="mt-2 flex items-center gap-1.5">
+          <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
             {trend > 0 ? (
               <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
             ) : trend < 0 ? (

@@ -329,7 +329,7 @@ export default function StoreSettingsPage() {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500">Upload a photo or paste a direct image link.</p>
+                  <p className="text-xs text-slate-500">Square photo recommended (like a profile picture).</p>
                 </div>
                 <input
                   {...register("logoUrl")}
@@ -357,7 +357,7 @@ export default function StoreSettingsPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Banner Image
+                  Cover Banner
                 </label>
                 <div className="mb-2 h-20 overflow-hidden rounded-xl border border-dashed border-slate-200 bg-slate-50">
                   {bannerUrl ? (
@@ -365,7 +365,7 @@ export default function StoreSettingsPage() {
                   ) : (
                     <div className="flex h-full items-center justify-center gap-2 text-xs text-slate-500">
                       <ImageIcon className="h-4 w-4 text-emerald-600" />
-                      No banner selected
+                      Use a wide cover image (recommended 1200 × 630).
                     </div>
                   )}
                 </div>
