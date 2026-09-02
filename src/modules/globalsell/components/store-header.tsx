@@ -1,4 +1,4 @@
-import { MapPin, Phone, Mail, Star, Package, ShoppingCart, BadgeCheck } from "lucide-react";
+import { MapPin, Phone, Mail, BadgeCheck } from "lucide-react";
 import type { EcommerceStore } from "@/types/ecommerce";
 import { isSecureImageUrl } from "@/lib/utils";
 import { storeUrl } from "@/lib/storefront-url";
@@ -25,7 +25,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
 
       {/* Store profile — cover photo and circular avatar follow the familiar social-profile pattern. */}
       <div className="px-4 pb-5 sm:px-6 sm:pb-6">
-        <div className="relative z-10 -mt-12 flex items-end gap-3 sm:-mt-14 sm:gap-4">
+        <div className="relative z-10 -mt-12 flex items-end justify-between sm:-mt-14">
           <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-white bg-white shadow-md sm:h-28 sm:w-28">
             {isSecureImageUrl(store.logoUrl) ? (
               <img
@@ -42,18 +42,6 @@ export function StoreHeader({ store }: StoreHeaderProps) {
             )}
           </div>
 
-          <div className="min-w-0 flex-1 pb-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h1 className="break-words text-2xl font-bold leading-tight text-slate-900">{store.storeName}</h1>
-              {store.isVerified && <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-500" />}
-            </div>
-            <div className="mt-1 flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <Star key={s} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-              ))}
-              <span className="ml-1 text-xs text-slate-500">New Store</span>
-            </div>
-          </div>
           <StoreShareButton
             storeName={store.storeName}
             storeUrl={storeUrl(store.publicHandle)}
@@ -63,24 +51,19 @@ export function StoreHeader({ store }: StoreHeaderProps) {
           />
         </div>
 
-        {store.description && (
-          <p className="mb-4 mt-4 break-words text-sm leading-relaxed text-slate-600">{store.description}</p>
-        )}
-
-        {/* Stats */}
-        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2">
-          <div className="flex items-center gap-1.5 text-sm text-slate-600">
-            <Package className="h-4 w-4 text-emerald-500" />
-            <span>{store.totalProducts} Products</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-sm text-slate-600">
-            <ShoppingCart className="h-4 w-4 text-emerald-500" />
-            <span>{store.totalOrders} Orders</span>
-          </div>
+        <div className="mt-3 flex min-w-0 items-start gap-1.5">
+          <h1 className="min-w-0 break-words text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">
+            {store.storeName}
+          </h1>
+          {store.isVerified && <BadgeCheck className="mt-1 h-5 w-5 shrink-0 text-emerald-500 sm:h-6 sm:w-6" />}
         </div>
 
+        {store.description && (
+          <p className="mt-4 break-words text-sm leading-relaxed text-slate-600">{store.description}</p>
+        )}
+
         {/* Contact */}
-        <div className="flex flex-wrap gap-x-3 gap-y-2">
+        <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2">
           {store.location && (
             <span className="flex min-w-0 items-center gap-1 text-xs text-slate-500">
               <MapPin className="h-3.5 w-3.5" />

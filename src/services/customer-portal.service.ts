@@ -492,6 +492,44 @@ export interface PortalOrder {
   globalsell?: EcommerceOrder;
 }
 
+type PortalStoreSummary = Pick<EcommerceStore, "id" | "slug" | "storeName">;
+
+async function getPortalStoreMap(businessIds: string[]): Promise<Map<string, PortalStoreSummary>> {
+  const uniqueIds = [...new Set(businessIds.filter(Boolean))];
+  if (!uniqueIds.length) return new Map();
+
+  const { data } = await supabase
+    .from("ecommerce_stores")
+    .select("id, business_id, slug, store_name")
+    .in("business_id", uniqueIds);
+
+  return new Map(
+    (data ?? []).map((row) => [
+      row.business_id as string,
+      transformKeysToCamel<PortalStoreSummary>(row as Record<string, unknown>),
+    ])
+  );
+}
+
+function mapPortalEcommerceOrder(
+  row: Record<string, unknown>,
+  stores: Map<string, PortalStoreSummary>
+): EcommerceOrder {
+  const order = transformKeysToCamel<EcommerceOrder>(row);
+  if (Array.isArray(row.items)) {
+    order.items = transformArrayToCamel<EcommerceOrderItem>(
+      row.items as Record<string, unknown>[]
+    );
+  }
+  if (Array.isArray(row.payments)) {
+    order.payments = transformArrayToCamel<EcommerceOrderPayment>(
+      row.payments as Record<string, unknown>[]
+    );
+  }
+  order.store = stores.get(order.sellerBusinessId);
+  return order;
+}
+
 /** Orders placed from the customer's portal account on Global Sell. */
 export async function getMyEcommerceOrders(userId: string): Promise<EcommerceOrder[]> {
   if (!userId) return [];
@@ -502,8 +540,7 @@ export async function getMyEcommerceOrders(userId: string): Promise<EcommerceOrd
       `
       *,
       items:ecommerce_order_items(*),
-      payments:ecommerce_order_payments(*),
-      store:ecommerce_stores!seller_business_id(id, slug, store_name)
+      payments:ecommerce_order_payments(*)
     `
     )
     .eq("buyer_user_id", userId)
@@ -511,25 +548,11 @@ export async function getMyEcommerceOrders(userId: string): Promise<EcommerceOrd
 
   if (error || !data?.length) return [];
 
-  return (data as Record<string, unknown>[]).map((row) => {
-    const order = transformKeysToCamel<EcommerceOrder>(row);
-    if (Array.isArray(row.items)) {
-      order.items = transformArrayToCamel<EcommerceOrderItem>(
-        row.items as Record<string, unknown>[]
-      );
-    }
-    if (Array.isArray(row.payments)) {
-      order.payments = transformArrayToCamel<EcommerceOrderPayment>(
-        row.payments as Record<string, unknown>[]
-      );
-    }
-    if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
-      order.store = transformKeysToCamel<Pick<EcommerceStore, "id" | "slug" | "storeName">>(
-        row.store as Record<string, unknown>
-      );
-    }
-    return order;
-  });
+  const rows = data as Record<string, unknown>[];
+  const stores = await getPortalStoreMap(
+    rows.map((row) => row.seller_business_id as string)
+  );
+  return rows.map((row) => mapPortalEcommerceOrder(row, stores));
 }
 
 export async function getMyEcommerceOrderById(
@@ -544,8 +567,7 @@ export async function getMyEcommerceOrderById(
       `
       *,
       items:ecommerce_order_items(*),
-      payments:ecommerce_order_payments(*),
-      store:ecommerce_stores!seller_business_id(id, slug, store_name)
+      payments:ecommerce_order_payments(*)
     `
     )
     .eq("id", orderId)
@@ -554,23 +576,9 @@ export async function getMyEcommerceOrderById(
 
   if (error || !data) return null;
 
-  const order = transformKeysToCamel<EcommerceOrder>(data as Record<string, unknown>);
-  if (Array.isArray(data.items)) {
-    order.items = transformArrayToCamel<EcommerceOrderItem>(
-      data.items as Record<string, unknown>[]
-    );
-  }
-  if (Array.isArray(data.payments)) {
-    order.payments = transformArrayToCamel<EcommerceOrderPayment>(
-      data.payments as Record<string, unknown>[]
-    );
-  }
-  if (data.store && typeof data.store === "object" && !Array.isArray(data.store)) {
-    order.store = transformKeysToCamel<Pick<EcommerceStore, "id" | "slug" | "storeName">>(
-      data.store as Record<string, unknown>
-    );
-  }
-  return order;
+  const row = data as Record<string, unknown>;
+  const stores = await getPortalStoreMap([row.seller_business_id as string]);
+  return mapPortalEcommerceOrder(row, stores);
 }
 
 function toPortalOrder(order: CustomerSafeOrder): PortalOrder {

@@ -719,7 +719,16 @@ async function handleRelink(admin: AdminClient, caller: { id: string; email?: st
     .select("phone, email")
     .eq("portal_user_id", caller.id)
     .limit(500);
-  const phones = [...new Set([phoneRaw, ...(linkedCustomers ?? []).map((customer) => customer.phone as string)].filter(Boolean))];
+  // Pass every canonical Kenyan phone representation to the database repair
+  // function. Older marketplace checkouts commonly stored 07..., while portal
+  // auth stores 254...; punctuation-only normalization cannot equate those.
+  const phones = [
+    ...new Set(
+      [phoneRaw, ...(linkedCustomers ?? []).map((customer) => customer.phone as string)]
+        .filter(Boolean)
+        .flatMap(phoneMatchForms)
+    ),
+  ];
   const emails = [...new Set([callerEmail, ...(linkedCustomers ?? []).map((customer) => (customer.email as string | null) ?? "")].filter((email) => email && !isSyntheticPortalEmail(email)))];
   const { data: ecommerceLinked, error: ecommerceRelinkError } = await admin.rpc("relink_portal_ecommerce_orders", {
     p_user_id: caller.id,

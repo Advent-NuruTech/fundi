@@ -780,8 +780,7 @@ export async function fetchBuyerOrders(
     .select(
       `
       *,
-      items:ecommerce_order_items(*),
-      store:ecommerce_stores!seller_business_id(id, slug, store_name)
+      items:ecommerce_order_items(*)
     `
     )
     .eq("buyer_business_id", buyerBusinessId)
@@ -789,18 +788,35 @@ export async function fetchBuyerOrders(
 
   if (error) throw error;
 
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => {
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const sellerBusinessIds = [
+    ...new Set(rows.map((row) => row.seller_business_id as string).filter(Boolean)),
+  ];
+  const { data: storeRows, error: storeError } = sellerBusinessIds.length
+    ? await supabase
+        .from("ecommerce_stores")
+        .select("id, business_id, slug, store_name")
+        .in("business_id", sellerBusinessIds)
+    : { data: [], error: null };
+  if (storeError) throw storeError;
+
+  const stores = new Map(
+    (storeRows ?? []).map((store) => [
+      store.business_id as string,
+      transformKeysToCamel<Pick<EcommerceStore, "id" | "slug" | "storeName">>(
+        store as Record<string, unknown>
+      ),
+    ])
+  );
+
+  return rows.map((row) => {
     const order = transformKeysToCamel<EcommerceOrder>(row);
     if (Array.isArray(row.items)) {
       order.items = transformArrayToCamel<EcommerceOrderItem>(
         row.items as Record<string, unknown>[]
       );
     }
-    if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
-      order.store = transformKeysToCamel<Pick<EcommerceStore, "id" | "slug" | "storeName">>(
-        row.store as Record<string, unknown>
-      );
-    }
+    order.store = stores.get(order.sellerBusinessId);
     return order;
   });
 }

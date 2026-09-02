@@ -82,7 +82,7 @@ export default async function StorefrontPage({ params }: Props) {
       <StoreHeader store={store} />
       <section aria-labelledby="store-products">
         <h2 id="store-products" className="mb-4 text-lg font-bold text-slate-900">
-          All Products ({products.length})
+          All Products
         </h2>
         {products.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 py-16 text-center">
