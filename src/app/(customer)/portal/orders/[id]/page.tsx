@@ -337,6 +337,12 @@ function GlobalSellOrderDetail({ order }: { order: PortalOrder }) {
             <span className="text-sm text-slate-600">Total</span>
             <span className="text-sm font-semibold">{formatKes(order.totalAmount)}</span>
           </div>
+          {order.amountPaid > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-emerald-700">Paid</span>
+              <span className="text-sm font-semibold text-emerald-700">{formatKes(order.amountPaid)}</span>
+            </div>
+          )}
           {order.balanceAmount > 0 && (
             <div className="flex items-center justify-between border-t pt-2">
               <span className="text-sm font-medium text-rose-700">Balance due</span>
@@ -348,6 +354,19 @@ function GlobalSellOrderDetail({ order }: { order: PortalOrder }) {
               {portalPaymentLabel(order)}
             </Badge>
           </div>
+          {(ecommerce.payments?.length ?? 0) > 0 && (
+            <div className="border-t pt-3">
+              <p className="mb-2 text-xs font-medium text-slate-500">Recorded payments</p>
+              <div className="space-y-2">
+                {ecommerce.payments!.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="capitalize text-slate-600">{payment.method.replace("_", " ")}</span>
+                    <span className="font-medium text-emerald-700">{formatKes(Number(payment.amount))}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

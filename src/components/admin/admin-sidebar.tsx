@@ -21,6 +21,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { PWAInstallButton } from "@/components/pwa/pwa-install-button";
 
 const NAV_ITEMS = [
   {
@@ -172,6 +173,13 @@ export function AdminSidebar({ open, onClose, currentPath, adminEmail }: Props) 
               </li>
             );
           })}
+          <li>
+            <PWAInstallButton
+              onInstallClick={onClose}
+              className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-emerald-300 transition-colors hover:bg-slate-800 hover:text-emerald-200"
+              iconClassName="text-emerald-400"
+            />
+          </li>
         </ul>
       </nav>
 

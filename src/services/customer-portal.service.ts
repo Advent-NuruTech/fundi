@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { transformKeysToCamel, transformArrayToCamel } from "@/lib/case-utils";
 import type { Customer, Order, OrderItemPart, Payment, ProductionStage, PaymentStatus } from "@/types/domain";
-import type { EcommerceOrder, EcommerceOrderItem, EcommerceStore } from "@/types/ecommerce";
+import type { EcommerceOrder, EcommerceOrderItem, EcommerceOrderPayment, EcommerceStore } from "@/types/ecommerce";
 import type { ReceiptBusiness } from "@/lib/receipt";
 import { shopUrl } from "@/lib/storefront-url";
 
@@ -502,6 +502,7 @@ export async function getMyEcommerceOrders(userId: string): Promise<EcommerceOrd
       `
       *,
       items:ecommerce_order_items(*),
+      payments:ecommerce_order_payments(*),
       store:ecommerce_stores!seller_business_id(id, slug, store_name)
     `
     )
@@ -515,6 +516,11 @@ export async function getMyEcommerceOrders(userId: string): Promise<EcommerceOrd
     if (Array.isArray(row.items)) {
       order.items = transformArrayToCamel<EcommerceOrderItem>(
         row.items as Record<string, unknown>[]
+      );
+    }
+    if (Array.isArray(row.payments)) {
+      order.payments = transformArrayToCamel<EcommerceOrderPayment>(
+        row.payments as Record<string, unknown>[]
       );
     }
     if (row.store && typeof row.store === "object" && !Array.isArray(row.store)) {
@@ -538,6 +544,7 @@ export async function getMyEcommerceOrderById(
       `
       *,
       items:ecommerce_order_items(*),
+      payments:ecommerce_order_payments(*),
       store:ecommerce_stores!seller_business_id(id, slug, store_name)
     `
     )
@@ -551,6 +558,11 @@ export async function getMyEcommerceOrderById(
   if (Array.isArray(data.items)) {
     order.items = transformArrayToCamel<EcommerceOrderItem>(
       data.items as Record<string, unknown>[]
+    );
+  }
+  if (Array.isArray(data.payments)) {
+    order.payments = transformArrayToCamel<EcommerceOrderPayment>(
+      data.payments as Record<string, unknown>[]
     );
   }
   if (data.store && typeof data.store === "object" && !Array.isArray(data.store)) {
@@ -594,8 +606,9 @@ function toEcommercePortalOrder(order: EcommerceOrder): PortalOrder {
   const isCancelled = order.status === "cancelled" || order.status === "rejected";
   const isDelivered = order.status === "delivered";
   const isPaid = order.paymentStatus === "paid" || order.paymentStatus === "refunded";
-  const amountPaid = isPaid ? order.total : 0;
-  const balanceAmount = !isCancelled && order.paymentStatus === "unpaid" ? order.total : 0;
+  const recordedAmount = (order.payments ?? []).reduce((total, payment) => total + Number(payment.amount), 0);
+  const amountPaid = recordedAmount > 0 ? Math.min(Number(order.total), recordedAmount) : isPaid ? Number(order.total) : 0;
+  const balanceAmount = isCancelled ? 0 : Math.max(Number(order.total) - amountPaid, 0);
 
   return {
     id: order.id,
@@ -668,16 +681,50 @@ export async function getMyOrderDocument(orderId: string): Promise<{
 
 // ── Payments ──────────────────────────────────────────────────────────────────
 
-export async function getMyPayments(customerIds: string[]): Promise<Payment[]> {
-  if (!customerIds.length) return [];
+export interface PortalPayment {
+  id: string;
+  source: "tailoring" | "globalsell";
+  businessId: string;
+  orderId: string;
+  orderNumber: string;
+  amount: number;
+  method: string;
+  description?: string;
+  recordedAt: string;
+}
 
-  const { data } = await supabase
-    .from("payments")
-    .select("id, business_id, customer_id, customer_name, order_id, order_number, amount, method, description, recorded_at, recorded_by_uid, recorded_by_name")
-    .in("customer_id", customerIds)
-    .order("recorded_at", { ascending: false });
+/** Payments for both workshop orders and Global Sell purchases. */
+export async function getMyPayments(customerIds: string[], userId: string): Promise<PortalPayment[]> {
+  const tailoringRequest = customerIds.length
+    ? supabase
+        .from("payments")
+        .select("id, business_id, order_id, order_number, amount, method, description, recorded_at")
+        .in("customer_id", customerIds)
+        .order("recorded_at", { ascending: false })
+    : Promise.resolve({ data: [] as Record<string, unknown>[] });
+  const ecommerceRequest = getMyEcommerceOrders(userId);
+  const [{ data }, ecommerceOrders] = await Promise.all([tailoringRequest, ecommerceRequest]);
+  const tailoring = data
+    ? transformArrayToCamel<Pick<Payment, "id" | "businessId" | "orderId" | "orderNumber" | "amount" | "method" | "description" | "recordedAt">>(data as Record<string, unknown>[])
+    : [];
+  const ecommerce = ecommerceOrders.flatMap((order) =>
+    (order.payments ?? []).map((payment) => ({
+      id: payment.id,
+      source: "globalsell" as const,
+      businessId: payment.businessId,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      amount: Number(payment.amount),
+      method: payment.method,
+      description: payment.note,
+      recordedAt: payment.createdAt,
+    }))
+  );
 
-  return data ? transformArrayToCamel<Payment>(data as Record<string, unknown>[]) : [];
+  return [
+    ...tailoring.map((payment) => ({ ...payment, source: "tailoring" as const })),
+    ...ecommerce,
+  ].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
 }
 
 // ── Support conversation meta (for unread badges) ─────────────────────────────

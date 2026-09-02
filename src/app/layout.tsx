@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/features/auth/components/auth-context";
 import { Toaster } from "@/components/ui/sonner";
 import { PWARegister } from "@/components/pwa/pwa-register";
+import { PWAInstallProvider } from "@/components/pwa/pwa-install-provider";
 import { PLAN_CONFIGS } from "@/lib/billing/constants";
 import "./globals.css";
 
@@ -189,7 +190,9 @@ export default function RootLayout({
         <JsonLd data={softwareApplicationJsonLd} />
       </head>
       <body className="min-h-full bg-slate-50 text-slate-900 antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <PWAInstallProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </PWAInstallProvider>
         <Toaster />
         <PWARegister />
       </body>

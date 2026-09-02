@@ -714,7 +714,23 @@ async function handleRelink(admin: AdminClient, caller: { id: string; email?: st
       .eq("id", c.id);
   }
 
-  return NextResponse.json({ success: true, linked: toLink.length });
+  const { data: linkedCustomers } = await admin
+    .from("customers")
+    .select("phone, email")
+    .eq("portal_user_id", caller.id)
+    .limit(500);
+  const phones = [...new Set([phoneRaw, ...(linkedCustomers ?? []).map((customer) => customer.phone as string)].filter(Boolean))];
+  const emails = [...new Set([callerEmail, ...(linkedCustomers ?? []).map((customer) => (customer.email as string | null) ?? "")].filter((email) => email && !isSyntheticPortalEmail(email)))];
+  const { data: ecommerceLinked, error: ecommerceRelinkError } = await admin.rpc("relink_portal_ecommerce_orders", {
+    p_user_id: caller.id,
+    p_phones: phones,
+    p_emails: emails,
+  });
+  if (ecommerceRelinkError) {
+    console.error("[customer-portal] Could not relink Global Sell orders", ecommerceRelinkError);
+  }
+
+  return NextResponse.json({ success: true, linked: toLink.length, ecommerceLinked: ecommerceLinked ?? 0 });
 }
 
 /** Return the complete, customer-safe document for one order the caller owns. */

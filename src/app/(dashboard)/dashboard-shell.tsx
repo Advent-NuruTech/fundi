@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { AuthGuard } from "@/features/auth/components/auth-context";
 import { SyncIndicator } from "@/components/pwa/sync-indicator";
-import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { SubscriptionGuard } from "@/components/billing/subscription-guard";
 import { ExpiryReminder } from "@/components/billing/expiry-reminder";
 import { TrialBanner } from "@/components/billing/trial-banner";
@@ -162,7 +161,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="fixed bottom-20 right-4 z-40 hidden lg:block">
             <SyncIndicator />
           </div>
-          <InstallPrompt />
         </div>
       </SubscriptionGuard>
     </AuthGuard>

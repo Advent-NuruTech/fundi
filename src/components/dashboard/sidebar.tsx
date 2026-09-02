@@ -36,6 +36,7 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { MessageBell } from "@/components/messaging/message-bell";
 import { UserAvatar } from "@/components/profile/user-avatar";
 import { SyncIndicator } from "@/components/pwa/sync-indicator";
+import { PWAInstallButton } from "@/components/pwa/pwa-install-button";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -167,6 +168,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             Billing
           </Link>
         )}
+        <PWAInstallButton
+          onInstallClick={() => setOpen(false)}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+        />
         {user?.role === "owner" && (
           <Link
             href="/settings/usage"
@@ -295,6 +300,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   Usage & Top-ups
                 </Link>
               )}
+              <PWAInstallButton className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50" />
             </nav>
 
             <div className="border-t border-slate-200 p-4">

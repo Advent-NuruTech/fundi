@@ -240,6 +240,8 @@ export interface EcommerceOrder {
   deliveredAt?: string;
   smsSent: boolean;
   items?: EcommerceOrderItem[];
+  /** Payments recorded by the seller. Available to the purchaser in the customer portal. */
+  payments?: EcommerceOrderPayment[];
   store?: Pick<EcommerceStore, 'id' | 'slug' | 'storeName'>;
   createdAt: string;
   updatedAt: string;
