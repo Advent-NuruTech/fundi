@@ -11,6 +11,7 @@ interface StoreShareButtonProps {
   storeUrl: string;
   description?: string;
   className?: string;
+  iconOnly?: boolean;
 }
 
 export function StoreShareButton({
@@ -18,6 +19,7 @@ export function StoreShareButton({
   storeUrl,
   description,
   className,
+  iconOnly = false,
 }: StoreShareButtonProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -62,9 +64,10 @@ export function StoreShareButton({
         className={className ?? "gap-2"}
         onClick={() => setOpen(true)}
         aria-label={`Share ${storeName}`}
+        title={`Share ${storeName}`}
       >
         <Share2 className="h-4 w-4" />
-        Share Store
+        {!iconOnly && <span>Share Store</span>}
       </Button>
 
       <Dialog open={open} onClose={() => setOpen(false)} title="Share your store">

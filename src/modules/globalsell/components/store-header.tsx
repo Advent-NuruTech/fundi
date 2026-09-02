@@ -25,7 +25,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
 
       {/* Store profile — cover photo and circular avatar follow the familiar social-profile pattern. */}
       <div className="px-4 pb-5 sm:px-6 sm:pb-6">
-        <div className="relative z-10 -mt-12 flex flex-col gap-3 sm:-mt-14 sm:flex-row sm:items-end sm:gap-4">
+        <div className="relative z-10 -mt-12 flex items-end gap-3 sm:-mt-14 sm:gap-4">
           <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-white bg-white shadow-md sm:h-28 sm:w-28">
             {isSecureImageUrl(store.logoUrl) ? (
               <img
@@ -42,7 +42,7 @@ export function StoreHeader({ store }: StoreHeaderProps) {
             )}
           </div>
 
-          <div className="min-w-0 flex-1 sm:pb-1">
+          <div className="min-w-0 flex-1 pb-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <h1 className="break-words text-2xl font-bold leading-tight text-slate-900">{store.storeName}</h1>
               {store.isVerified && <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-500" />}
@@ -58,7 +58,8 @@ export function StoreHeader({ store }: StoreHeaderProps) {
             storeName={store.storeName}
             storeUrl={storeUrl(store.publicHandle)}
             description={store.description}
-            className="w-full shrink-0 justify-center gap-1.5 sm:mb-1 sm:w-auto sm:px-3"
+            iconOnly
+            className="mb-1 h-10 w-10 shrink-0 rounded-full p-0"
           />
         </div>
 

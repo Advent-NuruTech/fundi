@@ -125,16 +125,16 @@ function WeekCalendar({ data, weekStart }: { data: FinanceData; weekStart: Date 
   return (
     <div className="space-y-4">
       {/* Week totals */}
-      <div className="grid grid-cols-1 gap-3 text-center min-[480px]:grid-cols-3">
-        <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="min-w-0 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
           <p className="text-xs text-emerald-600 font-medium">Week Earnings</p>
           <p className="mt-0.5 break-words text-lg font-bold text-emerald-700 tabular-nums sm:text-xl">{formatKes(weekRev)}</p>
         </div>
-        <div className="rounded-xl bg-rose-50 border border-rose-100 p-3">
+        <div className="min-w-0 rounded-xl border border-rose-100 bg-rose-50 p-3">
           <p className="text-xs text-rose-600 font-medium">Week Spending</p>
           <p className="mt-0.5 break-words text-lg font-bold text-rose-700 tabular-nums sm:text-xl">{formatKes(weekExp)}</p>
         </div>
-        <div className={`rounded-xl border p-3 ${weekNet >= 0 ? "bg-blue-50 border-blue-100" : "bg-orange-50 border-orange-100"}`}>
+        <div className={`min-w-0 rounded-xl border p-3 ${weekNet >= 0 ? "bg-blue-50 border-blue-100" : "bg-orange-50 border-orange-100"}`}>
           <p className={`text-xs font-medium ${weekNet >= 0 ? "text-blue-600" : "text-orange-600"}`}>Week Profit</p>
           <p className={`mt-0.5 break-words text-lg font-bold tabular-nums sm:text-xl ${weekNet >= 0 ? "text-blue-700" : "text-orange-700"}`}>{formatKes(weekNet)}</p>
         </div>
@@ -565,7 +565,7 @@ export function FinanceModulePage() {
           )}
 
           {/* Revenue cards — history periods and total revenue gated by permission */}
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatsCard title="Today's Earnings" value={formatKes(metrics.todayRevenue)} variant="success" icon={<DollarSign className="h-4 w-4" />} />
             {canSeeWeekHistory && (
               <StatsCard title="This Week" value={formatKes(metrics.weekRevenue)} variant="success" icon={<TrendingUp className="h-4 w-4" />} />
@@ -582,7 +582,7 @@ export function FinanceModulePage() {
           </div>
 
           {/* Profit & spending — Net Profit is owner-only KPI */}
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {canSeeOwnerKpis && (
               <StatsCard
                 title="Net Profit"
@@ -601,7 +601,7 @@ export function FinanceModulePage() {
           </div>
 
           {/* Secondary stats — Payroll Due and Inventory Value are owner-only KPIs */}
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {canSeePayroll && (
               <StatsCard title="Payroll Due" value={formatKes(metrics.payrollLiability)} variant="warning" icon={<Users className="h-4 w-4" />} />
             )}
@@ -724,7 +724,7 @@ export function FinanceModulePage() {
           </div>
 
           {/* Quick metric cards — 2 cols on mobile */}
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Card>
               <CardContent className="pt-4 pb-4">
                 <p className="text-xs text-slate-500">Low Stock Items</p>
@@ -889,22 +889,22 @@ export function FinanceModulePage() {
             const wdl = getWithdrawalsForRange(data.withdrawals, start, end).reduce((s, w) => s + w.amount, 0);
             const net = rev - exp - wdl;
             return (
-              <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-4">
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-center">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="min-w-0 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-center">
                   <p className="text-xs text-emerald-600 font-medium">Total Earned</p>
-                  <p className="text-xl font-bold text-emerald-700 mt-1">{formatKes(rev)}</p>
+                  <p className="mt-1 break-words text-base font-bold leading-tight text-emerald-700 tabular-nums sm:text-xl">{formatKes(rev)}</p>
                 </div>
-                <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-center">
+                <div className="min-w-0 rounded-xl border border-rose-100 bg-rose-50 p-4 text-center">
                   <p className="text-xs text-rose-600 font-medium">Total Spent</p>
-                  <p className="text-xl font-bold text-rose-700 mt-1">{formatKes(exp)}</p>
+                  <p className="mt-1 break-words text-base font-bold leading-tight text-rose-700 tabular-nums sm:text-xl">{formatKes(exp)}</p>
                 </div>
-                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-center">
+                <div className="min-w-0 rounded-xl border border-amber-100 bg-amber-50 p-4 text-center">
                   <p className="text-xs text-amber-600 font-medium">Withdrawn</p>
-                  <p className="text-xl font-bold text-amber-700 mt-1">{formatKes(wdl)}</p>
+                  <p className="mt-1 break-words text-base font-bold leading-tight text-amber-700 tabular-nums sm:text-xl">{formatKes(wdl)}</p>
                 </div>
                 <div className={`rounded-xl border p-4 text-center ${net >= 0 ? "border-blue-100 bg-blue-50" : "border-orange-100 bg-orange-50"}`}>
                   <p className={`text-xs font-medium ${net >= 0 ? "text-blue-600" : "text-orange-600"}`}>Net Profit</p>
-                  <p className={`text-xl font-bold mt-1 ${net >= 0 ? "text-blue-700" : "text-orange-700"}`}>{formatKes(net)}</p>
+                  <p className={`mt-1 break-words text-base font-bold leading-tight tabular-nums sm:text-xl ${net >= 0 ? "text-blue-700" : "text-orange-700"}`}>{formatKes(net)}</p>
                 </div>
               </div>
             );
@@ -950,22 +950,22 @@ export function FinanceModulePage() {
             const wdl = getWithdrawalsForRange(data.withdrawals, start, end).reduce((s, w) => s + w.amount, 0);
             const net = rev - exp - wdl;
             return (
-              <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-4">
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-center">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="min-w-0 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-center">
                   <p className="text-xs text-emerald-600 font-medium">{calYear} Earnings</p>
-                  <p className="text-xl font-bold text-emerald-700 mt-1">{formatKes(rev)}</p>
+                  <p className="mt-1 break-words text-base font-bold leading-tight text-emerald-700 tabular-nums sm:text-xl">{formatKes(rev)}</p>
                 </div>
-                <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-center">
+                <div className="min-w-0 rounded-xl border border-rose-100 bg-rose-50 p-4 text-center">
                   <p className="text-xs text-rose-600 font-medium">{calYear} Spending</p>
-                  <p className="text-xl font-bold text-rose-700 mt-1">{formatKes(exp)}</p>
+                  <p className="mt-1 break-words text-base font-bold leading-tight text-rose-700 tabular-nums sm:text-xl">{formatKes(exp)}</p>
                 </div>
-                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-center">
+                <div className="min-w-0 rounded-xl border border-amber-100 bg-amber-50 p-4 text-center">
                   <p className="text-xs text-amber-600 font-medium">{calYear} Withdrawn</p>
-                  <p className="text-xl font-bold text-amber-700 mt-1">{formatKes(wdl)}</p>
+                  <p className="mt-1 break-words text-base font-bold leading-tight text-amber-700 tabular-nums sm:text-xl">{formatKes(wdl)}</p>
                 </div>
                 <div className={`rounded-xl border p-4 text-center ${net >= 0 ? "border-blue-100 bg-blue-50" : "border-orange-100 bg-orange-50"}`}>
                   <p className={`text-xs font-medium ${net >= 0 ? "text-blue-600" : "text-orange-600"}`}>{calYear} Net Profit</p>
-                  <p className={`text-xl font-bold mt-1 ${net >= 0 ? "text-blue-700" : "text-orange-700"}`}>{formatKes(net)}</p>
+                  <p className={`mt-1 break-words text-base font-bold leading-tight tabular-nums sm:text-xl ${net >= 0 ? "text-blue-700" : "text-orange-700"}`}>{formatKes(net)}</p>
                 </div>
               </div>
             );
@@ -980,7 +980,7 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-6">
       <div className="h-8 w-48 rounded-xl bg-slate-100 animate-pulse" />
-      <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="h-24 rounded-xl bg-slate-100 animate-pulse" />
         ))}

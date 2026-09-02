@@ -100,7 +100,7 @@ export default function PortalHomePage() {
       </Card>
 
       {/* Tab cards — three columns on all screen sizes */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2">
         {TABS.map(({ key, label, icon: Icon }) => {
           const selected = activeTab === key;
           const value = key === "outstanding" ? formatKes(balance) : listFor[key].length;
@@ -125,7 +125,7 @@ export default function PortalHomePage() {
               <p className="text-[10px] font-semibold leading-tight text-slate-600">{label}</p>
               <p
                 className={cn(
-                  "mt-1 break-words text-base font-bold leading-tight tabular-nums sm:text-lg",
+                  "mt-1 break-words text-sm font-bold leading-tight tabular-nums sm:text-lg",
                   key === "outstanding" ? (selected ? "text-amber-700" : "text-amber-600") : selected ? "text-emerald-800" : "text-slate-700"
                 )}
               >

@@ -92,7 +92,7 @@ export function DashboardModulePage() {
           <FontAwesomeIcon icon={faScissors} className="text-emerald-600" />
           Tailor Dashboard
         </h1>
-        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <Metric 
             label="Assigned orders" 
             value={myOrders.length.toString()} 
@@ -136,7 +136,7 @@ export function DashboardModulePage() {
           <FontAwesomeIcon icon={faWarehouse} className="text-amber-600" />
           {biz.terms.inventory} Dashboard
         </h1>
-        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <Metric 
             label="Low stock alerts" 
             value={lowStock.length.toString()} 
@@ -182,7 +182,7 @@ export function DashboardModulePage() {
           <FontAwesomeIcon icon={faMoneyBillWave} className="text-emerald-600" />
           Cashier Dashboard
         </h1>
-        <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <Metric 
             label="Pending balances" 
             value={formatKes(pendingBalances)} 
@@ -227,7 +227,7 @@ export function DashboardModulePage() {
         </p>
       </div>
       
-      <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Metric 
           label="Needs attention today" 
           value={overdue.length.toString()} 
@@ -267,22 +267,22 @@ export function DashboardModulePage() {
               </Button>
             </Link>
           </div>
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 md:grid-cols-4">
-            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm text-center">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="min-w-0 rounded-xl bg-white px-3 py-2 text-center text-sm shadow-sm">
               <p className="text-xs text-slate-500">Today</p>
-              <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsToday))}</p>
+              <p className="break-words font-semibold leading-tight text-emerald-600 tabular-nums">{formatKes(revenueFromPayments(paymentsToday))}</p>
             </div>
-            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm text-center">
+            <div className="min-w-0 rounded-xl bg-white px-3 py-2 text-center text-sm shadow-sm">
               <p className="text-xs text-slate-500">This Week</p>
-              <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsWeek))}</p>
+              <p className="break-words font-semibold leading-tight text-emerald-600 tabular-nums">{formatKes(revenueFromPayments(paymentsWeek))}</p>
             </div>
-            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm text-center">
+            <div className="min-w-0 rounded-xl bg-white px-3 py-2 text-center text-sm shadow-sm">
               <p className="text-xs text-slate-500">This Month</p>
-              <p className="font-semibold text-emerald-600">{formatKes(revenueFromPayments(paymentsMonth))}</p>
+              <p className="break-words font-semibold leading-tight text-emerald-600 tabular-nums">{formatKes(revenueFromPayments(paymentsMonth))}</p>
             </div>
-            <div className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm text-center">
+            <div className="min-w-0 rounded-xl bg-white px-3 py-2 text-center text-sm shadow-sm">
               <p className="text-xs text-slate-500">Outstanding</p>
-              <p className="font-semibold text-rose-600">{formatKes(pendingBalances)}</p>
+              <p className="break-words font-semibold leading-tight text-rose-600 tabular-nums">{formatKes(pendingBalances)}</p>
             </div>
           </div>
         </div>
@@ -465,11 +465,11 @@ function Metric({
   href?: string;
 }) {
   const content = (
-    <Card className="h-full transition hover:shadow-md">
+    <Card className="h-full min-w-0 transition hover:shadow-md">
       <CardContent className="p-4 text-center sm:pt-5">
         <p className="text-xs leading-tight text-slate-500">{label}</p>
         <p className={`
-          mt-1 break-words text-xl font-semibold leading-tight tabular-nums sm:text-2xl
+          mt-1 break-words text-base font-semibold leading-tight tabular-nums sm:text-2xl
           ${tone === "success" ? "text-emerald-700" : 
             tone === "danger" ? "text-rose-700" : 
             tone === "warning" ? "text-amber-700" : 
@@ -482,7 +482,7 @@ function Metric({
   );
   
   if (href) {
-    return <Link href={href} className="block h-full">{content}</Link>;
+    return <Link href={href} className="block h-full min-w-0">{content}</Link>;
   }
   return content;
 }

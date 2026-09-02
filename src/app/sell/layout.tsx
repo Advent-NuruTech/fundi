@@ -148,9 +148,9 @@ export default function SellLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <AuthGuard>
-      <div className="h-screen overflow-hidden bg-slate-50">
+      <div className="flex h-[calc(100dvh-var(--safe-area-top)-var(--safe-area-bottom))] min-h-0 flex-col overflow-hidden bg-slate-50">
         {/* Mobile header — own Global Sell menu, independent of the dashboard sidebar */}
-        <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+        <header className="z-40 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -173,9 +173,9 @@ export default function SellLayout({ children }: { children: React.ReactNode }) 
           )}
         </header>
 
-        <div className="mx-auto flex h-full max-w-[1500px]">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1500px] flex-1">
           {/* Desktop sidebar */}
-          <aside className="hidden h-screen w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
+          <aside className="hidden h-full min-h-0 w-64 shrink-0 border-r border-slate-200 bg-white lg:block">
             {sidebarContent}
           </aside>
 
@@ -194,8 +194,8 @@ export default function SellLayout({ children }: { children: React.ReactNode }) 
           )}
 
           {/* Main content */}
-          <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+          <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-8 sm:p-6 sm:pb-8">{children}</div>
           </main>
         </div>
       </div>

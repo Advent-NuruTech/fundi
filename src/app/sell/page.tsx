@@ -75,7 +75,7 @@ export default function SellOverviewPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex min-w-0 items-center gap-3">
