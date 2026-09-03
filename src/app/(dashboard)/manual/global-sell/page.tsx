@@ -24,7 +24,7 @@ export default function GlobalSellManualPage() {
         Your public shop is separate from the seller workspace. Use the <strong>View My Store</strong> button in Global Sell to check the exact page customers will see, then copy or share that address from Store Settings.
       </Note>
 
-      <section className="space-y-4">
+      <section id="store-settings" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={1}
           title="Set up the public shop"
@@ -44,7 +44,7 @@ export default function GlobalSellManualPage() {
         />
       </section>
 
-      <section className="space-y-4">
+      <section id="products" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={2}
           title="Publish what customers can buy or enquire about"
@@ -60,7 +60,7 @@ export default function GlobalSellManualPage() {
         />
       </section>
 
-      <section className="space-y-4">
+      <section id="share-store" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={3}
           title="Share and shop from your personal storefront"
@@ -78,7 +78,7 @@ export default function GlobalSellManualPage() {
         ]} />
       </section>
 
-      <section className="space-y-3">
+      <section id="online-orders" className="space-y-3 scroll-mt-24">
         <SectionHeading number={4} title="Manage online orders" description="Incoming Orders contains purchases from the public shop. Confirm availability, agree delivery and payment with the buyer, then keep the order status current." />
         <p className="text-sm leading-6 text-slate-600">Use My Purchases for orders your own business has placed with other sellers. This is different from Incoming Orders, which contains orders customers made from your store.</p>
         <div className="flex flex-wrap gap-4 text-sm">

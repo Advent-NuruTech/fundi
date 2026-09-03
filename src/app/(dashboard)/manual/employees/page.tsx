@@ -59,7 +59,7 @@ export default function EmployeesManualPage() {
         actionLabel="Open Team"
       />
 
-      <section className="space-y-4">
+      <section id="invite" className="space-y-4 scroll-mt-24">
         <SectionHeading number={1} title="Invite an employee" description="FundiFlow creates a temporary password and invitation link for the employee." />
         <NumberedSteps steps={[
           { title: "Open Invite employee", text: "From Team, press Invite employee and enter the employee's current details." },
@@ -78,7 +78,7 @@ export default function EmployeesManualPage() {
         </ExampleCard>
       </section>
 
-      <section className="space-y-4">
+      <section id="team-page" className="space-y-4 scroll-mt-24">
         <SectionHeading number={2} title="Read the Team page" description="The list and the activity page use the same current membership record." />
         <div className="grid gap-3 md:grid-cols-2">
           {[
@@ -98,7 +98,7 @@ export default function EmployeesManualPage() {
         <Note><strong>History status matters.</strong> Pending can still be accepted before expiry. Accepted records show completed invitations. Revoked and Expired passwords or links cannot be used.</Note>
       </section>
 
-      <section className="space-y-4">
+      <section id="incomplete-invite" className="space-y-4 scroll-mt-24">
         <SectionHeading number={3} title="Resolve an incomplete invitation" description="Do not leave a staff member trapped between a login account and the Team list." />
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
@@ -112,7 +112,7 @@ export default function EmployeesManualPage() {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section id="access" className="space-y-4 scroll-mt-24">
         <SectionHeading number={4} title="Pause, restore, or delete access" description="These controls have different outcomes. Choose the one that matches the real employment decision." />
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="divide-y divide-slate-100">
@@ -131,7 +131,7 @@ export default function EmployeesManualPage() {
         <Note warning><strong>Deletion is from this business.</strong> Past orders keep their historical work information. The employee disappears from the current Team list and cannot use old credentials to regain access.</Note>
       </section>
 
-      <section className="space-y-4">
+      <section id="reinvite" className="space-y-4 scroll-mt-24">
         <SectionHeading number={5} title="Re-invite a deleted employee" description="Use Invite employee again with the same email. Do not reuse anything from the previous invitation." />
         <NumberedSteps steps={[
           { title: "Create a fresh invitation", text: "Enter the same email with the employee's current name, roles, and pay details." },
@@ -146,7 +146,7 @@ export default function EmployeesManualPage() {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section id="owner-check" className="space-y-4 scroll-mt-24">
         <SectionHeading number={6} title="Final owner check" description="Use this checklist after a deletion or re-invitation." />
         <Checklist items={[
           "A deleted employee no longer appears in the Team grid.",

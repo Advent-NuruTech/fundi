@@ -134,7 +134,7 @@ export default function CustomersManualPage() {
         </div>
       </nav>
 
-      <section id="choose-type" className="space-y-4 scroll-mt-4">
+      <section id="choose-type" className="space-y-4 scroll-mt-24">
         <SectionHeading number={1} title="Choose the correct customer type" description="This choice controls who owns the balance and whether the account can contain members." />
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
@@ -157,7 +157,7 @@ export default function CustomersManualPage() {
         <Note warning><strong>Do not create one group record for every member.</strong> Create the group once, open its profile, then add each recipient in the Members section. This keeps one group invoice while preserving each person's measurements and assigned garments.</Note>
       </section>
 
-      <section id="individual" className="space-y-4 scroll-mt-4">
+      <section id="individual" className="space-y-4 scroll-mt-24">
         <SectionHeading number={2} title="Add an individual customer" description="Open Customers. The Add Customer form is on the same page. Select Individual, complete the fields, then press Save customer." />
         <NumberedSteps steps={[
           { title: "Open the live page", text: "Go to Customers from the main menu. In Add Customer, keep Individual selected." },
@@ -178,7 +178,7 @@ export default function CustomersManualPage() {
         </ExampleCard>
       </section>
 
-      <section id="group" className="space-y-4 scroll-mt-4">
+      <section id="group" className="space-y-4 scroll-mt-24">
         <SectionHeading number={3} title="Add a group or organization" description="In Add Customer, select Group / Org. Save the account first; members are added from the saved group profile." />
         <NumberedSteps steps={[
           { title: "Select Group / Org", text: "The form changes from personal fields to organization and billing fields." },
@@ -200,7 +200,7 @@ export default function CustomersManualPage() {
         </ExampleCard>
       </section>
 
-      <section id="members" className="space-y-4 scroll-mt-4">
+      <section id="members" className="space-y-4 scroll-mt-24">
         <SectionHeading number={4} title="Add people under a group" description="Members are the real people receiving garments. Their garments appear under the group order, while the invoice and balance remain on the group account." />
         <NumberedSteps steps={[
           { title: "Open the group profile", text: "On Customers, select Groups and open Kijani Secondary School." },
@@ -219,7 +219,7 @@ export default function CustomersManualPage() {
         <Note><strong>Contact, representative, payer, and recipient are different ideas.</strong> The group Contact person is the account contact. In a group order, Representative receives communication, Payer identifies who pays, and Receiving member identifies who gets each item. One person may fill several roles, but FundiFlow does not assume that automatically.</Note>
       </section>
 
-      <section id="customer-list" className="space-y-4 scroll-mt-4">
+      <section id="customer-list" className="space-y-4 scroll-mt-24">
         <SectionHeading number={5} title="Use the Customers page after saving" description="The page is both a directory and a quick view of account balances." />
         <div className="grid gap-3 md:grid-cols-2">
           {[
@@ -239,7 +239,7 @@ export default function CustomersManualPage() {
         <Note warning><strong>A member does not carry a separate group balance.</strong> The member row is marked Member. Open the group account to understand the organization's invoice and outstanding balance.</Note>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <section id="customer-next" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="text-lg font-bold text-slate-950">Before creating the first order</h2>
         <div className="mt-3"><Checklist items={[
           "The name belongs to the correct person or organization.",

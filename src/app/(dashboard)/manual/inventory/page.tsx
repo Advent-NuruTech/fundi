@@ -165,7 +165,7 @@ export default function InventoryManualPage() {
         <strong>Best practice:</strong> create the material once, then let FundiFlow record later changes through purchase-order receiving, order usage or sales, and stock adjustments. Editing the opening Quantity is for correcting the item record; an adjustment preserves a reason and an audit trail.
       </Note>
 
-      <section className="space-y-4">
+      <section id="inventory-tabs" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={1}
           title="Know the Inventory tabs"
@@ -187,7 +187,7 @@ export default function InventoryManualPage() {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section id="materials" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={2}
           title="Set up materials and ready-made stock"
@@ -208,7 +208,7 @@ export default function InventoryManualPage() {
         </ExampleCard>
       </section>
 
-      <section className="space-y-4">
+      <section id="adjustments" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={3}
           title="Count stock correctly and record adjustments"
@@ -230,7 +230,7 @@ export default function InventoryManualPage() {
         </Note>
       </section>
 
-      <section className="space-y-4">
+      <section id="suppliers" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={4}
           title="Maintain supplier contacts"
@@ -246,7 +246,7 @@ export default function InventoryManualPage() {
         <FieldGuide fields={supplierFields} />
       </section>
 
-      <section className="space-y-4">
+      <section id="purchase-orders" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={5}
           title="Create purchase orders and receive deliveries"
@@ -269,7 +269,7 @@ export default function InventoryManualPage() {
         </Note>
       </section>
 
-      <section className="space-y-4">
+      <section id="low-stock" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={6}
           title="Act on low-stock and smart-reorder alerts"
@@ -290,7 +290,7 @@ export default function InventoryManualPage() {
         </ExampleCard>
       </section>
 
-      <section className="space-y-4">
+      <section id="stock-audit" className="space-y-4 scroll-mt-24">
         <SectionHeading
           number={7}
           title="Audit movements and understand material consumption"
@@ -311,7 +311,7 @@ export default function InventoryManualPage() {
         </ExampleCard>
       </section>
 
-      <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
+      <section id="inventory-summary" className="scroll-mt-24 rounded-3xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
         <div className="flex items-start gap-3">
           <Boxes className="mt-0.5 h-6 w-6 shrink-0 text-emerald-700" />
           <div>

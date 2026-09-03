@@ -25,6 +25,13 @@ import { ManualHeader, Note } from "@/modules/manual/components/manual-ui";
 
 const guideCards = [
   {
+    title: "Finance",
+    description: "Understand money in and out, expenses, withdrawals, investments, savings, the transaction ledger, reports, and Finance access.",
+    href: "/manual/finance",
+    action: "Read finance guide",
+    icon: Landmark,
+  },
+  {
     title: "Customers",
     description: "Add individuals, create group accounts, add members, understand balances, and use every customer filter.",
     href: "/manual/customers",
@@ -63,7 +70,7 @@ const guideCards = [
 
 const appMap = [
   { label: "Dashboard", href: "/dashboard", purpose: "Daily business totals, urgent work, and shortcuts.", icon: LayoutDashboard },
-  { label: "Finance", href: "/finance", purpose: "Income, expenses, savings, investments, and reports.", icon: Landmark },
+  { label: "Finance", href: "/finance", purpose: "Income, expenses, withdrawals, savings, investments, transactions, and reports.", icon: Landmark, guide: "/manual/finance" },
   { label: "Customers", href: "/customers", purpose: "Customer records, groups, members, measurements, balances, and history.", icon: Users, guide: "/manual/customers" },
   { label: "Orders", href: "/orders", purpose: "New, active, delivered, and cancelled customer orders.", icon: ShoppingBag, guide: "/manual/orders" },
   { label: "Production", href: "/production", purpose: "Track the workshop queue and each production stage.", icon: Scissors },
@@ -93,7 +100,7 @@ export default function ManualHomePage() {
         <strong>Recommended order:</strong> set up suppliers and inventory materials before selling stock or recording material use on an order. Save the customer before creating their order, then manage production and delivery from the saved order. The guides below explain each workflow; the app map keeps every FundiFlow tab one click away.
       </Note>
 
-      <section>
+      <section id="available-guides" className="scroll-mt-24">
         <div className="mb-3 flex items-center gap-2">
           <BookOpen className="h-5 w-5 text-emerald-600" />
           <h2 className="text-xl font-bold text-slate-950">Available guides</h2>
@@ -122,7 +129,7 @@ export default function ManualHomePage() {
         </div>
       </section>
 
-      <section id="app-map" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <section id="app-map" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="mb-4">
           <h2 className="text-xl font-bold text-slate-950">Where every FundiFlow tab goes</h2>
           <p className="mt-1 text-sm leading-6 text-slate-600">Use this as the navigation index. Open goes to the live page. Guide appears where a full manual section is ready.</p>

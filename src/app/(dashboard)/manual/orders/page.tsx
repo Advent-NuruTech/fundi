@@ -214,7 +214,7 @@ export default function OrdersManualPage() {
         </div>
       </nav>
 
-      <section id="before" className="space-y-4 scroll-mt-4">
+      <section id="before" className="space-y-4 scroll-mt-24">
         <SectionHeading number={1} title="Prepare before opening New Order" description="A few correct records prevent duplicate names, missing members, and stock mistakes." />
         <Checklist items={[
           "The customer already exists in Customers.",
@@ -227,7 +227,7 @@ export default function OrdersManualPage() {
         <Note warning><strong>Customer first, order second.</strong> If the customer is missing, go to <ProductLink href="/customers">Customers</ProductLink>, save them, then return to New Order. For a group, add members before starting so every item can be assigned to its recipient.</Note>
       </section>
 
-      <section id="order-details" className="space-y-4 scroll-mt-4">
+      <section id="order-details" className="space-y-4 scroll-mt-24">
         <SectionHeading number={2} title="Complete the order-level details" description="These fields describe the whole order. Item-specific details are added in the next section." />
         <NumberedSteps steps={[
           { title: "Select the customer", text: "Search by name or phone. Use Customers or Groups to narrow the results." },
@@ -238,7 +238,7 @@ export default function OrdersManualPage() {
         <FieldGuide fields={orderFields} />
       </section>
 
-      <section id="item-types" className="space-y-4 scroll-mt-4">
+      <section id="item-types" className="space-y-4 scroll-mt-24">
         <SectionHeading number={3} title="Choose the correct item type" description="Use Package / set for one priced bundle. Otherwise choose the button that describes what this line actually is." />
         <div className="grid gap-3 md:grid-cols-2">
           {itemTypes.map((item) => {
@@ -259,7 +259,7 @@ export default function OrdersManualPage() {
         <Note><strong>Mixed order example:</strong> Amina can buy one tailored dress, one ready-made handbag, and an embroidery service on the same order. Add three separate items so stock, pricing, instructions, and production remain clear.</Note>
       </section>
 
-      <section id="item-fields" className="space-y-4 scroll-mt-4">
+      <section id="item-fields" className="space-y-4 scroll-mt-24">
         <SectionHeading number={4} title="Complete every order-item field" description="Add at least one item. A line must have a valid name or inventory product, quantity of at least one, and a price before Create order will succeed." />
         <FieldGuide fields={itemFields} />
         <ExampleCard title="Individual tailored-order example">
@@ -276,7 +276,7 @@ export default function OrdersManualPage() {
         </ExampleCard>
       </section>
 
-      <section id="packages" className="space-y-4 scroll-mt-4">
+      <section id="packages" className="space-y-4 scroll-mt-24">
         <SectionHeading number={5} title="Use Package / set when one price covers several pieces" description="A package is one priced parent item. Its Included pieces explain what must be made, but those pieces do not add their own prices." />
         <div className="grid gap-4 md:grid-cols-[1fr_1.1fr]">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -301,7 +301,7 @@ export default function OrdersManualPage() {
         <Note warning><strong>Quantity is per set.</strong> If Number of sets is 2 and the included Trouser quantity is 2, the workshop must make four trousers in total.</Note>
       </section>
 
-      <section id="group-orders" className="space-y-4 scroll-mt-4">
+      <section id="group-orders" className="space-y-4 scroll-mt-24">
         <SectionHeading number={6} title="Create a group order" description="Selecting a Group customer adds order roles and a Receiving member field to every item." />
         <div className="grid gap-3 md:grid-cols-3">
           {[
@@ -331,7 +331,7 @@ export default function OrdersManualPage() {
         </ExampleCard>
       </section>
 
-      <section id="delivery-payment" className="space-y-4 scroll-mt-4">
+      <section id="delivery-payment" className="space-y-4 scroll-mt-24">
         <SectionHeading number={7} title="Set delivery and verify the payment summary" description="Delivery changes the total. Check the three money cards before creating the order." />
         <FieldGuide fields={deliveryFields} />
         <div className="grid gap-3 sm:grid-cols-3">
@@ -348,7 +348,7 @@ export default function OrdersManualPage() {
         </ExampleCard>
       </section>
 
-      <section className="space-y-4">
+      <section id="create-confirm" className="space-y-4 scroll-mt-24">
         <SectionHeading number={8} title="Create the order and confirm it" description="The sticky total at the bottom should match the agreement with the customer." />
         <Checklist items={[
           "The correct customer or group is selected.",
@@ -363,7 +363,7 @@ export default function OrdersManualPage() {
         <Note>Press <strong>Create order</strong> once. FundiFlow opens the saved order detail page. If an overall order image fails after the order is saved, the order still exists and FundiFlow reports that the image was not uploaded.</Note>
       </section>
 
-      <section id="after-save" className="space-y-4 scroll-mt-4">
+      <section id="after-save" className="space-y-4 scroll-mt-24">
         <SectionHeading number={9} title="Manage the order after saving" description="The order detail page is the working record used by sales, tailoring, production, payment, and delivery staff." />
         <div className="grid gap-3 md:grid-cols-2">
           {[
@@ -387,7 +387,7 @@ export default function OrdersManualPage() {
         <Note warning><strong>Production stage and delivery stage are separate.</strong> Production says whether the item is being cut, sewn, fitted, finished, or ready. Delivery says whether the completed order is awaiting pickup, with a courier, delivered, or picked up. Update both when their real-world event happens.</Note>
       </section>
 
-      <section id="orders-page" className="space-y-4 scroll-mt-4">
+      <section id="orders-page" className="space-y-4 scroll-mt-24">
         <SectionHeading number={10} title="Read the Orders tab correctly" description="The Orders page summarizes work and gives direct routes into production, finance, payments, and each saved order." />
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="divide-y divide-slate-100">
@@ -411,7 +411,7 @@ export default function OrdersManualPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <section id="order-next" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-emerald-600" /><h2 className="text-lg font-bold text-slate-950">Use the live order pages</h2></div>
         <p className="mt-2 text-sm leading-6 text-slate-600">Open Orders to review existing work, or start New Order when the customer and required setup are ready.</p>
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
