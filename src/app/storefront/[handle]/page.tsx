@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
-import { Package } from "lucide-react";
 import { JsonLd } from "@/components/shared/json-ld";
 import { StoreHeader } from "@/modules/globalsell/components/store-header";
-import { ProductCard } from "@/modules/globalsell/components/product-card";
+import { StorefrontCatalog } from "@/modules/globalsell/components/storefront-catalog";
 import { fetchStorefrontProducts, resolveStorefront } from "@/services/storefront.service";
 import { isSecureImageUrl } from "@/lib/utils";
 import { SHOP_ORIGIN, storeUrl } from "@/lib/storefront-url";
@@ -80,22 +79,7 @@ export default async function StorefrontPage({ params }: Props) {
     <main className="mx-auto max-w-7xl space-y-8 px-3 py-5 sm:px-6 sm:py-8">
       <JsonLd data={localBusiness} />
       <StoreHeader store={store} />
-      <section aria-labelledby="store-products">
-        <h2 id="store-products" className="mb-4 text-lg font-bold text-slate-900">
-          All Products
-        </h2>
-        {products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 py-16 text-center">
-            <Package className="mb-3 h-12 w-12 text-slate-200" />
-            <p className="text-sm font-medium text-slate-500">No products listed yet</p>
-            <p className="mt-1 text-xs text-slate-400">Check back soon for new products</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
-            {products.map((product) => <ProductCard key={product.id} product={product} showStore={false} />)}
-          </div>
-        )}
-      </section>
+      <StorefrontCatalog products={products} storeName={store.storeName} />
     </main>
   );
 }

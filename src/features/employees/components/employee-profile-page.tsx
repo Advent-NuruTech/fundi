@@ -17,11 +17,11 @@ import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { usePermissions } from "@/modules/shared/use-permissions";
 import { useFinancePermissions } from "@/modules/shared/use-finance-permissions";
 import {
-  listenMembers,
   listenOrders,
   updateMemberCompensation,
   updateMemberRoles,
 } from "@/services/firestore.service";
+import { fetchTeamDirectory } from "@/services/auth.service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +42,9 @@ export function EmployeeProfilePage() {
   const permissions = usePermissions();
   const finPerms = useFinancePermissions();
   const canSeePay = finPerms.hasOwnerAccess || finPerms.hasFullDashboardAccess;
-  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [member, setMember] = useState<UserProfile | null>(null);
+  const [loadingMember, setLoadingMember] = useState(true);
+  const [memberError, setMemberError] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
@@ -54,18 +56,30 @@ export function EmployeeProfilePage() {
 
   useEffect(() => {
     if (!ready) return;
-    const unsubMembers = listenMembers(businessId, setMembers);
+    let cancelled = false;
+    setLoadingMember(true);
+    setMemberError("");
+    void fetchTeamDirectory(businessId)
+      .then((directory) => {
+        if (!cancelled) {
+          setMember(directory.members.find((entry) => entry.uid === params.id) ?? null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMember(null);
+          setMemberError(error instanceof Error ? error.message : "Could not load this employee.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMember(false);
+      });
     const unsubOrders = listenOrders(businessId, setOrders);
     return () => {
-      unsubMembers();
+      cancelled = true;
       unsubOrders();
     };
-  }, [businessId, ready]);
-
-  const member = useMemo(
-    () => members.find((m) => m.uid === params.id),
-    [members, params.id]
-  );
+  }, [businessId, params.id, ready]);
 
   useEffect(() => {
     if (member) {
@@ -74,7 +88,7 @@ export function EmployeeProfilePage() {
       setPayPeriod(member.payPeriod ?? "monthly");
       setNextPayDate(member.nextPayDate ?? "");
     }
-  }, [member?.uid]); // only seed on member identity change, not every re-render
+  }, [member]);
 
   const assignedOrders = useMemo(
     () => orders.filter((o) => o.assignedTailorId === member?.uid),
@@ -91,12 +105,10 @@ export function EmployeeProfilePage() {
     try {
       await updateMemberRoles(businessId, member.uid, selectedRoles);
       // Optimistic update so UI reflects immediately without waiting for realtime
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.uid === member.uid
-            ? { ...m, roles: selectedRoles, role: selectedRoles[0] }
-            : m
-        )
+      setMember((current) =>
+        current?.uid === member.uid
+          ? { ...current, roles: selectedRoles, role: selectedRoles[0] }
+          : current
       );
       toast.success("Roles updated");
     } catch {
@@ -115,17 +127,15 @@ export function EmployeeProfilePage() {
         payPeriod,
         nextPayDate,
       });
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.uid === member.uid
-            ? {
-                ...m,
-                payRate: Number(payRate) || 0,
-                payPeriod,
-                nextPayDate,
-              }
-            : m
-        )
+      setMember((current) =>
+        current?.uid === member.uid
+          ? {
+              ...current,
+              payRate: Number(payRate) || 0,
+              payPeriod,
+              nextPayDate,
+            }
+          : current
       );
       toast.success("Compensation updated");
       setShowPay(false);
@@ -136,7 +146,7 @@ export function EmployeeProfilePage() {
     }
   };
 
-  if (!ready) {
+  if (!ready || loadingMember) {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
@@ -146,8 +156,16 @@ export function EmployeeProfilePage() {
 
   if (!member) {
     return (
-      <div className="text-sm text-slate-500 py-8 text-center">
-        Employee not found.
+      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <p className="font-semibold text-slate-900">
+          {memberError ? "Could not load employee activity" : "Employee is no longer in this business"}
+        </p>
+        <p className="mt-1 text-sm text-slate-500">
+          {memberError || "Their team membership may have been deleted. Return to Team to see the current directory."}
+        </p>
+        <Button variant="outline" className="mt-4" onClick={() => router.replace("/employees")}>
+          Back to Team
+        </Button>
       </div>
     );
   }

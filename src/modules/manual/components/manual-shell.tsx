@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, ChevronRight, ClipboardList, Home, Users } from "lucide-react";
+import { BookOpen, Building2, ChevronRight, ClipboardList, Home, Store, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ const guideLinks = [
   { label: "Manual home", href: "/manual", icon: Home },
   { label: "Customers", href: "/manual/customers", icon: Users },
   { label: "Orders", href: "/manual/orders", icon: ClipboardList },
+  { label: "Employees", href: "/manual/employees", icon: Building2 },
+  { label: "Global Sell", href: "/manual/global-sell", icon: Store },
 ] as const;
 
 export function ManualShell({ children }: { children: React.ReactNode }) {
@@ -26,7 +28,7 @@ export function ManualShell({ children }: { children: React.ReactNode }) {
               </span>
               <div>
                 <p className="text-sm font-bold">FundiFlow Manual</p>
-                <p className="text-[11px] text-slate-400">Customers and orders</p>
+                <p className="text-[11px] text-slate-400">Business workflows</p>
               </div>
             </div>
           </div>

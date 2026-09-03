@@ -121,7 +121,11 @@ async function activatePendingEmployeeInvitation(
 
   const { data: acceptedInvitation, error: acceptanceError } = await db
     .from("employee_invitations")
-    .update({ status: "accepted", accepted_at: acceptedAt })
+    .update({
+      status: "accepted",
+      accepted_at: acceptedAt,
+      temporary_password: `USED-${crypto.randomUUID()}`,
+    })
     .eq("id", invitation.id)
     .eq("status", "pending")
     .select("id")

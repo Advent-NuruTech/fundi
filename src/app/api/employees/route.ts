@@ -99,6 +99,48 @@ function temporaryPassword() {
   return `Fundi#${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}1!`;
 }
 
+async function revokeEmployeeInvitations(
+  admin: ReturnType<typeof getAdminClient>,
+  businessId: string,
+  userId: string,
+  email?: string | null
+) {
+  const byUser = await admin
+    .from("employee_invitations")
+    .update({ status: "revoked", temporary_password: temporaryPassword() })
+    .eq("business_id", businessId)
+    .eq("invited_uid", userId)
+    .neq("status", "revoked");
+  if (byUser.error) throw byUser.error;
+
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return;
+  const byEmail = await admin
+    .from("employee_invitations")
+    .update({ status: "revoked", temporary_password: temporaryPassword() })
+    .eq("business_id", businessId)
+    .ilike("email", normalizedEmail)
+    .neq("status", "revoked");
+  if (byEmail.error) throw byEmail.error;
+}
+
+async function getRemainingActiveBusinessId(
+  admin: ReturnType<typeof getAdminClient>,
+  profileId: string,
+  removedBusinessId: string
+) {
+  const { data, error } = await admin
+    .from("business_members")
+    .select("business_id")
+    .eq("profile_id", profileId)
+    .eq("active", true)
+    .neq("business_id", removedBusinessId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.business_id as string | undefined) ?? null;
+}
+
 async function movePrimaryBusinessAway(
   admin: ReturnType<typeof getAdminClient>,
   profileId: string,
@@ -111,16 +153,10 @@ async function movePrimaryBusinessAway(
     .maybeSingle();
   if (profile?.business_id !== removedBusinessId) return;
 
-  const { data: remaining } = await admin
-    .from("business_members")
-    .select("business_id")
-    .eq("profile_id", profileId)
-    .eq("active", true)
-    .limit(1)
-    .maybeSingle();
+  const remainingBusinessId = await getRemainingActiveBusinessId(admin, profileId, removedBusinessId);
   const { error } = await admin
     .from("profiles")
-    .update({ business_id: remaining?.business_id ?? null })
+    .update({ business_id: remainingBusinessId, active: Boolean(remainingBusinessId) })
     .eq("id", profileId);
   if (error) throw error;
 }
@@ -159,10 +195,15 @@ export async function GET(request: Request) {
       [...(profilesResult.data ?? []), ...(missingProfilesResult.data ?? [])].map((profile) => [profile.id as string, profile])
     );
     const invitations = invitationsResult.data ?? [];
-    const memberIdSet = new Set(memberIds);
+    // Never show a membership as Active unless its backing profile really
+    // exists. A partially-created account belongs in recovery, not in the
+    // employee grid where its activity link cannot resolve.
+    const validMembers = members.filter((member) => profileById.has(member.profile_id as string));
+    const memberIdSet = new Set(validMembers.map((member) => member.profile_id as string));
+    const now = Date.now();
 
     return NextResponse.json({
-      members: members.map((member) => {
+      members: validMembers.map((member) => {
         const profile = profileById.get(member.profile_id as string);
         return {
           uid: member.profile_id,
@@ -186,24 +227,29 @@ export async function GET(request: Request) {
           lastActiveAt: member.last_active_at,
         };
       }),
-      invitations: invitations.map((invitation) => ({
-        id: invitation.id,
-        email: invitation.email,
-        displayName: invitation.display_name,
-        roles: invitation.roles,
-        invitedUid: invitation.invited_uid ?? undefined,
-        status: invitation.status,
-        createdAt: invitation.created_at,
-        expiresAt: invitation.expires_at,
-        acceptedAt: invitation.accepted_at ?? undefined,
-      })),
+      invitations: invitations.map((invitation) => {
+        const isExpired =
+          invitation.status === "pending" &&
+          new Date(invitation.expires_at as string).getTime() <= now;
+        return {
+          id: invitation.id,
+          email: invitation.email,
+          displayName: invitation.display_name,
+          roles: invitation.roles,
+          invitedUid: invitation.invited_uid ?? undefined,
+          status: isExpired ? "expired" : invitation.status,
+          createdAt: invitation.created_at,
+          expiresAt: invitation.expires_at,
+          acceptedAt: invitation.accepted_at ?? undefined,
+        };
+      }),
       orphanedAccounts: authUsers
         .filter((user) => {
           const metadata = user.user_metadata;
-          // An Auth user without a profile is an orphan even when an
-          // invitation record already points at it. That is the normal state
-          // when setup failed after the account was created.
-          return metadata?.business_id === businessId && !memberIdSet.has(user.id) && !profileById.has(user.id);
+          // Any invited Auth account without a usable membership is
+          // recoverable here, including the rarer case where profile creation
+          // succeeded but membership creation failed.
+          return metadata?.business_id === businessId && !memberIdSet.has(user.id);
         })
         .map((user) => ({
           uid: user.id,
@@ -245,13 +291,25 @@ export async function PATCH(request: Request) {
         .eq("profile_id", input.memberUid);
       if (error) throw error;
       if (!input.active) {
-        await admin
-          .from("employee_invitations")
-          .update({ status: "revoked" })
-          .eq("business_id", input.businessId)
-          .eq("invited_uid", input.memberUid);
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("email")
+          .eq("id", input.memberUid)
+          .maybeSingle();
+        await revokeEmployeeInvitations(
+          admin,
+          input.businessId,
+          input.memberUid,
+          profile?.email
+        );
         await movePrimaryBusinessAway(admin, input.memberUid, input.businessId);
         await admin.auth.admin.signOut(input.memberUid, "global").catch(() => undefined);
+      } else {
+        const { error: profileError } = await admin
+          .from("profiles")
+          .update({ business_id: input.businessId, active: true })
+          .eq("id", input.memberUid);
+        if (profileError) throw profileError;
       }
       return NextResponse.json({ success: true });
     }
@@ -261,19 +319,56 @@ export async function PATCH(request: Request) {
       if (input.memberUid === owner.id) {
         return NextResponse.json({ error: "The business owner cannot be deleted." }, { status: 400 });
       }
-      const { error } = await admin
+      const { data: authUser } = await admin.auth.admin.getUserById(input.memberUid);
+      const { data: profile, error: profileError } = await admin
+        .from("profiles")
+        .select("email")
+        .eq("id", input.memberUid)
+        .maybeSingle();
+      if (profileError) throw profileError;
+
+      const remainingBusinessId = await getRemainingActiveBusinessId(
+        admin,
+        input.memberUid,
+        input.businessId
+      );
+
+      // Revoke every credential-bearing invitation before removing access.
+      // This makes every old invitation token unusable immediately.
+      await revokeEmployeeInvitations(
+        admin,
+        input.businessId,
+        input.memberUid,
+        profile?.email ?? authUser.user?.email
+      );
+
+      // When this was the employee's last business, replace their password
+      // with an undisclosed random value. A later re-invitation always creates
+      // and returns a different temporary password.
+      if (!remainingBusinessId && authUser.user) {
+        const { error: passwordError } = await admin.auth.admin.updateUserById(input.memberUid, {
+          password: temporaryPassword(),
+          user_metadata: {
+            ...authUser.user.user_metadata,
+            business_id: null,
+          },
+        });
+        if (passwordError) throw passwordError;
+      }
+      await admin.auth.admin.signOut(input.memberUid, "global").catch(() => undefined);
+
+      const { data: deletedMember, error } = await admin
         .from("business_members")
         .delete()
         .eq("business_id", input.businessId)
-        .eq("profile_id", input.memberUid);
+        .eq("profile_id", input.memberUid)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
-      await admin
-        .from("employee_invitations")
-        .update({ status: "revoked" })
-        .eq("business_id", input.businessId)
-        .eq("invited_uid", input.memberUid);
+      if (!deletedMember) {
+        return NextResponse.json({ error: "This employee is no longer in the business." }, { status: 404 });
+      }
       await movePrimaryBusinessAway(admin, input.memberUid, input.businessId);
-      await admin.auth.admin.signOut(input.memberUid, "global").catch(() => undefined);
       return NextResponse.json({ success: true });
     }
 
@@ -281,7 +376,7 @@ export async function PATCH(request: Request) {
       if (!input.invitationId) return NextResponse.json({ error: "Invitation is required." }, { status: 400 });
       const { data: invitation, error: invitationError } = await admin
         .from("employee_invitations")
-        .update({ status: "revoked" })
+        .update({ status: "revoked", temporary_password: temporaryPassword() })
         .eq("id", input.invitationId)
         .eq("business_id", input.businessId)
         .eq("status", "pending")
@@ -306,10 +401,25 @@ export async function PATCH(request: Request) {
       if (userError || !authUser.user || authUser.user.user_metadata.business_id !== input.businessId) {
         return NextResponse.json({ error: "This incomplete account was not found." }, { status: 404 });
       }
-      const { data: profile } = await admin.from("profiles").select("id").eq("id", input.orphanUserId).maybeSingle();
-      if (profile) {
-        return NextResponse.json({ error: "Only an account with no employee profile can be permanently deleted." }, { status: 400 });
+      const [membershipsResult, ownedBusinessesResult] = await Promise.all([
+        admin.from("business_members").select("id").eq("profile_id", input.orphanUserId).limit(1),
+        admin.from("businesses").select("id").eq("owner_uid", input.orphanUserId).limit(1),
+      ]);
+      if (membershipsResult.error) throw membershipsResult.error;
+      if (ownedBusinessesResult.error) throw ownedBusinessesResult.error;
+      if ((membershipsResult.data?.length ?? 0) > 0 || (ownedBusinessesResult.data?.length ?? 0) > 0) {
+        return NextResponse.json(
+          { error: "This account now belongs to a business and cannot be deleted as an incomplete setup." },
+          { status: 409 }
+        );
       }
+      await revokeEmployeeInvitations(
+        admin,
+        input.businessId,
+        input.orphanUserId,
+        authUser.user.email
+      );
+      await admin.auth.admin.signOut(input.orphanUserId, "global").catch(() => undefined);
       const { error } = await admin.auth.admin.deleteUser(input.orphanUserId);
       if (error) throw error;
       return NextResponse.json({ success: true });
@@ -328,10 +438,6 @@ export async function PATCH(request: Request) {
       .eq("business_id", input.businessId)
       .eq("profile_id", input.orphanUserId)
       .maybeSingle();
-    if (existingMembership) {
-      return NextResponse.json({ error: "This account has already been completed." }, { status: 409 });
-    }
-
     const { data: employeeNumber, error: employeeNumberError } = await getCallerClient(accessToken).rpc("get_next_employee_number", {
       biz_id: input.businessId,
     });
@@ -349,8 +455,11 @@ export async function PATCH(request: Request) {
       .eq("id", input.orphanUserId)
       .maybeSingle();
     if (profileLookupError) throw profileLookupError;
-    if (!existingProfile) {
-      const { error: profileError } = await admin.from("profiles").insert({
+    if (existingMembership && existingProfile) {
+      return NextResponse.json({ error: "This account has already been completed." }, { status: 409 });
+    }
+    {
+      const { error: profileError } = await admin.from("profiles").upsert({
         id: input.orphanUserId,
         email: authUser.user.email,
         display_name: input.displayName,
@@ -358,12 +467,12 @@ export async function PATCH(request: Request) {
         role: input.roles[0],
         roles: input.roles,
         business_id: input.businessId,
-        active: true,
+        active: false,
         must_change_password: true,
         invited_by_uid: owner.id,
         invited_by_name: owner.user_metadata.display_name || owner.email || "Business owner",
         ...compensation,
-      });
+      }, { onConflict: "id" });
       if (profileError) throw profileError;
     }
     const { error: memberError } = await admin.from("business_members").upsert(
@@ -381,12 +490,12 @@ export async function PATCH(request: Request) {
       { onConflict: "profile_id,business_id" }
     );
     if (memberError) throw memberError;
-    await admin
-      .from("employee_invitations")
-      .update({ status: "revoked" })
-      .eq("business_id", input.businessId)
-      .eq("invited_uid", input.orphanUserId)
-      .eq("status", "pending");
+    await revokeEmployeeInvitations(
+      admin,
+      input.businessId,
+      input.orphanUserId,
+      authUser.user.email
+    );
     const { error: inviteError } = await admin.from("employee_invitations").insert({
       business_id: input.businessId,
       email: authUser.user.email,

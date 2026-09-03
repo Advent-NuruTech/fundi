@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OrderStatusBadge } from "@/modules/globalsell/components/order-status-badge";
 import { formatKes } from "@/lib/utils";
+import { storeUrl } from "@/lib/storefront-url";
 
 export default function SellOverviewPage() {
   const { user, business } = useAuth();
@@ -59,10 +60,10 @@ export default function SellOverviewPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/globalsell" target="_blank">
+          <Link href={store ? storeUrl(store.publicHandle) : "/sell/settings"} target={store ? "_blank" : undefined}>
             <Button variant="outline" size="sm" className="gap-2">
               <Globe className="h-4 w-4" />
-              View Marketplace
+              {store ? "View My Store" : "Set Up Store"}
             </Button>
           </Link>
           <Link href="/sell/products/new">

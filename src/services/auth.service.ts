@@ -12,7 +12,7 @@ export interface TeamInvitation {
   displayName: string;
   roles: UserRole[];
   invitedUid?: string;
-  status: "pending" | "accepted" | "revoked";
+  status: "pending" | "accepted" | "revoked" | "expired";
   createdAt: string;
   expiresAt: string;
   acceptedAt?: string;

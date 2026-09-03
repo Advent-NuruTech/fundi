@@ -45,6 +45,20 @@ const guideCards = [
     action: "Read inventory guide",
     icon: Boxes,
   },
+  {
+    title: "Global Sell",
+    description: "Set up a branded public shop, publish products, share its personal web address, and manage online orders.",
+    href: "/manual/global-sell",
+    action: "Read Global Sell guide",
+    icon: Store,
+  },
+  {
+    title: "Employees",
+    description: "Invite staff, recover incomplete accounts, manage access, delete memberships safely, and re-invite with fresh credentials.",
+    href: "/manual/employees",
+    action: "Read employee guide",
+    icon: Building2,
+  },
 ] as const;
 
 const appMap = [
@@ -57,9 +71,9 @@ const appMap = [
   { label: "Inventory", href: "/inventory", purpose: "Materials, ready-made stock, movements, suppliers, and purchasing.", icon: Boxes, guide: "/manual/inventory" },
   { label: "Payments", href: "/payments", purpose: "Record and review money received against orders.", icon: CreditCard },
   { label: "Analytics", href: "/analytics", purpose: "Business performance and trend reports.", icon: BarChart3 },
-  { label: "Employees", href: "/employees", purpose: "Staff records, roles, and assignments.", icon: Building2 },
+  { label: "Employees", href: "/employees", purpose: "Staff records, roles, access, invitations, and assignments.", icon: Building2, guide: "/manual/employees" },
   { label: "Messages", href: "/messages", purpose: "Customer communication and message history.", icon: MessageSquare },
-  { label: "Global Sell", href: "/sell", purpose: "Publish products and manage online marketplace sales.", icon: Store },
+  { label: "Global Sell", href: "/sell", purpose: "Publish products and services, share your branded public store, and manage online orders.", icon: Store, guide: "/manual/global-sell" },
   { label: "Settings", href: "/settings", purpose: "Business profile and operating preferences.", icon: Settings },
   { label: "Permissions", href: "/settings/role-permissions", purpose: "Choose what each employee role can view or change.", icon: ShieldCheck },
   { label: "Billing", href: "/settings/billing", purpose: "Plan, subscription, invoices, and billing details for owners.", icon: Receipt },

@@ -1,14 +1,23 @@
 import type { ReactNode } from "react";
-import { GlobalSellHeader } from "@/app/globalsell/_components/global-sell-header";
-import { GlobalSellFooter } from "@/app/globalsell/_components/global-sell-footer";
+import { StorefrontFooter } from "@/modules/globalsell/components/storefront-footer";
+import { StorefrontHeader } from "@/modules/globalsell/components/storefront-header";
+import { resolveStorefront } from "@/services/storefront.service";
 
-export default function StorefrontLayout({ children }: { children: ReactNode }) {
+export default async function StorefrontLayout({
+  children,
+  params,
+}: {
+  children: ReactNode;
+  params: Promise<{ handle: string }>;
+}) {
+  const { handle } = await params;
+  const resolution = await resolveStorefront(handle);
+
   return (
     <div className="min-h-screen overflow-x-clip bg-slate-50">
-      <GlobalSellHeader />
+      <StorefrontHeader store={resolution?.store} />
       {children}
-      <GlobalSellFooter />
+      <StorefrontFooter store={resolution?.store} />
     </div>
   );
 }
-
