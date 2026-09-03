@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, type ChangeEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -40,7 +41,7 @@ import {
 } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Ruler, Users, Truck, Layers, Banknote } from "lucide-react";
+import { Plus, Trash2, Ruler, Users, Truck, Layers, Banknote, BookOpen } from "lucide-react";
 import { formatKes } from "@/lib/utils";
 import { isNetworkError, isOffline } from "@/lib/offline-write";
 
@@ -685,14 +686,23 @@ export function NewOrderModulePage() {
     <div className="grid gap-4">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            New Order
-            {items.length > 0 && (
-              <Badge variant="default" className="normal-case">
-                {itemTypeCount(items)}
-              </Badge>
-            )}
-          </CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              New Order
+              {items.length > 0 && (
+                <Badge variant="default" className="normal-case">
+                  {itemTypeCount(items)}
+                </Badge>
+              )}
+            </CardTitle>
+            <Link
+              href="/manual/orders"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Open complete guide
+            </Link>
+          </div>
           <p className="text-sm text-slate-500">Choose the customer first, then add only the items they need. Each item carries its own production details and reference image.</p>
         </CardHeader>
         <CardContent>

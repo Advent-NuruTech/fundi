@@ -101,6 +101,13 @@ src/
 | `npm run lint` | ESLint |
 | `npm start` | Start production server |
 
+## FundiFlow Manual maintenance
+
+- The in-app manual lives under `src/app/(dashboard)/manual/`, with shared manual components in `src/modules/manual/components/`.
+- Every new feature, changed workflow, renamed field, new tab, permission change, or material UI behavior change must update the relevant FundiFlow Manual page in the same change.
+- Manual instructions must match the live interface exactly, explain every user-facing field in plain language, include a realistic Kenyan business example, and link readers to the live FundiFlow page.
+- When a new main navigation tab is added, also add it to the app map on `src/app/(dashboard)/manual/page.tsx`. Do not mark a guide complete until its workflow and field reference are comprehensive.
+
 ## Supabase
 
 - Supabase config in `supabase/config.toml`, migrations in `supabase/migrations/`

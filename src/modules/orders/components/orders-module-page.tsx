@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, BookOpen } from "lucide-react";
 import { type ColumnDef } from "@tanstack/react-table";
 import type { Order } from "@/types/domain";
 import { listenOrders, dueTodayOrders } from "@/services/firestore.service";
@@ -283,6 +283,12 @@ export function OrdersModulePage() {
           )}
         </div>
         <div className="flex gap-2">
+          <Link href="/manual/orders">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <BookOpen className="h-3.5 w-3.5" />
+              Order Guide
+            </Button>
+          </Link>
           <Link href="/orders/new">
             <Button variant="default" size="sm" className="bg-orange-500 hover:bg-orange-600 text-white shadow-sm">
               + New Order

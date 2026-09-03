@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useForm, useFieldArray, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Search, X, Building2, Users, User } from "lucide-react";
+import { Plus, Search, X, Building2, Users, User, BookOpen } from "lucide-react";
 
 import type { Customer, CustomerType } from "@/types/domain";
 import {
@@ -221,11 +221,20 @@ export function CustomersModulePage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {accounts.length} total · {groups.length} groups · {withBalance} with outstanding balance
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {accounts.length} total · {groups.length} groups · {withBalance} with outstanding balance
+          </p>
+        </div>
+        <Link
+          href="/manual/customers"
+          className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+        >
+          <BookOpen className="h-4 w-4" />
+          How to add customers
+        </Link>
       </div>
 
       {/* Summary stats */}

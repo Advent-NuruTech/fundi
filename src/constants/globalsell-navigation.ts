@@ -21,7 +21,7 @@ export const sellNavigation = [
     items: [
       { label: "My Products", href: "/sell/products", icon: Package },
       { label: "Add Product", href: "/sell/products/new", icon: Store },
-      { label: "FundiFlow Manual", href: "/sell/manual", icon: BookOpen },
+      { label: "Global Sell Guide", href: "/sell/manual", icon: BookOpen },
     ],
   },
   {

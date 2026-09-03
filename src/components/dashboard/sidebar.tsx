@@ -23,6 +23,7 @@ import {
   Settings,
   Sparkles,
   Truck,
+  BookOpen,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         {visibleNavigation.map(navItem)}
         {extraNav.map(navItem)}
         {navItem({ label: "Global Sell", href: "/sell", icon: Globe })}
+        {navItem({ label: "FundiFlow Manual", href: "/manual", icon: BookOpen })}
         <Link
           href="/settings"
           onClick={() => setOpen(false)}
@@ -248,6 +250,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <div className="pt-1">
                 {navItem({ label: "Global Sell", href: "/sell", icon: Globe })}
               </div>
+              {navItem({ label: "FundiFlow Manual", href: "/manual", icon: BookOpen })}
               <Link
                 href="/settings"
                 className={cn(

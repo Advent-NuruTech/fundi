@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, ChevronRight, Images, Lightbulb, PackagePlus, ShoppingBag, Sparkles } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronRight, Images, Lightbulb, PackagePlus, ShoppingBag, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const steps = [
@@ -23,11 +23,16 @@ function ExampleBox({ title, children }: { title: string; children: React.ReactN
 export default function FundiFlowManualPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-10">
+      <div className="flex justify-end">
+        <Link href="/manual" className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:underline">
+          <BookOpen className="h-4 w-4" /> Open the full FundiFlow Manual
+        </Link>
+      </div>
       <section className="rounded-3xl bg-slate-900 px-5 py-7 text-white sm:px-8">
         <div className="flex items-start gap-3">
           <div className="rounded-2xl bg-emerald-500 p-2.5"><Sparkles className="h-5 w-5" /></div>
           <div>
-            <p className="text-sm font-semibold text-emerald-300">FundiFlow Manual</p>
+            <p className="text-sm font-semibold text-emerald-300">Global Sell Guide</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Add a Global Sell product without guessing</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">This short guide is only for adding a new product. Follow it from top to bottom, like filling in a simple school form.</p>
           </div>
