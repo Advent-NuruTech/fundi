@@ -38,6 +38,13 @@ const guideCards = [
     action: "Read complete order guide",
     icon: ClipboardList,
   },
+  {
+    title: "Inventory",
+    description: "Set up materials and ready-made stock, manage suppliers and purchase orders, receive deliveries, and monitor stock movement and consumption.",
+    href: "/manual/inventory",
+    action: "Read inventory guide",
+    icon: Boxes,
+  },
 ] as const;
 
 const appMap = [
@@ -47,7 +54,7 @@ const appMap = [
   { label: "Orders", href: "/orders", purpose: "New, active, delivered, and cancelled customer orders.", icon: ShoppingBag, guide: "/manual/orders" },
   { label: "Production", href: "/production", purpose: "Track the workshop queue and each production stage.", icon: Scissors },
   { label: "Delivery", href: "/delivery", purpose: "Pickup and courier progress, handover, and delivery completion.", icon: Truck },
-  { label: "Inventory", href: "/inventory", purpose: "Materials, ready-made stock, movements, suppliers, and purchasing.", icon: Boxes },
+  { label: "Inventory", href: "/inventory", purpose: "Materials, ready-made stock, movements, suppliers, and purchasing.", icon: Boxes, guide: "/manual/inventory" },
   { label: "Payments", href: "/payments", purpose: "Record and review money received against orders.", icon: CreditCard },
   { label: "Analytics", href: "/analytics", purpose: "Business performance and trend reports.", icon: BarChart3 },
   { label: "Employees", href: "/employees", purpose: "Staff records, roles, and assignments.", icon: Building2 },
@@ -69,7 +76,7 @@ export default function ManualHomePage() {
       />
 
       <Note>
-        <strong>Recommended order:</strong> save the customer first, then create the order, then manage production and delivery from the saved order. Customer and Order guides are complete below; the app map keeps every other FundiFlow tab one click away while more detailed sections are added.
+        <strong>Recommended order:</strong> set up suppliers and inventory materials before selling stock or recording material use on an order. Save the customer before creating their order, then manage production and delivery from the saved order. The guides below explain each workflow; the app map keeps every FundiFlow tab one click away.
       </Note>
 
       <section>
