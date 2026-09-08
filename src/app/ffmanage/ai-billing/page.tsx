@@ -456,20 +456,20 @@ export default function AdminAIBillingPage() {
         {/* Margin + credit value */}
         <div className="grid gap-4 lg:grid-cols-2">
           <Card
-            title="Portfolio Margin"
-            subtitle="The system measures margin across ALL AI usage, not per request. Revenue multiplier = 1 + margin/100."
+            title="Provider-cost markup"
+            subtitle="The system measures markup across ALL AI usage, not per request. Revenue multiplier = 1 + markup/100."
             icon={Percent}
           >
             <NumberField
-              label="Target gross margin (%)"
+              label="Target cost markup (%)"
               value={config.margin.targetGrossMarginPercent}
               onChange={(v) => setConfig((c) => ({ ...c, margin: { targetGrossMarginPercent: v } }))}
               step={1}
               suffix={`Revenue multiplier: ${revenueMultiplier.toFixed(2)}×`}
             />
             <p className="mt-2 text-xs text-slate-500">
-              Example: 100% → 2.0× · 50% → 1.5× · 150% → 2.5×. A margin alert is raised when the portfolio
-              margin falls below this target.
+              Example: 100% → 2.0× · 50% → 1.5× · 150% → 2.5×. An alert is raised when the portfolio
+              markup falls below this target. This protects unit economics but cannot guarantee total company profit.
             </p>
           </Card>
 

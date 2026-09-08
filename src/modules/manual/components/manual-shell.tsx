@@ -12,6 +12,8 @@ import {
   Landmark,
   ListTree,
   Store,
+  Sparkles,
+  Truck,
   Users,
 } from "lucide-react";
 
@@ -19,9 +21,11 @@ import { cn } from "@/lib/utils";
 
 const guideLinks = [
   { label: "Manual home", href: "/manual", icon: Home },
+  { label: "Business Advisor", href: "/manual/ai", icon: Sparkles },
   { label: "Finance", href: "/manual/finance", icon: Landmark },
   { label: "Customers", href: "/manual/customers", icon: Users },
   { label: "Orders", href: "/manual/orders", icon: ClipboardList },
+  { label: "Delivery", href: "/manual/delivery", icon: Truck },
   { label: "Inventory", href: "/manual/inventory", icon: Boxes },
   { label: "Employees", href: "/manual/employees", icon: Building2 },
   { label: "Global Sell", href: "/manual/global-sell", icon: Store },
@@ -31,6 +35,13 @@ const pageSections: Record<string, Array<{ id: string; label: string }>> = {
   "/manual": [
     { id: "available-guides", label: "Available guides" },
     { id: "app-map", label: "FundiFlow app map" },
+  ],
+  "/manual/ai": [
+    { id: "advisor-overview", label: "How the advisor works" },
+    { id: "advisor-controls", label: "Screen controls" },
+    { id: "ask-well", label: "Ask effective questions" },
+    { id: "kenyan-example", label: "Kenyan example" },
+    { id: "privacy-limits", label: "Privacy and limits" },
   ],
   "/manual/finance": [
     { id: "finance-map", label: "Finance tabs and money flow" },
@@ -64,6 +75,20 @@ const pageSections: Record<string, Array<{ id: string; label: string }>> = {
     { id: "after-save", label: "After saving" },
     { id: "orders-page", label: "Orders page" },
     { id: "order-next", label: "Next steps" },
+  ],
+  "/manual/delivery": [
+    { id: "delivery-map", label: "End-to-end delivery flow" },
+    { id: "delivery-policy", label: "Delivery policy" },
+    { id: "delivery-partners", label: "Couriers and riders" },
+    { id: "new-order-delivery", label: "Set delivery on an order" },
+    { id: "production-handoff", label: "Production handoff" },
+    { id: "delivery-board", label: "Use the Delivery Board" },
+    { id: "courier-flow", label: "Courier delivery stages" },
+    { id: "pickup-flow", label: "Customer pickup stages" },
+    { id: "delivery-messages", label: "SMS and notifications" },
+    { id: "exceptions", label: "Attempts and cancellations" },
+    { id: "returns", label: "Returns and alterations" },
+    { id: "delivery-routine", label: "Daily delivery routine" },
   ],
   "/manual/inventory": [
     { id: "inventory-tabs", label: "Inventory tabs" },

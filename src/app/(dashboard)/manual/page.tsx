@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   ShoppingBag,
   Store,
+  Sparkles,
   Truck,
   Users,
 } from "lucide-react";
@@ -24,6 +25,13 @@ import {
 import { ManualHeader, Note } from "@/modules/manual/components/manual-ui";
 
 const guideCards = [
+  {
+    title: "Business Advisor",
+    description: "Ask your private advisor for data-aware finance, operations, stock, sales, production, customer-care, and growth recommendations.",
+    href: "/manual/ai",
+    action: "Read advisor guide",
+    icon: Sparkles,
+  },
   {
     title: "Finance",
     description: "Understand money in and out, expenses, withdrawals, investments, savings, the transaction ledger, reports, and Finance access.",
@@ -44,6 +52,13 @@ const guideCards = [
     href: "/manual/orders",
     action: "Read complete order guide",
     icon: ClipboardList,
+  },
+  {
+    title: "Delivery",
+    description: "Set delivery policy, add couriers, choose pickup or delivery, follow every handover stage, send updates, and manage exceptions and returns.",
+    href: "/manual/delivery",
+    action: "Read complete delivery guide",
+    icon: Truck,
   },
   {
     title: "Inventory",
@@ -70,11 +85,12 @@ const guideCards = [
 
 const appMap = [
   { label: "Dashboard", href: "/dashboard", purpose: "Daily business totals, urgent work, and shortcuts.", icon: LayoutDashboard },
+  { label: "Business Advisor", href: "/ai", purpose: "Private, permission-aware advice from FundiFlow's specialist AI team.", icon: Sparkles, guide: "/manual/ai" },
   { label: "Finance", href: "/finance", purpose: "Income, expenses, withdrawals, savings, investments, transactions, and reports.", icon: Landmark, guide: "/manual/finance" },
   { label: "Customers", href: "/customers", purpose: "Customer records, groups, members, measurements, balances, and history.", icon: Users, guide: "/manual/customers" },
   { label: "Orders", href: "/orders", purpose: "New, active, delivered, and cancelled customer orders.", icon: ShoppingBag, guide: "/manual/orders" },
   { label: "Production", href: "/production", purpose: "Track the workshop queue and each production stage.", icon: Scissors },
-  { label: "Delivery", href: "/delivery", purpose: "Pickup and courier progress, handover, and delivery completion.", icon: Truck },
+  { label: "Delivery", href: "/delivery", purpose: "Pickup and courier progress, handover, delivery completion, and exceptions.", icon: Truck, guide: "/manual/delivery" },
   { label: "Inventory", href: "/inventory", purpose: "Materials, ready-made stock, movements, suppliers, and purchasing.", icon: Boxes, guide: "/manual/inventory" },
   { label: "Payments", href: "/payments", purpose: "Record and review money received against orders.", icon: CreditCard },
   { label: "Analytics", href: "/analytics", purpose: "Business performance and trend reports.", icon: BarChart3 },

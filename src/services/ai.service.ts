@@ -89,6 +89,14 @@ export async function deleteAiConversation(conversationId: string): Promise<bool
   return res.ok;
 }
 
+export async function rateAiMessage(messageId: string, feedback: -1 | 1): Promise<boolean> {
+  const res = await authedFetch("/api/ai", {
+    method: "POST",
+    body: JSON.stringify({ mode: "feedback", messageId, feedback }),
+  });
+  return res.ok;
+}
+
 export async function chatWithAssistant(input: {
   conversationId?: string;
   personaId: AIAssistantPersonaId;
@@ -108,6 +116,7 @@ export async function chatWithAssistant(input: {
       model: "",
       creditsCharged: 0,
       balanceAfter: null,
+      expertTeam: [],
       billingMode: "meter",
       insufficientCredits: data.code === "INSUFFICIENT_USAGE",
       error: data.error ?? "Something went wrong. Please try again.",

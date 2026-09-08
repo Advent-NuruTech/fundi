@@ -8,6 +8,7 @@ import { AdminHeader } from "./admin-header";
 interface AdminUser {
   uid: string;
   email: string;
+  platformRole: string;
 }
 
 interface AdminContextValue {
@@ -33,7 +34,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       .then((r) => r.json())
       .then((data) => {
         if (data.authenticated) {
-          setAdmin({ uid: data.uid, email: data.email });
+          setAdmin({ uid: data.uid, email: data.email, platformRole: data.platformRole });
         } else {
           router.replace("/ffmanage/login");
         }
@@ -64,6 +65,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           onClose={() => setSidebarOpen(false)}
           currentPath={pathname}
           adminEmail={admin.email}
+          platformRole={admin.platformRole}
         />
 
         {/* Mobile overlay */}

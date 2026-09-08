@@ -16,6 +16,12 @@ import { allowedAIContextScopes, intersectAIContextScopes } from "@/lib/ai/acces
 import { buildRecordContext } from "@/lib/ai/record-context";
 import type { AIMessageRecord, AIConversationSummary } from "@/lib/ai/types";
 import type { AIProviderUsage } from "@/types/ai-billing";
+import {
+  buildExpertTeamPrompt,
+  expertTeamLabels,
+  expertTeamScopes,
+  routeExpertTeam,
+} from "@/lib/ai/orchestrator";
 
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status });
 
@@ -116,6 +122,9 @@ function mapConversation(row: Record<string, unknown>): AIConversationSummary {
 }
 
 function mapMessage(row: Record<string, unknown>): AIMessageRecord {
+  const metadata = row.metadata && typeof row.metadata === "object"
+    ? row.metadata as Record<string, unknown>
+    : {};
   return {
     id: String(row.id),
     conversationId: String(row.conversation_id),
@@ -125,6 +134,10 @@ function mapMessage(row: Record<string, unknown>): AIMessageRecord {
     model: (row.model as string | null) ?? null,
     creditsCharged: Number(row.credits_charged ?? 0),
     tokensTotal: Number(row.tokens_total ?? 0),
+    feedback: row.feedback_score === 1 || row.feedback_score === -1 ? row.feedback_score : null,
+    expertTeam: Array.isArray(metadata.expert_team)
+      ? metadata.expert_team.map(String)
+      : [],
     createdAt: String(row.created_at),
   };
 }
@@ -160,7 +173,7 @@ async function handleGreeting(
     return json({ error: "Could not save your message" }, 500);
   }
 
-  await admin.from("ai_messages").insert({
+  const { data: assistantMsg } = await admin.from("ai_messages").insert({
     conversation_id: conversationId,
     business_id: caller.businessId,
     user_id: caller.userId,
@@ -169,7 +182,7 @@ async function handleGreeting(
     credits_charged: 0,
     tokens_total: 0,
     metadata: { handled: "greeting" },
-  });
+  }).select("id").single();
 
   await admin
     .from("ai_conversations")
@@ -179,11 +192,12 @@ async function handleGreeting(
   return json({
     reply,
     conversationId,
-    messageId: userMsg.id,
+    messageId: assistantMsg?.id ?? userMsg.id,
     personaId,
     model: "instant",
     creditsCharged: 0,
     balanceAfter: null,
+    expertTeam: [getBusinessPersona(personaId).label],
     billingMode: "greeting",
   });
 }
@@ -327,8 +341,9 @@ async function handleChat(
   // Business memory — private snapshot scoped to the persona's data permissions.
   // Cached per business (see context.ts) so the system prompt stays stable and
   // the provider's prompt cache keeps hitting across turns.
+  const expertTeam = routeExpertTeam(message, persona.id);
   const permittedScopes = intersectAIContextScopes(
-    persona.contextScopes,
+    expertTeamScopes(expertTeam),
     allowedAIContextScopes(caller)
   );
   const [context, recordContext] = await Promise.all([
@@ -336,7 +351,10 @@ async function handleChat(
     buildRecordContext(admin, caller.businessId, message, permittedScopes).catch(() => ""),
   ]);
 
-  const systemPrompt = buildBusinessPersonaPrompt(persona, businessName);
+  const systemPrompt = [
+    buildBusinessPersonaPrompt(persona, businessName),
+    buildExpertTeamPrompt(expertTeam),
+  ].filter(Boolean).join("\n\n");
   const llmMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
     {
       role: "system",
@@ -390,15 +408,25 @@ async function handleChat(
         model: result.model,
         credits_charged: result.creditsCharged,
         tokens_total: totalTokens,
-        metadata: { billing_mode: result.billingMode, request_id: requestId },
+        metadata: {
+          billing_mode: result.billingMode,
+          request_id: requestId,
+          expert_team: expertTeamLabels(expertTeam),
+        },
       })
       .select("id")
       .single();
 
-    await admin
-      .from("ai_conversations")
-      .update({ last_message_at: new Date().toISOString() })
-      .eq("id", conversationId);
+    await Promise.all([
+      admin
+        .from("ai_conversations")
+        .update({ last_message_at: new Date().toISOString() })
+        .eq("id", conversationId),
+      admin.rpc("record_platform_feature_event", {
+        p_business_id: caller.businessId,
+        p_feature_key: "ai_advisor",
+      }).then(() => undefined),
+    ]);
 
     return json({
       reply: result.content,
@@ -408,6 +436,7 @@ async function handleChat(
       model: result.model,
       creditsCharged: result.creditsCharged,
       balanceAfter: result.balanceAfter,
+      expertTeam: expertTeamLabels(expertTeam),
       billingMode: result.billingMode,
     });
   } catch (err) {
@@ -560,6 +589,35 @@ export async function POST(req: Request) {
         .delete()
         .eq("id", String(body.conversationId));
       if (error) return json({ error: "Could not delete conversation" }, 500);
+      return json({ ok: true });
+    }
+
+    case "feedback": {
+      const messageId = typeof body.messageId === "string" ? body.messageId : "";
+      const feedback = body.feedback === 1 || body.feedback === -1 ? body.feedback : null;
+      if (!messageId || feedback === null) {
+        return json({ error: "Valid feedback is required" }, 400);
+      }
+
+      const { data: messageRow } = await admin
+        .from("ai_messages")
+        .select("business_id, user_id, role")
+        .eq("id", messageId)
+        .maybeSingle();
+      if (
+        !messageRow ||
+        messageRow.business_id !== caller.businessId ||
+        messageRow.user_id !== caller.userId ||
+        messageRow.role !== "assistant"
+      ) {
+        return json({ error: "Message not found" }, 404);
+      }
+
+      const { error } = await admin
+        .from("ai_messages")
+        .update({ feedback_score: feedback, feedback_at: new Date().toISOString() })
+        .eq("id", messageId);
+      if (error) return json({ error: "Could not save feedback" }, 500);
       return json({ ok: true });
     }
 

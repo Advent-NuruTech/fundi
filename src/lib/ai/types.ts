@@ -76,6 +76,8 @@ export interface AIMessageRecord {
   model: string | null;
   creditsCharged: number;
   tokensTotal: number;
+  feedback: -1 | 1 | null;
+  expertTeam: string[];
   createdAt: string;
 }
 
@@ -87,6 +89,7 @@ export interface AIChatResponse {
   model: string;
   creditsCharged: number;
   balanceAfter: number | null;
+  expertTeam: string[];
   /** "engine" = full billing engine, "meter" = legacy credit meter, "greeting" = zero-cost instant reply. */
   billingMode: "engine" | "meter" | "greeting";
 }

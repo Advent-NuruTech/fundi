@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AIContextScope } from "./types";
 
 export interface BusinessSnapshot {
+  capturedAt: string;
   business: {
     name: string;
     businessType: string | null;
@@ -127,6 +128,13 @@ function snapshotCacheSet(key: string, snapshot: BusinessSnapshot): void {
     if (entry && entry.expiresAt <= now) snapshotCache.delete(k);
     if (snapshotCache.size <= Math.floor(SNAPSHOT_CACHE_MAX / 2)) break;
   }
+  // Under sustained multi-tenant traffic entries may all still be fresh.
+  // Evict the oldest insertion so a single server process stays memory-bounded.
+  while (snapshotCache.size > SNAPSHOT_CACHE_MAX) {
+    const oldest = snapshotCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    snapshotCache.delete(oldest);
+  }
 }
 
 /** Loads the private business snapshot. Every section fails soft and returns null. */
@@ -139,6 +147,7 @@ export async function loadBusinessSnapshot(
   const scope = (s: AIContextScope) => want.has(s);
 
   const snapshot: BusinessSnapshot = {
+    capturedAt: new Date().toISOString(),
     business: null,
     finance: null,
     inventory: null,
@@ -405,7 +414,10 @@ export function renderSnapshot(snapshot: BusinessSnapshot): string {
   const parts: string[] = [];
   const currency = currencyOf(snapshot.business as Row | null);
 
-  parts.push("## BUSINESS DATA (private snapshot for this business only)");
+  parts.push(
+    "## BUSINESS DATA (private snapshot for this business only)",
+    `- Snapshot captured: ${snapshot.capturedAt}. Figures may be up to 90 seconds behind live records.`
+  );
 
   if (snapshot.business) {
     parts.push(`- Business: ${snapshot.business.name}${snapshot.business.businessType ? ` (${snapshot.business.businessType})` : ""}${snapshot.business.location ? `, ${snapshot.business.location}` : ""}`);

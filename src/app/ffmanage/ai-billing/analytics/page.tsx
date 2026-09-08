@@ -171,10 +171,10 @@ export default function AdminAIBillingAnalyticsPage() {
               <div className="flex items-start gap-3 rounded-xl border border-amber-600/50 bg-amber-950/40 p-4">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
                 <div>
-                  <p className="font-semibold text-amber-200">AI margin below target</p>
+                  <p className="font-semibold text-amber-200">AI cost markup below target</p>
                   <p className="mt-0.5 text-sm text-amber-300/80">
-                    Portfolio margin is {data.summary.grossMarginPercent.toFixed(2)}% but the configured target is{" "}
-                    {data.summary.targetMarginPercent}%. Margin is measured across ALL AI usage — small requests are never
+                    Portfolio cost markup is {data.summary.grossMarginPercent.toFixed(2)}% but the configured target is{" "}
+                    {data.summary.targetMarginPercent}%. Markup is measured across ALL AI usage — small requests are never
                     distorted individually. Review pricing or the exchange rate.
                   </p>
                 </div>
@@ -185,7 +185,7 @@ export default function AdminAIBillingAnalyticsPage() {
               <div className="flex items-start gap-3 rounded-xl border border-emerald-700/50 bg-emerald-950/40 p-4">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
                 <p className="text-sm text-emerald-300">
-                  Portfolio margin {data.summary.grossMarginPercent.toFixed(2)}% meets the {data.summary.targetMarginPercent}% target.
+                  Portfolio cost markup {data.summary.grossMarginPercent.toFixed(2)}% meets the {data.summary.targetMarginPercent}% target.
                 </p>
               </div>
             )}
@@ -205,7 +205,7 @@ export default function AdminAIBillingAnalyticsPage() {
                 variant="success"
               />
               <StatCard
-                title="Portfolio Gross Margin"
+                title="Provider-cost Markup"
                 value={`${data.summary.grossMarginPercent.toFixed(2)}%`}
                 icon={ArrowUpRight}
                 variant={data.summary.belowTargetMargin ? "danger" : "success"}

@@ -12,6 +12,7 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useSyncEngine } from "@/hooks/useSyncEngine";
 import { useBusinessContext } from "@/modules/shared/use-business-context";
 import { processPendingPortalAccounts } from "@/services/customer-portal.service";
+import { ProductUsageTracker } from "@/components/analytics/product-usage-tracker";
 
 /**
  * Background worker for the Customer Portal. Whenever the dashboard is online
@@ -149,6 +150,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <SubscriptionGuard>
         <div className="flex h-[calc(100dvh-var(--safe-area-top)-var(--safe-area-bottom))] min-h-0 flex-col overflow-hidden">
           <OfflineBanner />
+          <ProductUsageTracker />
           <PortalProvisioner />
           <ExpiryReminder />
           <TrialBanner />

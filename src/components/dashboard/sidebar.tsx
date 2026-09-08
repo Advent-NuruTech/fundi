@@ -41,7 +41,7 @@ import { PWAInstallButton } from "@/components/pwa/pwa-install-button";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  //{ label: "AI Assistant", href: "/ai", icon: Sparkles },
+  //{ label: "Business Advisor", href: "/ai", icon: Sparkles },
   { label: "Finance", href: "/finance", icon: Landmark },
   { label: "Customers", href: "/customers", icon: Users },
   { label: "Orders", href: "/orders", icon: ShoppingBag },

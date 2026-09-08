@@ -27,7 +27,7 @@ export const DEFAULT_AI_BILLING_CONFIG: AIBillingConfig = {
     },
   },
   margin: {
-    targetGrossMarginPercent: 100,
+    targetGrossMarginPercent: 150,
   },
   credit: {
     valueKes: 0.5,

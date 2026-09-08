@@ -19,6 +19,7 @@ import {
   Cpu,
   BarChart3,
   ShieldCheck,
+  BrainCircuit,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PWAInstallButton } from "@/components/pwa/pwa-install-button";
@@ -68,6 +69,13 @@ const NAV_ITEMS = [
     description: "Immutable audit trail",
   },
   {
+    href: "/ffmanage/growth-intelligence",
+    icon: BrainCircuit,
+    label: "Growth Intelligence",
+    description: "Owner-only product signals",
+    ownerOnly: true,
+  },
+  {
     href: "/ffmanage/sms",
     icon: MessageSquare,
     label: "SMS & Packs",
@@ -104,9 +112,10 @@ interface Props {
   onClose: () => void;
   currentPath: string;
   adminEmail: string;
+  platformRole: string;
 }
 
-export function AdminSidebar({ open, onClose, currentPath, adminEmail }: Props) {
+export function AdminSidebar({ open, onClose, currentPath, adminEmail, platformRole }: Props) {
   const router = useRouter();
 
   async function handleLogout() {
@@ -143,7 +152,7 @@ export function AdminSidebar({ open, onClose, currentPath, adminEmail }: Props) 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
         <ul className="space-y-0.5">
-          {NAV_ITEMS.map(({ href, icon: Icon, label, description, exact }) => {
+          {NAV_ITEMS.filter((item) => !("ownerOnly" in item) || !item.ownerOnly || platformRole === "owner" || platformRole === "super_admin").map(({ href, icon: Icon, label, description, exact }) => {
             const active = exact
               ? currentPath === href
               : currentPath === href || currentPath.startsWith(href);
