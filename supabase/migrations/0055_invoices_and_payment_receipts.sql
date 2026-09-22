@@ -56,7 +56,7 @@ BEGIN
   v_total := GREATEST(0, COALESCE(NEW.subtotal_amount, 0) + COALESCE(NEW.delivery_fee, 0));
   INSERT INTO invoices (business_id, order_id, customer_id, invoice_number, due_date, status, total_amount, balance_amount)
   VALUES (NEW.business_id, NEW.id, NEW.customer_id, next_business_document_number(NEW.business_id, 'invoice'), NEW.due_date,
-    CASE WHEN NEW.due_date < CURRENT_DATE THEN 'overdue' ELSE 'issued' END, v_total, v_total);
+    (CASE WHEN NEW.due_date < CURRENT_DATE THEN 'overdue' ELSE 'issued' END)::invoice_status, v_total, v_total);
   RETURN NEW;
 END; $$;
 
@@ -76,11 +76,11 @@ DECLARE v_paid NUMERIC(12,2); v_balance NUMERIC(12,2); v_due_date DATE; v_status
 BEGIN
   SELECT amount_paid + NEW.amount, GREATEST(0, total_amount - amount_paid - NEW.amount), due_date INTO v_paid, v_balance, v_due_date FROM invoices WHERE id = NEW.invoice_id FOR UPDATE;
   IF NEW.amount > (SELECT balance_amount FROM invoices WHERE id = NEW.invoice_id) THEN RAISE EXCEPTION 'Payment exceeds the invoice balance'; END IF;
-  v_status := CASE WHEN v_balance = 0 THEN 'paid' WHEN v_due_date < CURRENT_DATE THEN 'overdue' WHEN v_paid > 0 THEN 'partial' ELSE 'issued' END;
+  v_status := (CASE WHEN v_balance = 0 THEN 'paid' WHEN v_due_date < CURRENT_DATE THEN 'overdue' WHEN v_paid > 0 THEN 'partial' ELSE 'issued' END)::invoice_status;
   UPDATE invoices SET amount_paid = v_paid, balance_amount = v_balance, status = v_status, paid_at = CASE WHEN v_status = 'paid' THEN now() ELSE NULL END, updated_at = now() WHERE id = NEW.invoice_id;
   INSERT INTO payment_receipts (business_id, invoice_id, payment_id, receipt_number, amount, payment_method, payment_reference, received_at)
   VALUES (NEW.business_id, NEW.invoice_id, NEW.id, next_business_document_number(NEW.business_id, 'receipt'), NEW.amount, NEW.method, COALESCE(NEW.payment_reference, NEW.mpesa_code), NEW.recorded_at);
-  UPDATE orders SET amount_paid = v_paid, balance_amount = v_balance, payment_status = CASE WHEN v_status = 'paid' THEN 'paid' WHEN v_status = 'partial' THEN 'partial' ELSE 'unpaid' END, updated_at = now() WHERE id = NEW.order_id;
+  UPDATE orders SET amount_paid = v_paid, balance_amount = v_balance, payment_status = (CASE WHEN v_status = 'paid' THEN 'paid' WHEN v_status = 'partial' THEN 'partial' ELSE 'unpaid' END)::payment_status, updated_at = now() WHERE id = NEW.order_id;
   UPDATE customers SET outstanding_balance = GREATEST(0, COALESCE(outstanding_balance, 0) - NEW.amount), updated_at = now() WHERE id = NEW.customer_id;
   RETURN NEW;
 END; $$;
@@ -99,7 +99,7 @@ BEGIN
   v_total := GREATEST(0, COALESCE(NEW.subtotal_amount, 0) + COALESCE(NEW.delivery_fee, 0));
   SELECT amount_paid, due_date INTO v_paid, v_due FROM invoices WHERE order_id = NEW.id FOR UPDATE;
   UPDATE invoices SET due_date = NEW.due_date, total_amount = v_total, balance_amount = GREATEST(0, v_total - v_paid),
-    status = CASE WHEN v_total - v_paid <= 0 THEN 'paid' WHEN NEW.due_date < CURRENT_DATE THEN 'overdue' WHEN v_paid > 0 THEN 'partial' ELSE 'issued' END,
+    status = (CASE WHEN v_total - v_paid <= 0 THEN 'paid' WHEN NEW.due_date < CURRENT_DATE THEN 'overdue' WHEN v_paid > 0 THEN 'partial' ELSE 'issued' END)::invoice_status,
     updated_at = now() WHERE order_id = NEW.id;
   RETURN NEW;
 END; $$;
