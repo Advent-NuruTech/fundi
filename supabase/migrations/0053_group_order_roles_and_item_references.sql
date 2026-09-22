@@ -9,6 +9,8 @@ ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS payer_name TEXT,
   ADD COLUMN IF NOT EXISTS payer_phone TEXT;
 
+
+
 ALTER TABLE order_items
   ADD COLUMN IF NOT EXISTS member_customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS member_name TEXT,

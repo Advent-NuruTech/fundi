@@ -675,10 +675,14 @@ export function NewOrderModulePage() {
       router.push(`/orders/${orderId}`);
     } catch (error) {
       console.error("[createOrder] Order creation failed:", error);
+      const detail =
+        error instanceof Error
+          ? error.message
+          : (error as Record<string, unknown>)?.message ?? String(error);
       toast.error(
         isOffline() || isNetworkError(error)
           ? "Network connection problem. Please connect to a stable internet connection and try again."
-          : `The order was not created. ${error instanceof Error ? error.message : String(error)}`
+          : `The order was not created. ${detail}`
       );
     }
   };
